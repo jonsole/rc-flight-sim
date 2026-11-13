@@ -325,7 +325,7 @@ export class Aircraft {
       // wing stalls and sheds separated, slow air over it. Separation starts
       // at the trailing edge, just ahead of it, so it is fully blanketed
       // early in the stall (a quarter of the way).
-      const qa = 0.5 * RHO * speed2 * s.area * (s.wake ? 1 - s.wake * Math.min(1, 4 * this.wingStall) : 1);
+      const qa = 0.5 * RHO * speed2 * s.area * (s.wake ? 1 - s.wake * Math.min(1, 2 * this.wingStall) : 1);
       _lift.crossVectors(s.span, _up).normalize();
       const invSpeed = 1 / Math.sqrt(speed2);
       _tmp.copy(_lift).multiplyScalar(cl * qa).addScaledVector(_up, -cd * qa * invSpeed);

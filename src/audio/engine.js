@@ -54,6 +54,14 @@ export class EngineSound {
     this.am.connect(this.amGain).connect(this.noiseGain.gain);
     this.noise.connect(this.noiseFilter).connect(this.noiseGain).connect(this.master);
 
+    // Blade-pass whine: a tone at the blade-pass frequency, which is what
+    // makes a many-bladed prop sound high pitched.
+    this.blade = ctx.createOscillator();
+    this.blade.type = 'triangle';
+    this.bladeGain = ctx.createGain();
+    this.bladeGain.gain.value = 0;
+    this.blade.connect(this.bladeGain).connect(this.master);
+
     // Wind rush
     this.wind = ctx.createBufferSource();
     this.wind.buffer = buf;
@@ -70,6 +78,7 @@ export class EngineSound {
     this.motor2.start();
     this.noise.start();
     this.am.start();
+    this.blade.start();
     this.wind.start(0, 0.7);
   }
 
@@ -88,7 +97,12 @@ export class EngineSound {
     this.motorGain.gain.setTargetAtTime(on * (0.04 + thr * 0.1), t, 0.05);
     this.noiseGain.gain.setTargetAtTime(on * thr * 0.25, t, 0.05);
     this.amGain.gain.setTargetAtTime(on * thr * 0.2, t, 0.05);
-    this.noiseFilter.frequency.setTargetAtTime(400 + thr * 1500, t, 0.1);
+    // The buzz reaches up to the blade-pass frequency.
+    this.noiseFilter.frequency.setTargetAtTime(Math.max(400 + thr * 1500, bladeHz * 1.6), t, 0.1);
+    // Two-blade props: the buzz alone; each extra blade adds whine.
+    const blades = aircraft.def.motor.blades || 2;
+    this.blade.frequency.setTargetAtTime(bladeHz, t, 0.05);
+    this.bladeGain.gain.setTargetAtTime(on * thr * 0.025 * Math.max(0, blades - 2), t, 0.05);
     const ws = Math.min(1, aircraft.airspeed / 25);
     this.windGain.gain.setTargetAtTime(fpv ? ws * ws * 0.35 : ws * ws * 0.05, t, 0.1);
     this.windFilter.frequency.setTargetAtTime(300 + ws * 900, t, 0.1);
