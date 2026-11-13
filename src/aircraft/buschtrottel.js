@@ -6,8 +6,8 @@
 //
 // Published: ~900 mm span, ~730-755 mm long, ~430 g, KFm2 airfoil,
 // 19.8 g/dm² wing loading (≈ 22 dm² wing area), 2814-class motor on 3S.
-// This build: T-Motor AT2308 1450Kv on 3S 1350 mAh, fixed leading-edge slats,
-// no gyro. Assumed: 8x4 prop, 450 g
+// This build: T-Motor AT2308 1450Kv on 3S 1350 mAh, 8x6 prop (Agro: 8x4.5
+// three-blade), fixed leading-edge slats, no gyro. Assumed: 450 g
 // ready to fly, tail-dragger with a rudder-linked tail wheel. Chord, tail
 // sizes, CG and inertia are estimates from the published figures.
 //
@@ -47,9 +47,10 @@ function layout(style) {
     fuselage: high
       ? [[0.20, 0.03, -0.04, 0.035], [0.15, 0.037, -0.055, 0.05], [0.07, 0.04, -0.06, 0.075], [-0.17, 0.038, -0.055, 0.075], [-0.30, 0.025, -0.035, 0.045], [-0.50, 0.006, -0.008, 0.03]]
       : [[0.20, 0.03, -0.04, 0.035], [0.15, 0.037, -0.055, 0.045], [0.07, 0.04, -0.065, 0.05], [-0.17, 0.038, -0.06, 0.05], [-0.30, 0.025, -0.04, 0.04], [-0.50, 0.006, -0.008, 0.03]],
-    tail: { leX: -0.36, chord: 0.13, fixed: 0.07, span: 0.34, y: 0.035, incidence: style.tailIncidence },
+    // Tailplane on top of the tail, or low on the bottom of it (Agro).
+    tail: { leX: -0.36, chord: 0.13, fixed: 0.07, span: 0.34, y: style.lowTail ? -0.022 : 0.035, incidence: style.tailIncidence },
     fin: { leX: -0.37, baseY: 0.04, height: 0.13, chord: 0.15, hingeX: -0.44, bottomY: 0.04 },
-    prop: { x: 0.235, y: 0.0, radius: 0.1016 }, // 8" prop
+    prop: { x: 0.235, y: 0.0, radius: 0.1016, blades: style.prop.blades, pitchIn: style.prop.pitchIn }, // 8" prop
     wheel: { x: 0.12, y: -0.145, z: 0.09, radius: 0.05 }, // 100 mm foam wheels
     tailWheel: { x: -0.48, y: -0.033, radius: 0.012 },
   };
@@ -59,7 +60,7 @@ function layout(style) {
 const SHAPE_AREA = { round: 0.85, square: 0.97 };
 
 export function buildBuschtrottel(style) {
-  style = { throws: { aileron: 26 * deg, elevator: 20 * deg }, ...style };
+  style = { throws: { aileron: 26 * deg, elevator: 20 * deg }, prop: PROP_8x6, ...style };
   const L = layout(style);
   const SPAN = L.span;
   const CHORD = L.chord;
@@ -176,9 +177,9 @@ export function buildBuschtrottel(style) {
     wingSpan: SPAN,
     downwashGain: 0.9,
     motor: {
-      // AT2308 1450Kv on 3S with an 8x4: ~12,000 rpm loaded.
-      staticThrust: 6.5, // N (≈1.5:1 thrust/weight)
-      pitchSpeed: 20,    // m/s
+      // AT2308 1450Kv on 3S (~16,000 rpm unloaded), see style.prop.
+      staticThrust: style.prop.staticThrust, // N
+      pitchSpeed: style.prop.pitchSpeed,     // m/s = pitch × loaded rpm
       spoolTime: 0.06,
       torqueFactor: 0.002, // net of slipstream swirl, which offsets part of the torque
       // Downthrust stops the nose rising with power (as on real Cubs).
@@ -186,11 +187,12 @@ export function buildBuschtrottel(style) {
       // No right thrust: it exists to cancel prop swirl/P-factor, which aren't
       // modelled, so here it would yaw the model right in slow, powered flight.
       rightThrust: 0,
-      maxRpm: 12000,
+      maxRpm: style.prop.rpm,
+      blades: style.prop.blades,
       position: [L.prop.x, L.prop.y, 0],
       discArea: Math.PI * L.prop.radius ** 2,
     },
-    battery: { cells: 3, capacity: 1350, maxCurrent: 17, internalResistance: 0.02 * 3 },
+    battery: { cells: 3, capacity: 1350, maxCurrent: style.prop.current, internalResistance: 0.02 * 3 },
     trim: { roll: style.rollTrim }, // aileron trim for hands-off cruise
     assist: {
       rateGain: { roll: 0.05, pitch: 0.06, yaw: 0.07 },
@@ -239,8 +241,9 @@ export function buildBuschtrottel(style) {
     geometry: L,
     views: {
       span: SPAN,
-      // High wing: from the cabin under the wing. Agro: inside its canopy.
-      cockpit: up(high ? [0.04, 0.058, 0] : [-0.12, 0.085, 0]),
+      // High wing: from the cabin under the wing. Agro: on the front of its
+      // (opaque) canopy block.
+      cockpit: up(high ? [0.04, 0.058, 0] : [-0.05, 0.108, 0]),
       // Wing-top pod (high wing) or a nose-top camera (low wing).
       pod: up(high ? [0.05, L.wingY + 0.04, 0] : [0.17, 0.065, 0]),
       chase: { back: SPAN * 2.0 + 0.3, up: SPAN * 0.5 + 0.15 },
@@ -259,12 +262,18 @@ export function buildBuschtrottel(style) {
   };
 }
 
-const COMMON = 'Fixed LE slats. AT2308 1450Kv, 8x4, 3S 1350 mAh, ~450 g.';
+const COMMON = 'Fixed LE slats. AT2308 1450Kv, 3S 1350 mAh, ~450 g.';
+
+// Props on the AT2308 1450Kv / 3S. Loaded rpm and static thrust are
+// estimates from typical prop data; pitch speed = pitch × loaded rpm.
+const PROP_8x6 = { blades: 2, pitchIn: 6, rpm: 11000, staticThrust: 6.2, pitchSpeed: 28, current: 16 };
+const PROP_8x45x3 = { blades: 3, pitchIn: 4.5, rpm: 11000, staticThrust: 7.0, pitchSpeed: 21, current: 16 };
 
 export const BUSCHTROTTEL_SHOCKCUB = buildBuschtrottel({
   id: 'buschtrottel-shockcub',
   name: 'Buschtrottel ShockCub',
-  summary: `DIY 6 mm Depron bush plane, 900 mm. High wing, rounded tail. ${COMMON}`,
+  summary: `DIY 6 mm Depron bush plane, 900 mm. High wing, rounded tail. 8x6 prop. ${COMMON}`,
+  prop: PROP_8x6,
   mount: 'high',
   tips: 'round',
   tail: 'round',
@@ -279,7 +288,8 @@ export const BUSCHTROTTEL_SHOCKCUB = buildBuschtrottel({
 export const BUSCHTROTTEL_HIGHLANDER = buildBuschtrottel({
   id: 'buschtrottel-highlander',
   name: 'Buschtrottel Highlander',
-  summary: `DIY 6 mm Depron bush plane, 900 mm. High wing, angular tail, square tips. ${COMMON}`,
+  summary: `DIY 6 mm Depron bush plane, 900 mm. High wing, angular tail, square tips. 8x6 prop. ${COMMON}`,
+  prop: PROP_8x6,
   mount: 'high',
   tips: 'square',
   tail: 'square',
@@ -294,9 +304,11 @@ export const BUSCHTROTTEL_HIGHLANDER = buildBuschtrottel({
 export const BUSCHTROTTEL_AGRO = buildBuschtrottel({
   id: 'buschtrottel-agro',
   name: 'Buschtrottel Agro',
-  summary: `DIY 6 mm Depron, 900 mm. Low wing with struts, full-span ailerons, framed glass cab, angular tail. ${COMMON}`,
+  summary: `DIY 6 mm Depron, 900 mm. Low wing with struts, full-span ailerons, black canopy, low tailplane. 8x4.5 three-blade prop. ${COMMON}`,
+  prop: PROP_8x45x3,
   mount: 'low',
   fullSpanAilerons: true,
+  lowTail: true,
   // Full-span ailerons are already powerful.
   throws: { aileron: 22 * deg, elevator: 18 * deg },
   tips: 'square',
