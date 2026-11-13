@@ -211,7 +211,7 @@ export function buildBuschtrottel(style) {
     geometry: L,
     views: {
       span: SPAN,
-      // High wing: from the cabin under the wing. Agro: open cockpit.
+      // High wing: from the cabin under the wing. Agro: inside its canopy.
       cockpit: high ? [0.04, 0.058, 0] : [-0.12, 0.085, 0],
       // Wing-top pod (high wing) or a nose-top camera (low wing).
       pod: high ? [0.05, L.wingY + 0.04, 0] : [0.17, 0.065, 0],
@@ -254,7 +254,7 @@ export const BUSCHTROTTEL_HIGHLANDER = buildBuschtrottel({
 export const BUSCHTROTTEL_AGRO = buildBuschtrottel({
   id: 'buschtrottel-agro',
   name: 'Buschtrottel Agro',
-  summary: `DIY 6 mm Depron, 900 mm. Low wing with struts to the fuselage, angular tail. ${COMMON}`,
+  summary: `DIY 6 mm Depron, 900 mm. Low wing with struts to the fuselage, glass canopy, angular tail. ${COMMON}`,
   mount: 'low',
   tips: 'square',
   tail: 'square',

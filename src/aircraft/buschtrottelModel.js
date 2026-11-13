@@ -3,7 +3,7 @@
 // comes from buschtrottel.js, so the model and flight model always agree.
 
 import {
-  Group, Mesh, MeshStandardMaterial, Vector3, Color, CylinderGeometry, BoxGeometry,
+  Group, Mesh, MeshStandardMaterial, Vector3, Color, CylinderGeometry,
   SphereGeometry, TorusGeometry, CircleGeometry, ConeGeometry, PlaneGeometry, DoubleSide,
   CanvasTexture,
   SRGBColorSpace, Quaternion,
@@ -70,19 +70,17 @@ export function createBuschtrottelModel(L) {
   // Colour scheme. Optional keys: top + split (two-tone fuselage), wingBottom,
   // aileron; otherwise the fuselage has a side stripe and the wing is one colour.
   const C = S.colors;
-  const mainMat = foam(C.top || C.main);
   const tailMat = foam(C.tail);
   const ailMat = foam(C.aileron || C.wing);
   const vcMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.92, flatShading: true });
   const wingTop = new Color(C.wing);
   const wingBottom = new Color(C.wingBottom || C.wing);
-  const dark = new MeshStandardMaterial({ color: '#202224', roughness: 0.6 });
   const metal = new MeshStandardMaterial({ color: '#9a9c9e', roughness: 0.4, metalness: 0.6 });
   // Side windows read as dark glass from outside; the windscreen stays clear
   // enough to fly FPV through.
   const glass = new MeshStandardMaterial({ color: '#1b2a33', roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.75, side: DoubleSide });
   const screenGlass = new MeshStandardMaterial({ color: '#cfe3ee', roughness: 0.05, transparent: true, opacity: 0.18, depthWrite: false, side: DoubleSide });
-  const shadowAll = (o) => o.traverse((m) => m.isMesh && (m.castShadow = true));
+  const shadowAll = (o) => o.traverse((m) => m.isMesh && !m.userData.noShadow && (m.castShadow = true));
 
   // --- Fuselage: Depron box, either two-tone (split) or with a side stripe -------
   // Each ring point carries a paint index; colour changes happen at duplicated
@@ -131,18 +129,54 @@ export function createBuschtrottelModel(L) {
     root.add(ws);
     head.position.set(-0.02, 0.04, 0);
   } else {
-    const hole = new Mesh(new CylinderGeometry(1, 1, 0.004, 20), dark);
-    hole.scale.set(0.05, 1, 0.028);
-    hole.position.set(-0.12, 0.051, 0);
-    root.add(hole);
-    const screen = new Mesh(new PlaneGeometry(0.04, 0.025), screenGlass);
-    screen.position.set(-0.075, 0.062, 0);
-    screen.rotation.set(0, Math.PI / 2, 0);
-    screen.rotateX(-0.4);
-    root.add(screen);
-    const headrest = new Mesh(new BoxGeometry(0.07, 0.018, 0.022), mainMat);
-    headrest.position.set(-0.2, 0.058, 0);
-    root.add(headrest);
+    // Low wing: glass-enclosed cockpit, a canopy bubble on top of the fuselage.
+    const fusAt = (x) => {
+      const st = L.fuselage;
+      for (let i = 0; i < st.length - 1; i++) {
+        const [x0, hw0, , yt0] = st[i];
+        const [x1, hw1, , yt1] = st[i + 1];
+        if (x <= x0 && x >= x1) {
+          const t = (x0 - x) / (x0 - x1);
+          return { hw: hw0 + (hw1 - hw0) * t, yt: yt0 + (yt1 - yt0) * t };
+        }
+      }
+      return { hw: st[0][1], yt: st[0][3] };
+    };
+    const xFront = 0.0;
+    const xRear = -0.23;
+    const H = 0.05;
+    const canopyRings = [];
+    for (let i = 0; i <= 14; i++) {
+      const u = i / 14;
+      const x = xFront + (xRear - xFront) * u;
+      // Raked windscreen at the front, long tapering fairing at the back.
+      const prof = u < 0.35 ? Math.sqrt(1 - ((0.35 - u) / 0.35) ** 2) : Math.sqrt(1 - ((u - 0.35) / 0.65) ** 2);
+      const h = Math.max(0.002, H * prof);
+      const { hw, yt } = fusAt(x);
+      const w = Math.max(0.002, hw * 0.92 * Math.min(1, 0.35 + prof));
+      const ring = [];
+      for (let j = 0; j <= 10; j++) {
+        const th = (j / 10) * Math.PI;
+        ring.push(new Vector3(x, yt + 0.001 + Math.sin(th) * h, Math.cos(th) * w));
+      }
+      canopyRings.push(ring);
+    }
+    const canopy = new Mesh(
+      loft(canopyRings),
+      new MeshStandardMaterial({ color: '#a9cbe0', roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.2, depthWrite: false, side: DoubleSide }),
+    );
+    canopy.castShadow = false;
+    canopy.userData.noShadow = true;
+    root.add(canopy);
+    // Canopy frame: a hoop at the windscreen and a spine along the top.
+    const frameMat = new MeshStandardMaterial({ color: C.top || C.main, roughness: 0.8 });
+    const hoopX = xFront + (xRear - xFront) * 0.35;
+    const { hw: hoopW, yt: hoopY } = fusAt(hoopX);
+    const hoop = new Mesh(new TorusGeometry(1, 0.03, 6, 24, Math.PI), frameMat);
+    hoop.scale.set(hoopW * 0.92, H, 0.05);
+    hoop.position.set(hoopX, hoopY + 0.001, 0);
+    hoop.rotation.y = Math.PI / 2;
+    root.add(hoop);
     head.position.set(-0.13, 0.07, 0);
   }
   root.add(pilot);
