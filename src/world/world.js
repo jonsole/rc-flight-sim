@@ -266,18 +266,24 @@ export class World {
     ws.add(pole);
     const sock = new Group();
     sock.position.y = 4.85;
-    const coneGeo = new CylinderGeometry(0.28, 0.12, 1.6, 12, 4, true);
+    // Wide mouth at the pole, tapering to the narrow downwind end. Rotating
+    // +90° about z sends the cylinder's top (first radius) to -x, the far end.
+    const coneGeo = new CylinderGeometry(0.12, 0.28, 1.6, 12, 4, true);
     coneGeo.rotateZ(Math.PI / 2);
     coneGeo.translate(-0.8, 0, 0);
-    const cols = [];
-    const p = coneGeo.attributes.position;
-    for (let i = 0; i < p.count; i++) {
-      const band = Math.floor((-p.getX(i) / 1.6) * 4.999);
-      const c = band % 2 ? new Color('#f2f2f2') : new Color('#ff5a1f');
-      cols.push(c.r, c.g, c.b);
+    // Five crisp bands (orange at the mouth) from a stripe texture along the
+    // sock's length (the cylinder's v texture coordinate).
+    const bands = document.createElement('canvas');
+    bands.width = 4;
+    bands.height = 80;
+    const bctx = bands.getContext('2d');
+    for (let i = 0; i < 5; i++) {
+      bctx.fillStyle = i % 2 ? '#f2f2f2' : '#ff5a1f';
+      bctx.fillRect(0, i * 16, 4, 16);
     }
-    coneGeo.setAttribute('color', new Float32BufferAttribute(cols, 3));
-    const sockMesh = new Mesh(coneGeo, new MeshStandardMaterial({ vertexColors: true, side: DoubleSide, roughness: 0.9 }));
+    const bandTex = new CanvasTexture(bands);
+    bandTex.colorSpace = SRGBColorSpace;
+    const sockMesh = new Mesh(coneGeo, new MeshStandardMaterial({ map: bandTex, side: DoubleSide, roughness: 0.9 }));
     sockMesh.castShadow = true;
     sock.add(sockMesh);
     ws.add(sock);
