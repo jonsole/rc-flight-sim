@@ -36,7 +36,7 @@ function referenceLayout(cgFromUpperLeRef) {
     prop: { x: 0.43, y: 0.02, radius: 0.185 },
     wheel: { x: 0.2, y: -0.2, z: 0.15, radius: 0.07 },
     skid: { x: -0.80, y: -0.10 },
-    pilotEye: { x: -0.21, y: 0.158, z: 0 },
+    pilotEye: { x: -0.21, y: 0.113, z: 0 },
   };
 }
 
