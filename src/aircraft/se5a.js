@@ -249,26 +249,6 @@ export function buildSE5a(o) {
 // --- Variants ---------------------------------------------------------------
 
 /**
- * Generic 1/5 scale electric S.E.5a (1.62 m span), built from a kit or plan.
- * All figures are estimates for a typical model of this size.
- */
-export const SE5a_1_5 = buildSE5a({
-  id: 'se5a-1-5',
-  name: 'S.E.5a 1/5 scale (1.62 m)',
-  summary: '1/5 scale electric — 1.62 m span, 2.2 kg, 4S 3300 mAh, 15" prop. No gyro (assist optional).',
-  span: 1.62,
-  cgFromUpperLe: 0.114,
-  mass: 2.2,
-  inertia: [0.14, 0.24, 0.11],
-  propRadius: 0.185,
-  foil: { cd0: 0.014, alphaStall: 13 * deg },
-  motor: { staticThrust: 17, pitchSpeed: 30, spoolTime: 0.12, torqueFactor: 0.008, maxRpm: 8500 },
-  battery: { cells: 4, capacity: 3300, maxCurrent: 45, internalResistance: 0.012 * 4 },
-  gear: { wheelK: 3500, wheelC: 45, skidK: 1500, skidC: 20, hardK: 4000, hardC: 40, wheelCrash: 7, skidCrash: 6 },
-  defaultAssist: 'off',
-});
-
-/**
  * E-flite S.E.5a 900mm (EFL10950 BNF / EFL10975 PNP), ~1/9 scale foam.
  * Published: span 899 mm, length 716 mm, 1303 g with battery, 3513-1100Kv,
  * 10x5 prop, 45 A ESC, 3S/4S 2200–3200 mAh, CG 72 mm (±5) behind the top-wing

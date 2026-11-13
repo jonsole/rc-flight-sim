@@ -1,12 +1,9 @@
 # RC Flight Sim
 
 A browser-based radio-control aeroplane simulator with **line-of-sight** and
-**FPV** views. Pick your aircraft on the start screen or in the menu:
-
-| Aircraft | Notes |
-| --- | --- |
-| **E-flite S.E.5a 900mm** (EFL10950 / EFL10975) | Foam BNF park-flyer, AS3X+/SAFE. Default. |
-| **S.E.5a 1/5 scale (1.62 m)** | Generic kit/plan-built electric model, heavier and more stately. |
+**FPV** views. Aircraft are chosen on the start screen or in the menu; so far
+there is the **E-flite S.E.5a 900mm** (EFL10950 / EFL10975), a foam BNF
+park-flyer of the WWI biplane with AS3X+/SAFE.
 
 It runs in any modern browser (Chrome or Edge recommended on Windows). There is
 nothing to install for flying: the build is a static website.

@@ -2,9 +2,9 @@
 // geometry, camera mounts and a 3D-model factory:
 //   { id, name, summary, defaultAssist, def, geometry, views, createModel() }
 // To add an aircraft, write a module that returns that shape and list it here.
-import { EFLITE_SE5a_900, SE5a_1_5 } from './se5a.js';
+import { EFLITE_SE5a_900 } from './se5a.js';
 
-export const AIRCRAFT = [EFLITE_SE5a_900, SE5a_1_5];
+export const AIRCRAFT = [EFLITE_SE5a_900];
 
 export const DEFAULT_AIRCRAFT_ID = EFLITE_SE5a_900.id;
 

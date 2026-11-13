@@ -182,11 +182,11 @@ export class Panel {
 
   tab_help() {
     return [
-      el('h3', {}, 'Flying the S.E.5a models'),
+      el('h3', {}, 'Flying the S.E.5a'),
       el('ul', {},
         el('li', {}, 'Take off into wind (the windsock tail points downwind). Open the throttle smoothly and hold a little right rudder against the swing; let the tail come up, then ease back.'),
         el('li', {}, 'It is a biplane with lots of drag: it slows down fast when you throttle back. Keep speed up on the approach and flare gently for a three-pointer.'),
-        el('li', {}, 'The 900 mm E-flite is light and quick: it reacts fast and stalls abruptly on full elevator. The 1/5 scale model is heavier and more stately.'),
+        el('li', {}, 'The 900 mm E-flite is light and quick: it reacts fast and stalls abruptly on full elevator.'),
         el('li', {}, 'Flight assist mirrors E-flite BNF receivers: AS3X damps gusts and wobbles; SAFE also levels the wings when you let go and limits bank and pitch. Switch modes in flight with G or an assigned transmitter switch.'),
         el('li', {}, 'Coordinate turns with rudder; the dihedral gives a strong rudder–roll coupling.'),
         el('li', {}, 'Low and slow in a turn will drop a wing. Unload (release elevator) to recover.')),
