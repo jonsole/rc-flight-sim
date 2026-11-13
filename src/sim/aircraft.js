@@ -115,12 +115,15 @@ export class Aircraft {
     this.crashed = false;
     this.crashReason = '';
     this.propBroken = false;
+    /** In the pilot's hand before a hand launch: { pos, q } or null. */
+    this.held = null;
 
     // Telemetry (updated each step)
     this.airspeed = 0;
     this.alpha = 0;
     this.beta = 0;
     this.wingCL = 0;
+    this.wingStall = 0; // area-weighted stall fraction of the wing, 0..1
     this.onGround = false;
     this.lastForces = { aero: new Vector3(), moment: new Vector3() };
   }
@@ -140,6 +143,21 @@ export class Aircraft {
     // Lift so the wheels just touch.
     const w = wheel.pos.clone().applyQuaternion(this.orientation);
     this.position.set(x, g - w.y + 0.002, z);
+  }
+
+  /**
+   * Held by the pilot at shoulder height, nose up a little, ready for a hand
+   * launch (def.handLaunch). The model stays in the hand while the motor
+   * spools up and is thrown once the throttle reaches handLaunch.throttle.
+   */
+  resetHandLaunch(x, z, headingRad = 0) {
+    const h = this.def.handLaunch;
+    this.#resetCommon();
+    const qYaw = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), headingRad);
+    const qPitch = new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), h.pitch);
+    this.orientation.copy(qYaw).multiply(qPitch);
+    this.position.set(x, this.env.ground.heightAt(x, z) + h.height, z);
+    this.held = { pos: this.position.clone(), q: this.orientation.clone() };
   }
 
   /** Start in the air, wings level, flying at `speed` m/s. */
@@ -162,6 +180,7 @@ export class Aircraft {
     this.breakEvents.length = 0;
     this.battery.used = 0;
     this.time = 0;
+    this.held = null;
   }
 
   crash(reason) {
@@ -262,6 +281,7 @@ export class Aircraft {
     const downwash = (phiWing * def.downwashGain * 2 * this.wingCL) / (Math.PI * def.wingAspectRatio);
     let wingLift = 0;
     let wingArea = 0;
+    let wingStall = 0;
     const c = this.#assist(this.servo);
     for (const s of this.surfaces) {
       if (s.part && this.broken.has(s.part)) continue; // broken off
@@ -275,11 +295,19 @@ export class Aircraft {
       let alpha = Math.atan2(-_up.dot(s.normal), _up.dot(s.chord));
       if (s.downwash) alpha -= downwash;
       let defl = 0;
+      let dAlpha = 0;
       for (const ctl of s.controls) {
         const input = c[ctl.input] || 0;
         defl += input * ctl.gain * ctl.max;
-        alpha += input * ctl.gain * ctl.max * ctl.tau;
+        dAlpha += input * ctl.gain * ctl.max * ctl.tau;
       }
+      // Mixed surfaces (elevons) can't move past the servo's travel.
+      if (s.maxDeflection && Math.abs(defl) > s.maxDeflection) {
+        const k = s.maxDeflection / Math.abs(defl);
+        defl *= k;
+        dAlpha *= k;
+      }
+      alpha += dAlpha;
       s.deflection = defl;
       const co = coefficients(alpha, s.foil);
       let cl = co.cl;
@@ -293,7 +321,11 @@ export class Aircraft {
       s.alpha = alpha;
       s.cl = cl;
       s.stalled = co.stalled;
-      const qa = 0.5 * RHO * speed2 * s.area;
+      // A surface in the wing's wake (s.wake) loses dynamic pressure as the
+      // wing stalls and sheds separated, slow air over it. Separation starts
+      // at the trailing edge, just ahead of it, so it is fully blanketed
+      // early in the stall (a quarter of the way).
+      const qa = 0.5 * RHO * speed2 * s.area * (s.wake ? 1 - s.wake * Math.min(1, 2 * this.wingStall) : 1);
       _lift.crossVectors(s.span, _up).normalize();
       const invSpeed = 1 / Math.sqrt(speed2);
       _tmp.copy(_lift).multiplyScalar(cl * qa).addScaledVector(_up, -cd * qa * invSpeed);
@@ -309,9 +341,11 @@ export class Aircraft {
       if (s.wing) {
         wingLift += cl * s.area;
         wingArea += s.area;
+        wingStall += co.stalled * s.area;
       }
     }
     this.wingCL = wingArea > 0 ? wingLift / wingArea : 0;
+    this.wingStall = wingArea > 0 ? wingStall / wingArea : 0;
 
     // Parasite drag (per axis, quadratic).
     const p = def.parasite;
@@ -347,6 +381,19 @@ export class Aircraft {
     _q.set(w.x * dt * 0.5, w.y * dt * 0.5, w.z * dt * 0.5, 0);
     _q.premultiply(q); // q * (ω dt / 2)
     q.set(q.x + _q.x, q.y + _q.y, q.z + _q.z, q.w + _q.w).normalize();
+
+    // Still in the pilot's hand: only the motor runs. Throw it, along the
+    // nose, once the throttle is up.
+    if (this.held) {
+      this.position.copy(this.held.pos);
+      this.velocity.set(0, 0, 0);
+      this.omega.set(0, 0, 0);
+      q.copy(this.held.q);
+      if (this.throttleActual >= def.handLaunch.throttle) {
+        this.held = null;
+        this.velocity.set(def.handLaunch.speed, 0, 0).applyQuaternion(q);
+      }
+    }
 
     // --- Battery -----------------------------------------------------------
     const b = def.battery;

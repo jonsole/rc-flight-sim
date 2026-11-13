@@ -129,6 +129,12 @@ function resetAircraft() {
   if (settings.startMode === 'air') {
     aircraft.resetInAir(new Vector3(startX + dir * 40, 30, RUNWAY.z - 10), heading, 14);
     input.kb.throttle = 0.5;
+  } else if (entry.def.handLaunch) {
+    // In the pilot's right hand at the flight line, half a metre ahead,
+    // pointing along the runway into wind.
+    const hx = settings.pilotX + Math.cos(heading) * 0.5 + Math.sin(heading) * 0.3;
+    const hz = settings.pilotZ - Math.sin(heading) * 0.5 + Math.cos(heading) * 0.3;
+    aircraft.resetHandLaunch(hx, hz, heading);
   } else {
     aircraft.resetOnGround(startX, RUNWAY.z, heading);
   }
