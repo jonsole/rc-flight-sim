@@ -115,11 +115,14 @@ export function f22Outlines() {
     ].map(([c, b, t]) => [fx(c), b * px60, t * px60]),
   };
   // Canopy (parts 03 and 04): full fuselage width. The side flaps of 03 fold
-  // up into its walls, [mm from the front, height in mm] traced off the plan,
-  // and the 04 strip bends over the top. Starts where the nose top levels out.
+  // up into its walls ([mm from the front, height in mm], traced off the
+  // plan) and the 04 strip bends over the top. The low end is the front: it
+  // rises at about the slope of the nose's top curve and carries it on, so
+  // it starts (from nothing) where that curve ends. Highest 70 mm back,
+  // 8.5 mm high at the back.
   const canopy = {
-    front: fx(690),
-    profile: [[0, 8.5], [10.6, 12.7], [31.7, 19.9], [52.9, 24.1], [74, 25.4], [95.2, 23.3], [116, 15.7], [127, 10.2], [137.5, 5.9], [144, 3]]
+    front: fx(700),
+    profile: [[0, 0], [6.5, 5.9], [17, 10.2], [28, 15.7], [48.8, 23.3], [70, 25.4], [91.1, 24.1], [112.3, 19.9], [133.4, 12.7], [144, 8.5]]
       .map(([d, h]) => [d / 1000, h / 1000]),
   };
   return { wing, elevon, hingeX, fin, finZ, slot, underbody, fuselage, canopy, nose: fuselage.stations[0][0] };
@@ -303,7 +306,7 @@ export function buildF22(style) {
       { name: 'chin', pos: [O.fuselage.stations[5][0], floorY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
       hard('wing-tip-L', [tip[0] - 0.02, wingY, -tip[1]]),
       hard('wing-tip-R', [tip[0] - 0.02, wingY, tip[1]]),
-      hard('cabin-top', [O.canopy.front - 0.074, floorY + 0.07 + 0.025, 0], 3),
+      hard('cabin-top', [O.canopy.front - 0.07, floorY + 0.07 + 0.025, 0], 3),
       hard('fin-top-L', [O.fin[2][0], wingY + finH * Math.cos(cant), -(O.finZ + finH * Math.sin(cant))], 3),
       hard('fin-top-R', [O.fin[2][0], wingY + finH * Math.cos(cant), O.finZ + finH * Math.sin(cant)], 3),
       hard('tail-end-L', [elevTip[0], wingY, -elevTip[1]], 3.5),
@@ -324,7 +327,7 @@ export function buildF22(style) {
       span: SPAN,
       // Under the canopy, and a camera on top of the fuselage box.
       // Under the canopy, and a camera on the box behind it.
-      cockpit: [O.canopy.front - 0.04, floorY + 0.084, 0],
+      cockpit: [O.canopy.front - 0.05, floorY + 0.086, 0],
       pod: [0.0, floorY + 0.08, 0],
       chase: { back: 1.4, up: 0.45 },
     },
