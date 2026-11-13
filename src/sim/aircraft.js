@@ -115,6 +115,8 @@ export class Aircraft {
     this.crashed = false;
     this.crashReason = '';
     this.propBroken = false;
+    /** In the pilot's hand before a hand launch: { pos, q } or null. */
+    this.held = null;
 
     // Telemetry (updated each step)
     this.airspeed = 0;
@@ -142,6 +144,21 @@ export class Aircraft {
     this.position.set(x, g - w.y + 0.002, z);
   }
 
+  /**
+   * Held by the pilot at shoulder height, nose up a little, ready for a hand
+   * launch (def.handLaunch). The model stays in the hand while the motor
+   * spools up and is thrown once the throttle reaches handLaunch.throttle.
+   */
+  resetHandLaunch(x, z, headingRad = 0) {
+    const h = this.def.handLaunch;
+    this.#resetCommon();
+    const qYaw = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), headingRad);
+    const qPitch = new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), h.pitch);
+    this.orientation.copy(qYaw).multiply(qPitch);
+    this.position.set(x, this.env.ground.heightAt(x, z) + h.height, z);
+    this.held = { pos: this.position.clone(), q: this.orientation.clone() };
+  }
+
   /** Start in the air, wings level, flying at `speed` m/s. */
   resetInAir(pos, headingRad, speed) {
     this.#resetCommon();
@@ -162,6 +179,7 @@ export class Aircraft {
     this.breakEvents.length = 0;
     this.battery.used = 0;
     this.time = 0;
+    this.held = null;
   }
 
   crash(reason) {
@@ -347,6 +365,19 @@ export class Aircraft {
     _q.set(w.x * dt * 0.5, w.y * dt * 0.5, w.z * dt * 0.5, 0);
     _q.premultiply(q); // q * (ω dt / 2)
     q.set(q.x + _q.x, q.y + _q.y, q.z + _q.z, q.w + _q.w).normalize();
+
+    // Still in the pilot's hand: only the motor runs. Throw it, along the
+    // nose, once the throttle is up.
+    if (this.held) {
+      this.position.copy(this.held.pos);
+      this.velocity.set(0, 0, 0);
+      this.omega.set(0, 0, 0);
+      q.copy(this.held.q);
+      if (this.throttleActual >= def.handLaunch.throttle) {
+        this.held = null;
+        this.velocity.set(def.handLaunch.speed, 0, 0).applyQuaternion(q);
+      }
+    }
 
     // --- Battery -----------------------------------------------------------
     const b = def.battery;

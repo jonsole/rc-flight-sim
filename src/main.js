@@ -129,6 +129,8 @@ function resetAircraft() {
   if (settings.startMode === 'air') {
     aircraft.resetInAir(new Vector3(startX + dir * 40, 30, RUNWAY.z - 10), heading, 14);
     input.kb.throttle = 0.5;
+  } else if (entry.def.handLaunch) {
+    aircraft.resetHandLaunch(startX, RUNWAY.z, heading);
   } else {
     aircraft.resetOnGround(startX, RUNWAY.z, heading);
   }
