@@ -47,8 +47,9 @@ function layout(style) {
     fuselage: high
       ? [[0.20, 0.03, -0.04, 0.035], [0.15, 0.037, -0.055, 0.05], [0.07, 0.04, -0.06, 0.075], [-0.17, 0.038, -0.055, 0.075], [-0.30, 0.025, -0.035, 0.045], [-0.50, 0.006, -0.008, 0.03]]
       : [[0.20, 0.03, -0.04, 0.035], [0.15, 0.037, -0.055, 0.045], [0.07, 0.04, -0.065, 0.05], [-0.17, 0.038, -0.06, 0.05], [-0.30, 0.025, -0.04, 0.04], [-0.50, 0.006, -0.008, 0.03]],
-    // Tailplane on top of the tail, or low on the bottom of it (Agro).
-    tail: { leX: -0.36, chord: 0.13, fixed: 0.07, span: 0.34, y: style.lowTail ? -0.022 : 0.035, incidence: style.tailIncidence },
+    // Tailplane on top of the tail, or set into the fuselage side about 10 mm
+    // below the top (Agro; the fuselage top there is at y ≈ 0.035).
+    tail: { leX: -0.36, chord: 0.13, fixed: 0.07, span: 0.34, y: style.lowTail ? 0.025 : 0.035, incidence: style.tailIncidence },
     fin: { leX: -0.37, baseY: 0.04, height: 0.13, chord: 0.15, hingeX: -0.44, bottomY: 0.04 },
     prop: { x: 0.235, y: 0.0, radius: 0.1016, blades: style.prop.blades, pitchIn: style.prop.pitchIn }, // 8" prop
     wheel: { x: 0.12, y: -0.145, z: 0.09, radius: 0.05 }, // 100 mm foam wheels
