@@ -1,20 +1,21 @@
 // Procedural 3D model of an S.E.5a RC model, built in the same body axes as the
 // flight model (+x forward, +y up, +z right, metres, origin at the CG).
 //
-// Colour scheme: PC10 (khaki-brown) upper surfaces, clear-doped linen
-// undersides, RFC/RAF roundels and blue-white-red rudder stripes.
+// Colour scheme (E-flite S.E.5a 900mm): olive green fuselage and upper
+// surfaces, nose included; clear-doped linen wing undersides; RFC roundels,
+// blue-white-red rudder stripes and the white "G" code letter.
 
 import {
   Group, Mesh, MeshStandardMaterial, Vector3, Color, CylinderGeometry, BoxGeometry,
   SphereGeometry, TorusGeometry, CircleGeometry, DoubleSide, LineSegments,
   BufferGeometry, Float32BufferAttribute, LineBasicMaterial, CanvasTexture, SRGBColorSpace,
-  Quaternion, PlaneGeometry,
+  Quaternion, PlaneGeometry, Matrix4, RingGeometry, Shape, ExtrudeGeometry, Vector2,
 } from 'three';
 import { loft, mirrorZ, airfoilRing, naca } from './geom.js';
 
-const PC10 = new Color('#5a5536');
+const PC10 = new Color('#4d5a31');
 const LINEN = new Color('#d9cfae');
-const GREY = new Color('#7a7c76');
+const COWL = new Color('#46522c'); // painted cowl panels, a shade darker
 const METAL = new Color('#8f918c');
 const DARK = new Color('#1c1b19');
 const WOOD = new Color('#6e4a2a');
@@ -25,6 +26,7 @@ const WHITE = new Color('#ece8dc');
 const deg = Math.PI / 180;
 const WING_T = 0.08;   // thickness/chord
 const WING_M = 0.04;   // camber
+const STRUT_Z = 0.62;  // interplane struts, fraction of the half span
 
 function std(color, extra = {}) {
   return new MeshStandardMaterial({ color, roughness: 0.85, metalness: 0.0, ...extra });
@@ -44,9 +46,9 @@ function wingPoint(w, frac, z, yNorm) {
 }
 
 /** Chord scale for rounded tips (s = 0 root .. 1 tip). */
-function tipScale(s) {
-  if (s < 0.9) return 1;
-  const t = (s - 0.9) / 0.1;
+function tipScale(s, from = 0.9) {
+  if (s < from) return 1;
+  const t = (s - from) / (1 - from);
   return Math.max(0.3, Math.sqrt(1 - t * t * 0.92));
 }
 
@@ -57,7 +59,7 @@ function wingLoft(w, z0, z1, f0, f1, nSpan, topColor, bottomColor) {
   const rings = [];
   for (let i = 0; i <= nSpan; i++) {
     const z = z0 + ((z1 - z0) * i) / nSpan;
-    const sc = tipScale(z / half);
+    const sc = tipScale(z / half, w.tipFrom);
     // Rounded tip: scale the chord about the 35% point.
     const ring = airfoilRing(f0, f1, n, WING_T, WING_M).map(([f, y]) => {
       const fs = 0.35 + (f - 0.35) * sc;
@@ -78,7 +80,7 @@ function wingRoundel(w, fracCentre, zCentre, radius, top) {
     [radius * 0.33, ROUNDEL_RED, 0.0024],
   ];
   for (const [r, color, off] of rings) {
-    const disc = new CircleGeometry(r, 40, 0, Math.PI * 2);
+    const disc = new RingGeometry(0, r, 40, 8); // subdivided so it follows the camber
     const p = disc.attributes.position;
     for (let i = 0; i < p.count; i++) {
       const dx = p.getX(i);
@@ -91,7 +93,8 @@ function wingRoundel(w, fracCentre, zCentre, radius, top) {
       p.setXYZ(i, v.x, v.y, v.z);
     }
     disc.computeVertexNormals();
-    g.add(new Mesh(disc, std(color, { side: DoubleSide })));
+    // Polygon offset keeps the layers from flickering against the fabric.
+    g.add(new Mesh(disc, std(color, { side: DoubleSide, polygonOffset: true, polygonOffsetFactor: -1 - off * 1000, polygonOffsetUnits: -4 })));
   }
   return g;
 }
@@ -105,25 +108,74 @@ function sideRoundel(x, y, z, radius, sign) {
   ];
   for (const [r, color, off] of layers) {
     const m = new Mesh(new CircleGeometry(r, 32), std(color, { side: DoubleSide }));
-    m.position.set(x, y, z + sign * off);
+    m.position.z = sign * off;
     g.add(m);
   }
+  // Toe in slightly with the tapering fuselage, about the roundel's own centre.
+  g.position.set(x, y, z);
   g.rotation.y = sign > 0 ? -2 * deg : 2 * deg;
   return g;
 }
 
+/** Flat plate from a side-view outline [[x, y]...], `t` thick, centred on z = 0. */
+function outlinePlate(pts, t) {
+  const g = new ExtrudeGeometry(new Shape(pts.map(([x, y]) => new Vector2(x, y))), { depth: t, bevelEnabled: false, curveSegments: 1 });
+  g.translate(0, 0, -t / 2);
+  return g;
+}
+
+/** White text on a transparent plane (faces +z), `w` wide and `h` tall. */
+function textDecal(text, w, h) {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = Math.round((512 * h) / w);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#ece8dc';
+  ctx.font = `bold ${Math.round(c.height * 0.85)}px Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 256, c.height * 0.55);
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  return new Mesh(new PlaneGeometry(w, h), new MeshStandardMaterial({ map: t, transparent: true, alphaTest: 0.3, roughness: 0.85, side: DoubleSide }));
+}
+
+/** White code letter on a transparent plane (faces +z), `h` tall. */
+function letterDecal(ch, h) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#ece8dc';
+  ctx.font = 'bold 120px Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(ch, 64, 70);
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  return new Mesh(new PlaneGeometry(h, h), new MeshStandardMaterial({ map: t, transparent: true, alphaTest: 0.3, roughness: 0.85, side: DoubleSide }));
+}
+
 function fuselage() {
   // Stations: x, half-width, bottom y, top y
+  // Measured off a 3D model of the S.E.5a scaled to this span: x, half-width,
+  // bottom, top. Flat-topped cowl back to the cockpit (just behind the top
+  // wing's trailing edge), a faired headrest, then tapering to the sternpost.
   const st = [
-    [0.405, 0.075, -0.075, 0.07],
-    [0.395, 0.085, -0.085, 0.085],
-    [0.30, 0.09, -0.095, 0.10],
-    [0.12, 0.09, -0.10, 0.112],
-    [-0.12, 0.088, -0.10, 0.118],
-    [-0.30, 0.074, -0.085, 0.095],
-    [-0.48, 0.055, -0.06, 0.07],
-    [-0.64, 0.032, -0.03, 0.05],
-    [-0.76, 0.012, -0.008, 0.04],
+    [0.30, 0.055, -0.088, 0.086],
+    [0.28, 0.062, -0.091, 0.086],
+    [0.24, 0.07, -0.095, 0.086],
+    [0.14, 0.071, -0.103, 0.086],
+    [0.0, 0.072, -0.106, 0.087],
+    [-0.18, 0.07, -0.103, 0.092],
+    [-0.24, 0.064, -0.1, 0.094],
+    [-0.30, 0.055, -0.095, 0.1],
+    [-0.34, 0.051, -0.09, 0.098],
+    [-0.40, 0.047, -0.084, 0.082],
+    [-0.48, 0.039, -0.074, 0.062],
+    [-0.56, 0.032, -0.065, 0.05],
+    [-0.64, 0.024, -0.058, 0.04],
+    [-0.72, 0.016, -0.056, 0.03],
+    [-0.81, 0.008, -0.058, 0.02],
   ];
   const nP = 32;
   const rings = st.map(([x, hw, yb, yt]) => {
@@ -134,7 +186,7 @@ function fuselage() {
       const th = (j / nP) * Math.PI * 2;
       const cs = Math.cos(th);
       const sn = Math.sin(th);
-      const nExp = sn > 0 ? 2.2 : 4; // round top decking, boxy bottom
+      const nExp = sn > 0 ? 3 : 5; // gently rounded decking, flat sides and bottom
       const z = hw * Math.sign(cs) * Math.abs(cs) ** (2 / nExp);
       const y = yc + b * Math.sign(sn) * Math.abs(sn) ** (2 / nExp);
       ring.push(new Vector3(x, y, z));
@@ -143,8 +195,8 @@ function fuselage() {
   });
   const geo = loft(rings, {
     color: (p) => {
-      if (p.x > 0.18) return GREY; // engine cowling panels
-      return p.y < -0.06 ? LINEN : PC10;
+      if (p.x > 0.0) return COWL; // engine cowling panels
+      return PC10;
     },
   });
   return new Mesh(geo, fabric);
@@ -229,30 +281,30 @@ export function createSE5aModel(G, scale) {
   root.add(fus);
 
   // Radiator front with shutters
-  const rad = new Mesh(new PlaneGeometry(0.13, 0.13), std('#2a2a28', { roughness: 0.5, metalness: 0.4 }));
-  rad.position.set(0.406, -0.003, 0);
+  const rad = new Mesh(new PlaneGeometry(0.1, 0.16), std('#2a2a28', { roughness: 0.5, metalness: 0.4 }));
+  rad.position.set(0.301, -0.001, 0);
   rad.rotation.y = Math.PI / 2;
   root.add(rad);
   for (let i = 0; i < 7; i++) {
-    const s = new Mesh(new BoxGeometry(0.004, 0.006, 0.125), metal);
-    s.position.set(0.408, -0.06 + i * 0.019, 0);
+    const s = new Mesh(new BoxGeometry(0.004, 0.006, 0.095), std(COWL));
+    s.position.set(0.303, -0.066 + i * 0.022, 0);
     root.add(s);
   }
 
   // Cockpit opening and coaming
   const cockpit = new Mesh(new CylinderGeometry(1, 1, 0.01, 24), dark);
   cockpit.scale.set(0.11, 1, 0.06);
-  cockpit.position.set(-0.19, 0.114, 0);
+  cockpit.position.set(-0.265, 0.092, 0);
   root.add(cockpit);
   const coaming = new Mesh(new TorusGeometry(1, 0.05, 6, 24), std('#3b2416', { roughness: 0.7 }));
   coaming.rotation.x = Math.PI / 2;
   coaming.scale.set(0.11, 0.065, 0.1);
-  coaming.position.set(-0.19, 0.12, 0);
+  coaming.position.set(-0.265, 0.097, 0);
   root.add(coaming);
 
   // Windscreen
   const ws = new Mesh(new PlaneGeometry(0.05, 0.03), new MeshStandardMaterial({ color: 0xcfe6ee, transparent: true, opacity: 0.12, roughness: 0.05, side: DoubleSide, depthWrite: false }));
-  ws.position.set(-0.07, 0.133, 0);
+  ws.position.set(-0.2, 0.11, 0);
   ws.rotation.set(0, Math.PI / 2, 0);
   ws.rotateX(-25 * deg);
   root.add(ws);
@@ -260,23 +312,23 @@ export function createSE5aModel(G, scale) {
   // Pilot head
   const pilot = new Group();
   const head = new Mesh(new SphereGeometry(0.033, 16, 12), std('#4a2e1a', { roughness: 0.6 }));
-  head.position.set(-0.2, 0.15, 0);
+  head.position.set(-0.265, 0.13, 0);
   head.castShadow = true;
   pilot.add(head);
   const goggles = new Mesh(new TorusGeometry(0.034, 0.005, 6, 20, Math.PI), std('#222'));
-  goggles.position.set(-0.2, 0.155, 0);
+  goggles.position.set(-0.265, 0.135, 0);
   goggles.rotation.set(Math.PI / 2, 0, Math.PI / 2);
   pilot.add(goggles);
   const shoulders = new Mesh(new SphereGeometry(0.05, 12, 8), std('#4b3a26'));
   shoulders.scale.set(0.7, 0.5, 1);
-  shoulders.position.set(-0.21, 0.11, 0);
+  shoulders.position.set(-0.275, 0.092, 0);
   pilot.add(shoulders);
   root.add(pilot);
 
   // Exhaust pipes along both sides
   for (const s of [-1, 1]) {
-    const a = new Vector3(0.3, 0.04, s * 0.094);
-    const b = new Vector3(-0.15, 0.03, s * 0.094);
+    const a = new Vector3(0.26, 0.0, s * 0.08);
+    const b = new Vector3(-0.2, -0.01, s * 0.08);
     const pipe = cylinderBetween(a, b, 0.009, std('#5d5750', { metalness: 0.4, roughness: 0.6 }));
     pipe.castShadow = true;
     root.add(pipe);
@@ -284,9 +336,9 @@ export function createSE5aModel(G, scale) {
 
   // Vickers gun on the cowl (left), Lewis gun on the top wing.
   const vickers = new Mesh(new BoxGeometry(0.16, 0.022, 0.022), dark);
-  vickers.position.set(0.12, 0.118, -0.035);
+  vickers.position.set(0.1, 0.098, -0.035);
   root.add(vickers);
-  const vbarrel = cylinderBetween(new Vector3(0.2, 0.118, -0.035), new Vector3(0.33, 0.112, -0.035), 0.007, dark);
+  const vbarrel = cylinderBetween(new Vector3(0.18, 0.098, -0.035), new Vector3(0.3, 0.096, -0.035), 0.007, dark);
   root.add(vbarrel);
   const lewis = cylinderBetween(new Vector3(-0.05, G.upperY + 0.03, 0), new Vector3(0.17, G.upperY + 0.03, 0), 0.008, dark);
   root.add(lewis);
@@ -320,8 +372,7 @@ export function createSE5aModel(G, scale) {
     pivot.userData.axis = new Vector3().subVectors(hingeB, hingeA).normalize();
     right.add(pivot);
     right.children.forEach((m) => (m.castShadow = true));
-    const rz = half * 0.72;
-    right.add(wingRoundel(w, 0.42, rz, 0.105, roundelTop));
+    right.add(wingRoundel(w, 0.45, half * 0.6, 0.12, roundelTop));
     return { right, pivot };
   }
 
@@ -364,7 +415,8 @@ export function createSE5aModel(G, scale) {
   const wireSides = { 1: [], [-1]: [] };
   for (const s of [-1, 1]) {
     const wirePts = wireSides[s];
-    for (const zf of [0.42, 0.78]) {
+    // One bay: a pair of interplane struts per side at about 3/4 span.
+    for (const zf of [STRUT_Z]) {
       const z = half * zf;
       const fl = wingPoint(lower, 0.12, z, 0.06);
       const fu = wingPoint(upper, 0.12, z, -0.02);
@@ -379,23 +431,21 @@ export function createSE5aModel(G, scale) {
         root.add(m);
       }
     }
-    // Flying wires (lower root -> upper outer strut) and landing wires.
-    const lr = wingPoint(lower, 0.3, G.lowerRootZ + 0.01, 0.02);
-    const uo = wingPoint(upper, 0.3, half * 0.78, -0.01);
-    const um = wingPoint(upper, 0.3, half * 0.42, -0.01);
-    const lm = wingPoint(lower, 0.3, half * 0.42, 0.02);
-    const ur = wingPoint(upper, 0.3, 0.1, -0.01);
-    const lo = wingPoint(lower, 0.3, half * 0.78, 0.02);
-    // Push mirrored copies: the end points are shared between wires, so they
-    // must not be flipped in place (that put the left wing's wires on the right).
-    for (const [a, b] of [[lr, um], [lm, uo], [ur, lm], [um, lo]]) {
-      wirePts.push(a.clone().setZ(a.z * s), b.clone().setZ(b.z * s));
+    // Flying wires (lower root -> top of the strut) and landing wires (cabane
+    // -> foot of the strut), crossing in the bay, front and rear.
+    for (const f of [0.15, 0.65]) {
+      const lr = wingPoint(lower, f, G.lowerRootZ + 0.01, 0.02);
+      const uo = wingPoint(upper, f, half * STRUT_Z, -0.01);
+      const ur = wingPoint(upper, f, 0.1, -0.01);
+      const lo = wingPoint(lower, f, half * STRUT_Z, 0.02);
+      // Mirrored copies: never flip shared end points in place.
+      for (const [a, b] of [[lr, uo], [ur, lo]]) wirePts.push(a.clone().setZ(a.z * s), b.clone().setZ(b.z * s));
     }
     // Cabane struts
     for (const xf of [0.15, 0.7]) {
       const top = wingPoint(upper, xf, 0.11, -0.02);
       top.z *= s;
-      const bot = new Vector3(top.x - 0.01, 0.09, s * 0.07);
+      const bot = new Vector3(top.x - 0.01, 0.086, s * 0.06);
       root.add(strut(bot, top, strutMat, 0.007, 0.004));
     }
   }
@@ -410,7 +460,7 @@ export function createSE5aModel(G, scale) {
   for (const s of [-1, 1]) {
     const axle = new Vector3(W.x, W.y, s * (W.z - 0.025));
     const wheelPart = s > 0 ? 'wheelR' : 'wheelL';
-    for (const from of [new Vector3(0.24, -0.09, s * 0.07), new Vector3(0.05, -0.095, s * 0.07)]) {
+    for (const from of [new Vector3(0.14, -0.1, s * 0.065), new Vector3(0.0, -0.104, s * 0.065)]) {
       const leg = strut(from, axle, strutMat, 0.008, 0.004);
       leg.userData.part = wheelPart;
       root.add(leg);
@@ -420,7 +470,7 @@ export function createSE5aModel(G, scale) {
     tyre.castShadow = true;
     tyre.userData.part = wheelPart;
     root.add(tyre);
-    const hub = new Mesh(new CylinderGeometry(W.radius * 0.8, W.radius * 0.8, 0.02, 20), std(LINEN));
+    const hub = new Mesh(new CylinderGeometry(W.radius * 0.8, W.radius * 0.8, 0.02, 20), std(PC10)); // green wheel covers
     hub.rotation.x = Math.PI / 2;
     hub.position.copy(tyre.position);
     hub.userData.part = wheelPart;
@@ -432,8 +482,8 @@ export function createSE5aModel(G, scale) {
   root.add(skidStrut);
 
   // --- Tail -----------------------------------------------------------------
-  const T = G.tail;
-  const tailW = { leX: T.leX, y: T.y, chord: T.chord, span: T.span, dihedral: 0, incidence: T.incidence };
+  const T = G.tailVisual || G.tail;
+  const tailW = { leX: T.leX, y: T.y, chord: T.chord, span: T.span, dihedral: 0, incidence: T.incidence, tipFrom: 0.7 }; // well-rounded tips
   const elevHinge = 0.58;
   const stabR = wingLoft(tailW, 0.0, T.span / 2, 0, elevHinge, 8, PC10, LINEN);
   for (const g of [stabR, mirrorZ(stabR)]) {
@@ -451,47 +501,60 @@ export function createSE5aModel(G, scale) {
   elevPivot.userData.part = 'tail';
   root.add(elevPivot);
 
-  // Fin (small) and large striped rudder
-  const F = G.fin;
-  const finRings = [];
-  const rudderHingeX = F.leX - F.chord * 0.42;
-  for (let i = 0; i <= 4; i++) {
-    const h = F.baseY + (F.height * 0.75 * i) / 4;
-    const lead = F.leX - (i / 4) * 0.06;
-    const c = Math.max(0.01, lead - rudderHingeX);
-    finRings.push(airfoilRing(0, 1, 8, 0.1, 0).map(([f, y]) => new Vector3(lead - f * c, h, y * c)));
-  }
-  const fin = new Mesh(loft(finRings, { color: () => PC10 }), fabric);
-  fin.castShadow = true;
-  fin.userData.part = 'tail';
-  root.add(fin);
-
+  // Fin and rudder (side view of the E-flite model): a large fin with a long,
+  // straight swept leading edge and a flat, rounded top; a narrow striped
+  // rudder with a near-vertical trailing edge, running on below the
+  // fuselage. Flat plates, outlines in the reference layout's units.
+  const rudderHingeX = -0.83;
+  const finPts = [[-0.64, 0.02], [-0.66, 0.033], [-0.783, 0.163], [-0.795, 0.171], [-0.81, 0.173], [rudderHingeX + 0.002, 0.173], [rudderHingeX + 0.002, -0.05], [-0.7, -0.03]];
+  const finMesh = new Mesh(outlinePlate(finPts, 0.01), std(PC10));
+  finMesh.castShadow = true;
+  finMesh.userData.part = 'tail';
+  root.add(finMesh);
   const rudderPivot = new Group();
   rudderPivot.position.set(rudderHingeX, 0, 0);
-  const rRings = [];
-  const rBottom = -0.07;
-  const rTop = F.baseY + F.height;
-  for (let i = 0; i <= 10; i++) {
-    const s = i / 10;
-    const y = rBottom + (rTop - rBottom) * s;
-    // Rounded rudder outline
-    const c = 0.17 * Math.sqrt(Math.max(0.05, 1 - ((s - 0.45) / 0.58) ** 2));
-    rRings.push(airfoilRing(0, 1, 8, 0.08, 0).map(([f, yy]) => new Vector3(-f * c, y, yy * 0.17)));
-  }
-  const rGeo = loft(rRings);
-  // UVs from chord position for stripes (blue at hinge, red at trailing edge).
+  // Rounded corners, straight trailing edge, running on below the fuselage.
+  const rudPts = [[0, 0.173], [-0.05, 0.173], [-0.07, 0.165], [-0.084, 0.152], [-0.09, 0.135], [-0.09, -0.055], [-0.082, -0.08], [-0.065, -0.108], [-0.05, -0.12], [-0.03, -0.116], [0, -0.09]];
+  const rGeo = outlinePlate(rudPts, 0.01);
+  // Stripes by chord position: blue at the hinge, white, red at the trailing edge.
   const rp = rGeo.attributes.position;
-  const uv = [];
-  for (let i = 0; i < rp.count; i++) uv.push(Math.min(0.999, -rp.getX(i) / 0.17), 0.5);
-  rGeo.setAttribute('uv', new Float32BufferAttribute(uv, 2));
+  const uv = rGeo.attributes.uv;
+  for (let i = 0; i < rp.count; i++) {
+    uv.setXY(i, Math.min(0.999, Math.max(0, -rp.getX(i) / 0.09)), 0.5);
+  }
   const rudder = new Mesh(rGeo, new MeshStandardMaterial({ map: stripeTexture(), roughness: 0.85 }));
   rudder.castShadow = true;
   rudderPivot.add(rudder);
   rudderPivot.userData.part = 'tail';
   root.add(rudderPivot);
+  // Serial number on the fin.
+  for (const s of [-1, 1]) {
+    const serial = textDecal('B 4863', 0.085, 0.022);
+    serial.position.set(-0.765, 0.07, s * 0.0055);
+    if (s < 0) serial.rotation.y = Math.PI;
+    serial.userData.part = 'tail';
+    root.add(serial);
+  }
 
   // Fuselage roundels
-  for (const s of [-1, 1]) root.add(sideRoundel(-0.42, 0.005, s * 0.064, 0.048, s));
+  // Fuselage roundels just behind the cockpit, then the white code letter.
+  for (const s of [-1, 1]) {
+    root.add(sideRoundel(-0.42, -0.004, s * 0.05, 0.04, s));
+    const g = letterDecal('G', 0.09);
+    g.position.set(-0.545, -0.005, s * 0.038);
+    g.rotation.y = s > 0 ? -5 * deg : Math.PI + 5 * deg;
+    root.add(g);
+  }
+  // ...and on top of the right-hand upper wing, inboard of the roundel.
+  {
+    const g = letterDecal('G', 0.2);
+    g.position.copy(wingPoint(upper, 0.5, half * 0.24, naca(0.5, WING_T, WING_M).upper + 0.01));
+    // Lie flat, upright when seen from above with the nose up the page:
+    // letter right -> +z (outboard), letter up -> +x (forward), face -> +y.
+    g.quaternion.setFromRotationMatrix(new Matrix4().makeBasis(new Vector3(0, 0, 1), new Vector3(1, 0, 0), new Vector3(0, 1, 0)));
+    g.userData.part = 'wingR';
+    root.add(g);
+  }
 
   // --- Propeller ------------------------------------------------------------
   const P = G.prop;
