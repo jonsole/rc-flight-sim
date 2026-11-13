@@ -12,9 +12,19 @@ import { loft, mirrorZ } from './geom.js';
 
 const foam = (color) => new MeshStandardMaterial({ color, roughness: 0.92, metalness: 0, flatShading: true });
 
+/** Re-aim an existing cylinderBetween() mesh at new end points. */
+function aimCylinder(m, a, b) {
+  const dir = new Vector3().subVectors(b, a);
+  const len = dir.length();
+  m.position.copy(a).addScaledVector(dir, 0.5);
+  m.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), dir.normalize());
+  m.scale.set(1, len / m.userData.len, 1);
+}
+
 function cylinderBetween(a, b, radius, material, segments = 6) {
   const dir = new Vector3().subVectors(b, a);
   const m = new Mesh(new CylinderGeometry(radius, radius, dir.length(), segments), material);
+  m.userData.len = dir.length();
   m.position.copy(a).addScaledVector(dir, 0.5);
   m.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), dir.normalize());
   return m;
@@ -361,17 +371,27 @@ export function createBuschtrottelModel(L) {
   // --- Landing gear: wire legs, bush wheels, rudder-linked tail wheel -----------
   const W = L.wheel;
   const fusBottomAtGear = high ? -0.06 : -0.065;
+  const tyreMat = new MeshStandardMaterial({ color: '#2b2b2b', roughness: 0.95 });
+  const mainGear = [];
   for (const s of [-1, 1]) {
-    const axle = new Vector3(W.x, W.y, s * (W.z - 0.012));
-    root.add(cylinderBetween(new Vector3(0.1, fusBottomAtGear, s * 0.03), axle, 0.0016, metal));
-    root.add(cylinderBetween(new Vector3(0.03, fusBottomAtGear, s * 0.03), axle, 0.0016, metal));
-    const tyre = new Mesh(new TorusGeometry(W.radius - 0.011, 0.011, 8, 20), new MeshStandardMaterial({ color: '#2a2a2a', roughness: 0.95 }));
-    tyre.position.set(W.x, W.y, s * W.z);
-    root.add(tyre);
-    const hub = new Mesh(new CylinderGeometry(W.radius - 0.012, W.radius - 0.012, 0.012, 16), metal);
+    // Wire legs (front and rear) from the fuselage to the axle. They are
+    // re-aimed every frame as the springy wire flexes.
+    const front = new Vector3(0.1, fusBottomAtGear, s * 0.03);
+    const rear = new Vector3(0.03, fusBottomAtGear, s * 0.03);
+    const legF = cylinderBetween(front, new Vector3(W.x, W.y, s * W.z), 0.0016, metal);
+    const legR = cylinderBetween(rear, new Vector3(W.x, W.y, s * W.z), 0.0016, metal);
+    root.add(legF, legR);
+    // 100 mm foam wheel: fat tyre, small hub.
+    const wheel = new Group();
+    wheel.position.set(W.x, W.y, s * W.z);
+    const tube = W.radius * 0.36;
+    const tyre = new Mesh(new TorusGeometry(W.radius - tube, tube, 10, 28), tyreMat);
+    const hub = new Mesh(new CylinderGeometry(W.radius * 0.45, W.radius * 0.45, tube * 1.6, 16), metal);
     hub.rotation.x = Math.PI / 2;
-    hub.position.copy(tyre.position);
-    root.add(hub);
+    const spoke = new Mesh(new CylinderGeometry(0.003, 0.003, (W.radius - tube) * 2, 6), tyreMat);
+    wheel.add(tyre, hub, spoke);
+    root.add(wheel);
+    mainGear.push({ side: s, front, rear, legF, legR, wheel, axle: new Vector3() });
   }
   const TW = L.tailWheel;
   const tailWheel = new Group();
@@ -438,6 +458,18 @@ export function createBuschtrottelModel(L) {
       elev.rotation.z = stab ? stab.deflection : 0;
       const fin = aircraft.surfaces.find((s) => s.name === 'fin');
       rudder.rotation.y = fin ? -fin.deflection : 0;
+      // Springy gear: lift each wheel by its spring compression, re-aim the
+      // wire legs, and roll the wheels along the ground.
+      const fwdSpeed = aircraft.velocity.clone().applyQuaternion(aircraft.orientation.clone().invert()).x;
+      for (const g of mainGear) {
+        const c = aircraft.contacts.find((k) => k.name === (g.side > 0 ? 'wheel-R' : 'wheel-L'));
+        const lift = Math.min(c?.depth ?? 0, 0.05);
+        g.axle.set(W.x, W.y + lift, g.side * W.z);
+        g.wheel.position.copy(g.axle);
+        aimCylinder(g.legF, g.front, g.axle);
+        aimCylinder(g.legR, g.rear, g.axle);
+        if (c?.onGround) g.wheel.rotation.z -= (fwdSpeed * dt) / W.radius;
+      }
       // Tail wheel follows the rudder servo.
       const tailC = aircraft.contacts.find((c) => c.steer);
       tailWheel.rotation.y = tailC ? aircraft.servo.yaw * tailC.steer : 0;

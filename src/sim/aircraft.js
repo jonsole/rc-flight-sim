@@ -354,6 +354,7 @@ export class Aircraft {
       const h = ground.heightAt(px, pz);
       const depth = h - py;
       c.onGround = depth > 0;
+      c.depth = Math.max(0, depth); // spring compression, for the 3D model
       if (!c.onGround) {
         c.load = 0;
         continue;
@@ -397,7 +398,7 @@ export class Aircraft {
         _lift.crossVectors(_n, _u); // lateral
         const vRoll = _vt.dot(_u);
         const vLat = _vt.dot(_lift);
-        const muRoll = 0.035;
+        const muRoll = c.muRoll ?? 0.035;
         const muLat = 0.7;
         const fRoll = -muRoll * fn * Math.tanh(vRoll / 0.2);
         const fLat = -muLat * fn * Math.tanh(vLat / 0.3);

@@ -50,7 +50,7 @@ function layout(style) {
     tail: { leX: -0.36, chord: 0.13, fixed: 0.07, span: 0.34, y: 0.035, incidence: style.tailIncidence },
     fin: { leX: -0.37, baseY: 0.04, height: 0.13, chord: 0.15, hingeX: -0.44, bottomY: 0.04 },
     prop: { x: 0.235, y: 0.0, radius: 0.1016 }, // 8" prop
-    wheel: { x: 0.12, y: -0.145, z: 0.09, radius: 0.035 },
+    wheel: { x: 0.12, y: -0.145, z: 0.09, radius: 0.05 }, // 100 mm foam wheels
     tailWheel: { x: -0.48, y: -0.033, radius: 0.012 },
   };
 }
@@ -198,8 +198,11 @@ export function buildBuschtrottel(style) {
       levelGain: { roll: 1.5, pitch: 1.7 },
     },
     contacts: [
-      { name: 'wheel-L', pos: [W.x, W.y - W.radius, -W.z], type: 'wheel', k: 900, c: 8, crashSpeed: 5 },
-      { name: 'wheel-R', pos: [W.x, W.y - W.radius, W.z], type: 'wheel', k: 900, c: 8, crashSpeed: 5 },
+      // Springy wire legs: soft (~7 mm static sag), lightly damped, so the
+      // model settles on the gear and bounces a little on a firm landing.
+      // Big foam wheels roll easily over grass.
+      { name: 'wheel-L', pos: [W.x, W.y - W.radius, -W.z], type: 'wheel', k: 250, c: 3.5, muRoll: 0.025, crashSpeed: 5 },
+      { name: 'wheel-R', pos: [W.x, W.y - W.radius, W.z], type: 'wheel', k: 250, c: 3.5, muRoll: 0.025, crashSpeed: 5 },
       { name: 'tail-wheel', pos: [TW.x, TW.y - TW.radius, 0], type: 'wheel', k: 500, c: 5, crashSpeed: 4, steer: 25 * deg },
       { name: 'prop-low', pos: [L.prop.x + 0.005, L.prop.y - L.prop.radius, 0], type: 'prop', k: 1000, c: 8, crashSpeed: 0 },
       hard('nose', [0.2, -0.04, 0], 3),

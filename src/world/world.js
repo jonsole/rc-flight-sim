@@ -159,14 +159,15 @@ export class World {
     const g = new PlaneGeometry(RUNWAY.length, RUNWAY.width);
     g.rotateX(-Math.PI / 2);
     const rw = new Mesh(g, new MeshStandardMaterial({ map: runwayTexture(), roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 }));
-    rw.position.set(RUNWAY.x, 0.02, RUNWAY.z);
+    // Just above the physics ground (y = 0); polygonOffset prevents z-fighting.
+    rw.position.set(RUNWAY.x, 0.002, RUNWAY.z);
     rw.receiveShadow = true;
     this.scene.add(rw);
 
     // Pilot box (gravel pad) and safety fence line
     const pad = new Mesh(new PlaneGeometry(6, 4), new MeshStandardMaterial({ color: '#a39a86', roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 }));
     pad.rotation.x = -Math.PI / 2;
-    pad.position.set(0, 0.02, 0.5);
+    pad.position.set(0, 0.002, 0.5);
     pad.receiveShadow = true;
     this.scene.add(pad);
 
