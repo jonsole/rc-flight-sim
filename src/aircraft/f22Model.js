@@ -27,8 +27,8 @@ function flatSlab(pts) {
 }
 
 /** Rounded-box ring for the fuselage loft: half-width hw, from yb up to yt. */
-function boxRing(x, hw, yb, yt) {
-  const r = Math.min(0.006, hw * 0.6, (yt - yb) * 0.4);
+function boxRing(x, hw, yb, yt, rMax = 0.006) {
+  const r = Math.min(rMax, hw * 0.6, (yt - yb) * 0.4);
   const pts = [];
   const arc = (cz, cy, a0) => {
     for (let i = 0; i <= 2; i++) {
@@ -81,54 +81,63 @@ export function createF22Model(G) {
     root.add(fin);
   }
 
-  // --- Fuselage box with a pointed nose, sitting on the wing ------------------
-  // [x, half-width, bottom, top]; behind the wing's front edge the box sits on
-  // the wing.
-  const fy = wingTop;
-  const stations = [
-    [G.nose, 0.002, -0.003, 0.0005],
-    [G.nose - 0.03, 0.01, -0.009, 0.008],
-    [G.nose - 0.08, 0.018, -0.013, 0.017],
-    [G.nose - 0.13, 0.021, -0.014, 0.023],
-    [0.17, 0.021, fy, 0.028],
-    [0.11, 0.021, fy, 0.033],
-    [0.03, 0.021, fy, 0.038],
-    [G.prop.x + 0.03, 0.02, fy, G.prop.y + 0.013], // power pod: motor mid-box
-  ];
-  const box = new Mesh(loft(stations.map((s) => boxRing(...s))), foam(C.box));
+  // --- Fuselage: a 40 mm box, deep nose through the wing, low box behind -------
+  const F = G.fuselage;
+  const floor = wingTop - F.wingStep;
+  // Folded foam: full width right to the sharp tip, crisp corners.
+  const box = new Mesh(loft(F.stations.map(([x, b, t], i) => boxRing(x, F.halfWidth, floor + b, floor + t + (i === 0 ? 0.0008 : 0), 0.0015))), foam(C.box));
   root.add(box);
-
-  // Canopy: a bubble on the front of the box.
-  const canopyMat = new MeshStandardMaterial({ color: C.canopy, roughness: 0.15, metalness: 0.5 });
-  const canopyRings = [];
-  const c0 = G.nose - 0.07;
-  const c1 = 0.06;
-  for (let i = 0; i <= 8; i++) {
-    const t = i / 8;
-    const x = c0 + (c1 - c0) * t;
-    const k = Math.sin(Math.PI * Math.min(1, t * 1.6)) ** 0.6 * (t > 0.6 ? Math.cos(((t - 0.6) / 0.4) * Math.PI / 2) ** 0.5 : 1);
-    const base = 0.018 + 0.01 * Math.min(1, t * 1.5);
-    const ring = [];
-    for (let j = 0; j <= 8; j++) {
-      const a = (j / 8) * Math.PI;
-      ring.push(new Vector3(x, base + Math.max(0.0005, 0.017 * k) * Math.sin(a), 0.0135 * Math.max(0.1, k) * Math.cos(a)));
+  const topAt = (x) => {
+    const st = F.stations;
+    for (let i = 0; i < st.length - 1; i++) {
+      if (x <= st[i][0] && x >= st[i + 1][0]) return floor + st[i][2] + ((st[i + 1][2] - st[i][2]) * (st[i][0] - x)) / (st[i][0] - st[i + 1][0]);
     }
-    canopyRings.push(ring);
-  }
+    return floor + st[st.length - 1][2];
+  };
+
+  // Canopy (parts 03 and 04): a full-width hump on top of the nose box.
+  const canopyMat = new MeshStandardMaterial({ color: C.canopy, roughness: 0.15, metalness: 0.5, flatShading: true });
+  const canopyRings = G.canopy.profile.map(([d, h]) => {
+    const x = G.canopy.front - d;
+    const base = topAt(x) - 0.0005;
+    return boxRing(x, F.halfWidth + 0.0005, base, base + Math.max(h, 0.0003), 0.004);
+  });
   const canopy = new Mesh(loft(canopyRings), canopyMat);
   canopy.userData.part = 'canopy';
   root.add(canopy);
 
-  // Belly pan under the wing (the "intakes"): a shallow tray.
-  const B = G.belly;
-  const bellyRings = [B.front, (B.front + B.rear) / 2, B.rear].map((x, i) => {
-    const hwTop = i === 0 ? 0.04 : 0.055;
-    const hwBot = i === 0 ? 0.03 : 0.04;
-    const yTop = G.wingY - T / 2;
-    return [new Vector3(x, yTop, hwTop), new Vector3(x, yTop, -hwTop), new Vector3(x, B.y, -hwBot), new Vector3(x, B.y, hwBot)];
-  });
-  const belly = new Mesh(loft(bellyRings), darkMat);
-  root.add(belly);
+  // --- Underneath: side plates down to the belly pan (the intakes) -----------
+  const U = G.underbody;
+  const under = G.wingY - T / 2; // underside of the wing
+  const bottom = under - U.depth;
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < U.plate.length - 1; i++) {
+      const [ax, az] = U.plate[i];
+      const [bx, bz] = U.plate[i + 1];
+      const len = Math.hypot(bx - ax, bz - az);
+      // Plate segment in its own (along, up) plane; the front end is cut back
+      // at the bottom.
+      const cut = i === 0 ? 0.016 : 0;
+      const seg = new Mesh(slab([[0, 0], [-len, 0], [-len, -U.depth], [-cut, -U.depth]]), darkMat);
+      seg.position.set(ax, under, side * az);
+      seg.rotation.y = Math.atan2(-(side * (bz - az)), bx - ax) + Math.PI;
+      root.add(seg);
+    }
+  }
+  // Belly pan: between the plates, from their front ends back 159 mm.
+  const plateZ = (x) => {
+    for (let i = 0; i < U.plate.length - 1; i++) {
+      const [ax, az] = U.plate[i];
+      const [bx, bz] = U.plate[i + 1];
+      if (x <= ax && x >= bx) return az + ((bz - az) * (ax - x)) / (ax - bx);
+    }
+    return U.plate[U.plate.length - 1][1];
+  };
+  const panXs = [U.plate[0][0] - 0.016, U.plate[1][0], U.panEnd].filter((x, i, a) => i === 0 || x < a[0]).sort((a, b) => b - a);
+  const panRight = panXs.map((x) => [x, plateZ(x) - T / 2]);
+  const pan = new Mesh(flatSlab([...panRight, ...panRight.slice().reverse().map(([x, z]) => [x, -z])]), darkMat);
+  pan.position.y = bottom + T / 2;
+  root.add(pan);
 
   // --- Power pod: motor at the back of the box, pusher prop in the slot --------
   const P = G.prop;

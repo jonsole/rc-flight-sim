@@ -27,8 +27,8 @@ At the stall the elevons sit in the wing's dead air and lose most of their
 bite, and it falls off on the left wing. Thrust and inertia are estimates.
 There is no landing gear: with *Start position: On the runway* the pilot holds
 it at the flight line (your pilot position) and throws it once the throttle
-passes 60%. Land it on its belly with the motor off, since the prop hangs
-below the wing.
+passes 60%. Land it on its belly (the belly pan and side plates under the
+wing) with the motor off, since the prop hangs below the wing.
 
 It runs in any modern browser (Chrome or Edge recommended on Windows). There is
 nothing to install for flying: the build is a static website.
