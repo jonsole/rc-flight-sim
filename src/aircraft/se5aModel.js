@@ -9,7 +9,7 @@ import {
   Group, Mesh, MeshStandardMaterial, Vector3, Color, CylinderGeometry, BoxGeometry,
   SphereGeometry, TorusGeometry, CircleGeometry, DoubleSide, LineSegments,
   BufferGeometry, Float32BufferAttribute, LineBasicMaterial, CanvasTexture, SRGBColorSpace,
-  Quaternion, PlaneGeometry, Matrix4, RingGeometry,
+  Quaternion, PlaneGeometry, Matrix4, RingGeometry, Shape, ExtrudeGeometry, Vector2,
 } from 'three';
 import { loft, mirrorZ, airfoilRing, naca } from './geom.js';
 
@@ -26,6 +26,7 @@ const WHITE = new Color('#ece8dc');
 const deg = Math.PI / 180;
 const WING_T = 0.08;   // thickness/chord
 const WING_M = 0.04;   // camber
+const STRUT_Z = 0.72;  // interplane struts, fraction of the half span
 
 function std(color, extra = {}) {
   return new MeshStandardMaterial({ color, roughness: 0.85, metalness: 0.0, ...extra });
@@ -45,9 +46,9 @@ function wingPoint(w, frac, z, yNorm) {
 }
 
 /** Chord scale for rounded tips (s = 0 root .. 1 tip). */
-function tipScale(s) {
-  if (s < 0.9) return 1;
-  const t = (s - 0.9) / 0.1;
+function tipScale(s, from = 0.9) {
+  if (s < from) return 1;
+  const t = (s - from) / (1 - from);
   return Math.max(0.3, Math.sqrt(1 - t * t * 0.92));
 }
 
@@ -58,7 +59,7 @@ function wingLoft(w, z0, z1, f0, f1, nSpan, topColor, bottomColor) {
   const rings = [];
   for (let i = 0; i <= nSpan; i++) {
     const z = z0 + ((z1 - z0) * i) / nSpan;
-    const sc = tipScale(z / half);
+    const sc = tipScale(z / half, w.tipFrom);
     // Rounded tip: scale the chord about the 35% point.
     const ring = airfoilRing(f0, f1, n, WING_T, WING_M).map(([f, y]) => {
       const fs = 0.35 + (f - 0.35) * sc;
@@ -114,6 +115,29 @@ function sideRoundel(x, y, z, radius, sign) {
   g.position.set(x, y, z);
   g.rotation.y = sign > 0 ? -2 * deg : 2 * deg;
   return g;
+}
+
+/** Flat plate from a side-view outline [[x, y]...], `t` thick, centred on z = 0. */
+function outlinePlate(pts, t) {
+  const g = new ExtrudeGeometry(new Shape(pts.map(([x, y]) => new Vector2(x, y))), { depth: t, bevelEnabled: false, curveSegments: 1 });
+  g.translate(0, 0, -t / 2);
+  return g;
+}
+
+/** White text on a transparent plane (faces +z), `w` wide and `h` tall. */
+function textDecal(text, w, h) {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = Math.round((512 * h) / w);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#ece8dc';
+  ctx.font = `bold ${Math.round(c.height * 0.85)}px Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 256, c.height * 0.55);
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  return new Mesh(new PlaneGeometry(w, h), new MeshStandardMaterial({ map: t, transparent: true, alphaTest: 0.3, roughness: 0.85, side: DoubleSide }));
 }
 
 /** White code letter on a transparent plane (faces +z), `h` tall. */
@@ -384,7 +408,8 @@ export function createSE5aModel(G, scale) {
   const wireSides = { 1: [], [-1]: [] };
   for (const s of [-1, 1]) {
     const wirePts = wireSides[s];
-    for (const zf of [0.42, 0.78]) {
+    // One bay: a pair of interplane struts per side at about 3/4 span.
+    for (const zf of [STRUT_Z]) {
       const z = half * zf;
       const fl = wingPoint(lower, 0.12, z, 0.06);
       const fu = wingPoint(upper, 0.12, z, -0.02);
@@ -399,17 +424,15 @@ export function createSE5aModel(G, scale) {
         root.add(m);
       }
     }
-    // Flying wires (lower root -> upper outer strut) and landing wires.
-    const lr = wingPoint(lower, 0.3, G.lowerRootZ + 0.01, 0.02);
-    const uo = wingPoint(upper, 0.3, half * 0.78, -0.01);
-    const um = wingPoint(upper, 0.3, half * 0.42, -0.01);
-    const lm = wingPoint(lower, 0.3, half * 0.42, 0.02);
-    const ur = wingPoint(upper, 0.3, 0.1, -0.01);
-    const lo = wingPoint(lower, 0.3, half * 0.78, 0.02);
-    // Push mirrored copies: the end points are shared between wires, so they
-    // must not be flipped in place (that put the left wing's wires on the right).
-    for (const [a, b] of [[lr, um], [lm, uo], [ur, lm], [um, lo]]) {
-      wirePts.push(a.clone().setZ(a.z * s), b.clone().setZ(b.z * s));
+    // Flying wires (lower root -> top of the strut) and landing wires (cabane
+    // -> foot of the strut), crossing in the bay, front and rear.
+    for (const f of [0.15, 0.65]) {
+      const lr = wingPoint(lower, f, G.lowerRootZ + 0.01, 0.02);
+      const uo = wingPoint(upper, f, half * STRUT_Z, -0.01);
+      const ur = wingPoint(upper, f, 0.1, -0.01);
+      const lo = wingPoint(lower, f, half * STRUT_Z, 0.02);
+      // Mirrored copies: never flip shared end points in place.
+      for (const [a, b] of [[lr, uo], [ur, lo]]) wirePts.push(a.clone().setZ(a.z * s), b.clone().setZ(b.z * s));
     }
     // Cabane struts
     for (const xf of [0.15, 0.7]) {
@@ -453,7 +476,7 @@ export function createSE5aModel(G, scale) {
 
   // --- Tail -----------------------------------------------------------------
   const T = G.tail;
-  const tailW = { leX: T.leX, y: T.y, chord: T.chord, span: T.span, dihedral: 0, incidence: T.incidence };
+  const tailW = { leX: T.leX, y: T.y, chord: T.chord, span: T.span, dihedral: 0, incidence: T.incidence, tipFrom: 0.7 }; // well-rounded tips
   const elevHinge = 0.58;
   const stabR = wingLoft(tailW, 0.0, T.span / 2, 0, elevHinge, 8, PC10, LINEN);
   for (const g of [stabR, mirrorZ(stabR)]) {
@@ -471,44 +494,37 @@ export function createSE5aModel(G, scale) {
   elevPivot.userData.part = 'tail';
   root.add(elevPivot);
 
-  // Fin (small) and large striped rudder
-  const F = G.fin;
-  const finRings = [];
-  const rudderHingeX = F.leX - F.chord * 0.42;
-  for (let i = 0; i <= 4; i++) {
-    const h = F.baseY + (F.height * 0.75 * i) / 4;
-    const lead = F.leX - (i / 4) * 0.06;
-    const c = Math.max(0.01, lead - rudderHingeX);
-    finRings.push(airfoilRing(0, 1, 8, 0.1, 0).map(([f, y]) => new Vector3(lead - f * c, h, y * c)));
-  }
-  const fin = new Mesh(loft(finRings, { color: () => PC10 }), fabric);
-  fin.castShadow = true;
-  fin.userData.part = 'tail';
-  root.add(fin);
-
+  // Fin and rudder (side view of the E-flite model): a large fin with a long,
+  // straight swept leading edge and a flat, rounded top; a narrow striped
+  // rudder with a near-vertical trailing edge, running on below the
+  // fuselage. Flat plates, outlines in the reference layout's units.
+  const rudderHingeX = -0.855;
+  const finPts = [[-0.56, 0.03], [-0.58, 0.045], [-0.775, 0.195], [-0.79, 0.21], [-0.81, 0.22], [rudderHingeX + 0.002, 0.222], [rudderHingeX + 0.002, -0.005], [-0.76, 0.02]];
+  const finMesh = new Mesh(outlinePlate(finPts, 0.01), std(PC10));
+  finMesh.castShadow = true;
+  finMesh.userData.part = 'tail';
+  root.add(finMesh);
   const rudderPivot = new Group();
   rudderPivot.position.set(rudderHingeX, 0, 0);
-  const rRings = [];
-  const rBottom = -0.07;
-  const rTop = F.baseY + F.height;
-  for (let i = 0; i <= 10; i++) {
-    const s = i / 10;
-    const y = rBottom + (rTop - rBottom) * s;
-    // Rounded rudder outline
-    const c = 0.17 * Math.sqrt(Math.max(0.05, 1 - ((s - 0.45) / 0.58) ** 2));
-    rRings.push(airfoilRing(0, 1, 8, 0.08, 0).map(([f, yy]) => new Vector3(-f * c, y, yy * 0.17)));
-  }
-  const rGeo = loft(rRings);
-  // UVs from chord position for stripes (blue at hinge, red at trailing edge).
+  const rudPts = [[0, 0.222], [-0.06, 0.222], [-0.08, 0.215], [-0.092, 0.2], [-0.097, 0.17], [-0.097, 0.0], [-0.075, -0.09], [-0.045, -0.135], [-0.02, -0.14], [0, -0.14]];
+  const rGeo = outlinePlate(rudPts, 0.01);
+  // Stripes by chord position: blue at the hinge, white, red at the trailing edge.
   const rp = rGeo.attributes.position;
-  const uv = [];
-  for (let i = 0; i < rp.count; i++) uv.push(Math.min(0.999, -rp.getX(i) / 0.17), 0.5);
-  rGeo.setAttribute('uv', new Float32BufferAttribute(uv, 2));
+  const uv = rGeo.attributes.uv;
+  for (let i = 0; i < rp.count; i++) uv.setXY(i, Math.min(0.999, Math.max(0, -rp.getX(i) / 0.097)), 0.5);
   const rudder = new Mesh(rGeo, new MeshStandardMaterial({ map: stripeTexture(), roughness: 0.85 }));
   rudder.castShadow = true;
   rudderPivot.add(rudder);
   rudderPivot.userData.part = 'tail';
   root.add(rudderPivot);
+  // Serial number on the fin.
+  for (const s of [-1, 1]) {
+    const serial = textDecal('B 4863', 0.11, 0.028);
+    serial.position.set(-0.735, 0.12, s * 0.0055);
+    if (s < 0) serial.rotation.y = Math.PI;
+    serial.userData.part = 'tail';
+    root.add(serial);
+  }
 
   // Fuselage roundels
   // Fuselage roundels just behind the cockpit, then the white code letter.
