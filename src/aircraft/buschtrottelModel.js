@@ -155,7 +155,8 @@ export function createBuschtrottelModel(L) {
     // Solid black canopy block: an angular trapezoid prism with sloped front
     // and back and chamfered sides, with the receiver aerial poking out.
     const H = 0.05;
-    const xs = [0.0, -0.06, -0.19, -0.25];
+    // Front foot, front of the flat top, start of the long rear slope, rear foot.
+    const xs = [0.0, -0.055, -0.13, -0.25];
     const hs = [0.002, H, H, 0.002];
     const corner = (i, side, top) => {
       const { hw, yt } = fusAt(xs[i]);
