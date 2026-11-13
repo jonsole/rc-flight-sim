@@ -86,8 +86,10 @@ export class Aircraft {
 
   /** Place the aircraft at rest on the ground in its three-point attitude. */
   resetOnGround(x, z, headingRad = 0) {
-    const wheel = this.contacts.find((c) => c.type === 'wheel');
-    const skid = this.contacts.find((c) => c.type === 'skid');
+    // Main wheels = front-most gear contact; tail = rear-most (skid or tail wheel).
+    const gear = this.contacts.filter((c) => c.type === 'wheel' || c.type === 'skid');
+    const wheel = gear.reduce((a, b) => (b.pos.x > a.pos.x ? b : a));
+    const skid = gear.reduce((a, b) => (b.pos.x < a.pos.x ? b : a));
     const pitch = Math.atan2(skid.pos.y - wheel.pos.y, wheel.pos.x - skid.pos.x);
     this.#resetCommon();
     const qYaw = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), headingRad);
@@ -163,9 +165,13 @@ export class Aircraft {
     _m.set(0, 0, 0);
 
     // Thrust force and reaction torque.
-    _f.x += thrust;
+    // Thrust line, with optional down- and right-thrust angles (radians).
+    const dn = def.motor.downThrust || 0;
+    const rt = def.motor.rightThrust || 0;
+    _tmp.set(Math.cos(dn) * Math.cos(rt), -Math.sin(dn), Math.cos(dn) * Math.sin(rt)).multiplyScalar(thrust);
+    _f.add(_tmp);
     _r.copy(this.motorPos);
-    _m.add(_tmp.set(thrust, 0, 0).cross(_r).negate()); // r × F
+    _m.add(_tmp.cross(_r).negate()); // r × F
     _m.x -= thrust * def.motor.torqueFactor;
 
     // --- Aerodynamic surfaces --------------------------------------------
@@ -339,8 +345,11 @@ export class Aircraft {
       _vt.addScaledVector(_n, -vn); // tangential velocity
       const vtLen = _vt.length();
       if (c.type === 'wheel') {
-        // Rolling direction = body x projected on ground.
-        _u.set(1, 0, 0).applyQuaternion(q);
+        // Rolling direction = body x projected on ground. A steerable wheel
+        // (tail wheel linked to the rudder) turns with the yaw servo: right
+        // rudder points it left, so the tail swings left and the nose right.
+        const steer = c.steer ? this.servo.yaw * c.steer : 0;
+        _u.set(Math.cos(steer), 0, -Math.sin(steer)).applyQuaternion(q);
         _u.addScaledVector(_n, -_u.dot(_n)).normalize();
         _lift.crossVectors(_n, _u); // lateral
         const vRoll = _vt.dot(_u);

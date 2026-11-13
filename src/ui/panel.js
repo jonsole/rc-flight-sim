@@ -182,6 +182,11 @@ export class Panel {
 
   tab_help() {
     return [
+      el('h3', {}, 'Flying the Buschtrottel'),
+      el('ul', {},
+        el('li', {}, 'A light, slow STOL foamie: it lifts off in a few metres at full power. Ease the throttle back once airborne.'),
+        el('li', {}, 'The tail wheel steers with the rudder. The high-wing versions roll strongly with rudder, so you can fly them on three channels.'),
+        el('li', {}, 'Power pitches the nose up a little; it is trimmed for hands-off cruise at about 40% throttle.')),
       el('h3', {}, 'Flying the S.E.5a'),
       el('ul', {},
         el('li', {}, 'Take off into wind (the windsock tail points downwind). Open the throttle smoothly and hold a little right rudder against the swing; let the tail come up, then ease back.'),

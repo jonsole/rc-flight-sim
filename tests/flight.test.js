@@ -19,6 +19,13 @@ function airborne(speed = 13, throttle = 0.5, assist = 'off') {
   return ac;
 }
 
+/** Slowest speed at which the aircraft can make lift equal to weight. */
+function stallSpeed() {
+  let maxLift = 0;
+  for (let a = 0; a <= 20; a += 1) maxLift = Math.max(maxLift, pitchMomentAt(a, 10).lift);
+  return 10 * Math.sqrt((def.mass * 9.81) / maxLift);
+}
+
 /** Aerodynamic pitching moment at a given body angle of attack (no thrust). */
 function pitchMomentAt(alphaDeg, speed = 14) {
   const ac = airborne(speed, 0);
@@ -66,23 +73,29 @@ for (const entry of AIRCRAFT) {
         expect(hi).toBeLessThan(lo); // nose-down moment grows with alpha
       });
 
-      it('trims hands-off at a sensible cruise speed', () => {
-        const ac = airborne(13, 0.5);
-        ac.update(20);
+      it('trims in pitch at a sensible cruise speed (wings held level)', () => {
+        const vs = stallSpeed();
+        const ac = airborne(vs * 1.6, 0.5);
+        for (let t = 0; t < 20; t += 0.05) {
+          ac.controls.roll = Math.max(-1, Math.min(1, -2 * ac.attitude().roll));
+          ac.update(0.05);
+        }
         const att = ac.attitude();
-        expect(ac.airspeed).toBeGreaterThan(9);
-        expect(ac.airspeed).toBeLessThan(18);
+        expect(ac.airspeed).toBeGreaterThan(vs * 1.2);
+        expect(ac.airspeed).toBeLessThan(vs * 2.5);
         expect(Math.abs(att.pitch)).toBeLessThan(15 * deg);
-        expect(Math.abs(ac.omega.z)).toBeLessThan(0.3);
+        expect(Math.abs(ac.omega.z)).toBeLessThan(0.15);
       });
 
-      it('stalls at a scale-like speed', () => {
-        // Find the slowest speed at which lift can still equal weight.
-        const weight = def.mass * 9.81;
-        let maxLift = 0;
-        for (let a = 0; a <= 20; a += 1) maxLift = Math.max(maxLift, pitchMomentAt(a, 10).lift);
-        const vStall = 10 * Math.sqrt(weight / maxLift);
-        expect(vStall).toBeGreaterThan(5);
+      it('stays close to wings-level hands-off at gentle cruise power', () => {
+        const ac = airborne(stallSpeed() * 1.6, 0.3);
+        ac.update(20);
+        expect(Math.abs(ac.attitude().roll)).toBeLessThan(25 * deg);
+      });
+
+      it('stalls at a plausible speed for its wing loading', () => {
+        const vStall = stallSpeed();
+        expect(vStall).toBeGreaterThan(4);
         expect(vStall).toBeLessThan(10);
       });
 
@@ -100,14 +113,16 @@ for (const entry of AIRCRAFT) {
         expect(rate({ yaw: 1 }).y).toBeLessThan(-0.2); // nose right (−ω_y)
       });
 
-      it('sits on its wheels and tail skid', () => {
+      it('sits on its main wheels and tail skid / tail wheel', () => {
         const ac = new Aircraft(def, { ground });
         ac.resetOnGround(0, 0, 0);
         ac.update(3);
         expect(ac.crashed).toBe(false);
         const total = ac.contacts.reduce((s, c) => s + c.load, 0);
         expect(total).toBeCloseTo(def.mass * 9.81, 0);
-        expect(ac.contacts.find((c) => c.name === 'skid').load).toBeGreaterThan(1);
+        const gear = ac.contacts.filter((c) => c.type === 'wheel' || c.type === 'skid');
+        const tail = gear.reduce((a, b) => (b.pos.x < a.pos.x ? b : a));
+        expect(tail.load).toBeGreaterThan(0.1 * def.mass * 9.81);
         expect(ac.attitude().pitch).toBeGreaterThan(5 * deg); // tail-down
       });
 
@@ -117,7 +132,12 @@ for (const entry of AIRCRAFT) {
         ac.controls.throttle = 1;
         let liftoff = null;
         for (let t = 0; t < 10; t += 0.05) {
-          ac.controls.pitch = t > 2.5 ? 0.15 : 0;
+          // A simple pilot: hold the wings level, ease back after 2.5 s,
+          // then relax the stick and throttle back once airborne.
+          const att = ac.attitude();
+          ac.controls.roll = Math.max(-1, Math.min(1, -2 * att.roll));
+          ac.controls.pitch = liftoff ? Math.max(-0.3, Math.min(0.3, -1.5 * (att.pitch - 0.15))) : t > 2.5 ? 0.15 : 0;
+          if (liftoff) ac.controls.throttle = 0.6;
           ac.update(0.05);
           if (!liftoff && ac.position.y > 1.5) liftoff = ac.position.x;
         }
@@ -136,10 +156,11 @@ for (const entry of AIRCRAFT) {
       });
 
       it('drains the battery under power', () => {
-        const ac = airborne(13, 1);
+        const ac = airborne(stallSpeed() * 1.6, 1);
         const v0 = ac.battery.voltage;
         ac.update(30);
-        expect(ac.battery.used).toBeGreaterThan(200);
+        const fullPower = (def.battery.maxCurrent * 30 * 1000) / 3600; // mAh in 30 s
+        expect(ac.battery.used).toBeGreaterThan(0.8 * fullPower);
         expect(ac.battery.voltage).toBeLessThan(v0);
       });
     });

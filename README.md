@@ -1,9 +1,18 @@
 # RC Flight Sim
 
 A browser-based radio-control aeroplane simulator with **line-of-sight** and
-**FPV** views. Aircraft are chosen on the start screen or in the menu; so far
-there is the **E-flite S.E.5a 900mm** (EFL10950 / EFL10975), a foam BNF
-park-flyer of the WWI biplane with AS3X+/SAFE.
+**FPV** views. Pick your aircraft on the start screen or in the menu:
+
+| Aircraft | Notes |
+| --- | --- |
+| **E-flite S.E.5a 900mm** (EFL10950 / EFL10975) | Foam BNF WWI biplane with AS3X+/SAFE. |
+| **Buschtrottel ShockCub** | Thomas Buchwald's DIY 6 mm Depron bush plane, 900 mm: high wing, rounded tail. |
+| **Buschtrottel Highlander** | Same airframe with an angular tail and square wing tips. |
+| **Buschtrottel Agro** | Low wing braced with wires to a cabane pylon, angular tail. |
+
+The Buschtrottels are set up as built here: AT2308 1450Kv, 8x4 prop (assumed),
+3S 1350 mAh, ~450 g, KFm2 wing, tail-dragger with a rudder-linked tail wheel.
+Plan figures: ~900 mm span, ~22 dm² wing (19.8 g/dm² published loading).
 
 It runs in any modern browser (Chrome or Edge recommended on Windows). There is
 nothing to install for flying: the build is a static website.
