@@ -31,12 +31,14 @@ function referenceLayout(cgFromUpperLeRef) {
     dihedral: 4.5 * deg,
     incidence: 2.0 * deg,
     lowerRootZ: 0.08,
-    tail: { leX: -0.64, chord: 0.2, span: 0.66, y: 0.03, incidence: 2.5 * deg },
+    // Tailplane low on the rear fuselage (side photo of the E-flite model).
+    tail: { leX: -0.64, chord: 0.2, span: 0.66, y: -0.03, incidence: 2.5 * deg },
     fin: { leX: -0.70, chord: 0.19, height: 0.24, baseY: 0.04 },
-    prop: { x: 0.43, y: 0.02, radius: 0.185 },
+    // Short nose: the radiator is only ~0.2 ahead of the CG (side photo).
+    prop: { x: 0.228, y: 0.023, radius: 0.185 },
     wheel: { x: 0.2, y: -0.2, z: 0.15, radius: 0.07 },
     skid: { x: -0.80, y: -0.10 },
-    pilotEye: { x: -0.21, y: 0.113, z: 0 },
+    pilotEye: { x: -0.34, y: 0.155, z: 0 },
   };
 }
 
@@ -228,7 +230,7 @@ export function buildSE5a(o) {
       // and is linked to the rudder (steer), as on most RC scale models.
       { name: 'skid', pos: [G.skid.x, G.skid.y, 0], type: 'skid', k: gr.skidK, c: gr.skidC, mu: 0.35, muLat: 0.9, steer: gr.skidSteer ?? 0, crashSpeed: gr.skidCrash },
       { name: 'prop-low', pos: [G.prop.x + s(0.02), G.prop.y - G.prop.radius, 0], type: 'prop', k: gr.hardK, c: gr.hardC, crashSpeed: 0 },
-      hard('nose', [s(0.40), s(-0.06), 0], 2.5),
+      hard('nose', [s(0.205), s(-0.075), 0], 2.5),
       hard('upper-tip-L', [G.upperLeX - CHORD / 2, tipY(G.upperY), -SPAN / 2], 3.5),
       hard('upper-tip-R', [G.upperLeX - CHORD / 2, tipY(G.upperY), SPAN / 2], 3.5),
       hard('lower-tip-L', [G.lowerLeX - CHORD / 2, tipY(G.lowerY), -SPAN / 2], 3.5),
