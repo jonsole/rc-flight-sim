@@ -24,6 +24,7 @@ const _qi = new Quaternion();
 const _n = new Vector3();
 const _vt = new Vector3();
 const _tmp = new Vector3();
+const _cp = new Vector3();
 const _fw = new Vector3();
 
 function vec(a) {
@@ -153,13 +154,19 @@ export class Aircraft {
     this.alpha = Math.atan2(-_v.y, Math.max(0.001, _v.x));
     this.beta = Math.atan2(_v.z, Math.max(0.001, _v.x));
 
-    // Thrust: simple linear fall-off to pitch speed.
-    const tStatic = def.motor.staticThrust * this.throttleActual;
-    const thrust = Math.max(0, tStatic * (1 - vAxial / def.motor.pitchSpeed));
+    // Fixed-pitch prop: RPM rises with throttle (a little faster at low
+    // throttle, where the motor is lightly loaded); static thrust goes as RPM²
+    // and falls off linearly to the prop's pitch speed at that RPM. Above it
+    // the prop windmills and adds drag.
+    const rpmFrac = Math.pow(this.throttleActual, 0.75);
+    const thrust = Math.max(
+      -0.1 * def.motor.staticThrust * rpmFrac,
+      def.motor.staticThrust * (rpmFrac * rpmFrac - (rpmFrac * vAxial) / def.motor.pitchSpeed),
+    );
     this.thrust = thrust;
-    this.rpm = this.throttleActual * def.motor.maxRpm * (0.85 + 0.15 * Math.min(1, vAxial / def.motor.pitchSpeed));
+    this.rpm = rpmFrac * def.motor.maxRpm;
     // Momentum theory: fully developed slipstream velocity increment.
-    this.propWash = Math.sqrt(vAxial * vAxial + (2 * thrust) / (RHO * def.motor.discArea)) - vAxial;
+    this.propWash = Math.sqrt(vAxial * vAxial + (2 * Math.max(0, thrust)) / (RHO * def.motor.discArea)) - vAxial;
 
     _f.set(0, 0, 0);
     _m.set(0, 0, 0);
@@ -172,7 +179,7 @@ export class Aircraft {
     _f.add(_tmp);
     _r.copy(this.motorPos);
     _m.add(_tmp.cross(_r).negate()); // r × F
-    _m.x -= thrust * def.motor.torqueFactor;
+    _m.x -= Math.max(0, thrust) * def.motor.torqueFactor;
 
     // --- Aerodynamic surfaces --------------------------------------------
     // Downwash at the tail from the previous wing CL.
@@ -208,7 +215,14 @@ export class Aircraft {
       const invSpeed = 1 / Math.sqrt(speed2);
       _tmp.copy(_lift).multiplyScalar(co.cl * qa).addScaledVector(_up, -cd * qa * invSpeed);
       _f.add(_tmp);
-      _m.add(_r.crossVectors(s.pos, _tmp));
+      // As a surface stalls its centre of pressure moves aft, from the quarter
+      // chord towards mid-chord: the nose-down pitch break at the stall.
+      if (s.chordLen) {
+        _cp.copy(s.pos).addScaledVector(s.chord, -0.25 * s.chordLen * co.stalled);
+        _m.add(_r.crossVectors(_cp, _tmp));
+      } else {
+        _m.add(_r.crossVectors(s.pos, _tmp));
+      }
       if (s.wing) {
         wingLift += co.cl * s.area;
         wingArea += s.area;

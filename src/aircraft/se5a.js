@@ -89,6 +89,7 @@ export function buildSE5a(o) {
     cla: liftSlope(ar) * 0.92, // biplane interference
     alpha0: -2.5 * deg,        // cambered section
     alphaStall: o.foil.alphaStall,
+    stallWidth: o.foil.stallWidth,
     cd0: o.foil.cd0,
     ar,
     e: 0.8,
@@ -114,6 +115,7 @@ export function buildSE5a(o) {
           area: segSpan * CHORD * (i === segments - 1 ? 0.9 : 1),
           foil,
           wing: true,
+          chordLen: CHORD,
           // right stick -> right aileron up (less lift) -> roll right
           controls: zMid >= aileronFrom ? [{ input: 'roll', gain: -side, max: 18 * deg, tau: 0.42 }] : [],
           propwash: i === 0 && name === 'lower' ? 0.4 : 0,
@@ -139,7 +141,8 @@ export function buildSE5a(o) {
         foil: tailFoil,
         downwash: true,
         propwash: 0.75,
-        controls: [{ input: 'pitch', gain: -1, max: 22 * deg, tau: 0.5 }],
+        // Sport/low-rate throw: enough for loops without snapping at full stick.
+        controls: [{ input: 'pitch', gain: -1, max: o.elevatorThrow, tau: 0.5 }],
       });
     }
     const finAr = 1.4;
@@ -264,7 +267,8 @@ export const EFLITE_SE5a_900 = buildSE5a({
   mass: 1.303,
   inertia: [0.026, 0.044, 0.02],
   propRadius: 0.127,
-  foil: { cd0: 0.02, alphaStall: 14 * deg },
+  foil: { cd0: 0.02, alphaStall: 14 * deg, stallWidth: 0.03 }, // foam wing: softish stall
+  elevatorThrow: 12 * deg,
   // 3513-1100Kv on 4S with a 10x5: ~12,500 rpm loaded, ≈1.25:1 thrust/weight.
   motor: { staticThrust: 16, pitchSpeed: 26, spoolTime: 0.08, torqueFactor: 0.0055, maxRpm: 12500 },
   battery: { cells: 4, capacity: 2200, maxCurrent: 38, internalResistance: 0.015 * 4 },

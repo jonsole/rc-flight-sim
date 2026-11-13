@@ -47,6 +47,11 @@ fails, the live site is still published. One-time setup: **Settings → Pages �
 Source: GitHub Actions**, and allow both branches under **Settings →
 Environments → github-pages → Deployment branches**.
 
+Releasing: merge the dev branch into `main` with a merge commit
+(`git merge --no-ff`). Pages ignores a second deployment of a commit it has
+already deployed, so fast-forwarding `main` to a commit the dev branch already
+published leaves the live page on the older build.
+
 ## Flying with your transmitter
 
 Most transmitters can act as a USB game controller:

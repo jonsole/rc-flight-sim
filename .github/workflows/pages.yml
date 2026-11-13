@@ -4,6 +4,11 @@ name: Deploy to GitHub Pages
 #   /      <- main (live)
 #   /dev/  <- the development branch
 # A push to either branch rebuilds and republishes both, so neither disappears.
+#
+# Pages identifies each deployment by the triggering commit SHA and ignores a
+# second deployment of a SHA it has already deployed. So release to main with a
+# merge commit (git merge --no-ff), not a fast-forward to a commit the dev
+# branch already deployed, or the live site keeps the older build.
 
 on:
   push:

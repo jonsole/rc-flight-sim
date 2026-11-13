@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { Vector3 } from 'three';
 import { Aircraft } from '../src/sim/aircraft.js';
 import { AIRCRAFT, getAircraft } from '../src/aircraft/index.js';
+import { buildBuschtrottel } from '../src/aircraft/buschtrottel.js';
 import { ground } from '../src/sim/terrain.js';
 import { coefficients, liftSlope } from '../src/sim/aero.js';
 import { applyExpo } from '../src/input/input.js';
@@ -113,6 +114,32 @@ for (const entry of AIRCRAFT) {
         expect(rate({ yaw: 1 }).y).toBeLessThan(-0.2); // nose right (−ω_y)
       });
 
+      // Elevator commands below are after the default expo (0.3) and rate (0.85):
+      // half stick ≈ 0.33, full stick = 0.85.
+      function pullFromCruise(cmd, seconds = 2) {
+        const ac = airborne(stallSpeed() * 1.7, 0.5);
+        ac.update(1);
+        let stalled = 0;
+        let rollRate = 0;
+        for (let t = 0; t < seconds; t += 0.02) {
+          ac.controls.pitch = cmd;
+          ac.update(0.02);
+          const w = ac.surfaces.filter((s) => s.wing);
+          stalled = Math.max(stalled, w.reduce((sum, s) => sum + s.stalled, 0) / w.length);
+          rollRate = Math.max(rollRate, Math.abs(ac.omega.x));
+        }
+        return { stalled, rollRate };
+      }
+
+      it('does not stall in a moderate pull at cruise speed (half stick)', () => {
+        // First second only: hold it longer and it loops, slowing over the top.
+        expect(pullFromCruise(0.33, 1).stalled).toBeLessThan(0.15);
+      });
+
+      it('does not drop a wing when the stick is yanked fully back', () => {
+        expect(pullFromCruise(0.85).rollRate).toBeLessThan(2.2); // rad/s, ~125°/s
+      });
+
       it('sits on its main wheels and tail skid / tail wheel', () => {
         const ac = new Aircraft(def, { ground });
         ac.resetOnGround(0, 0, 0);
@@ -175,8 +202,10 @@ for (const entry of AIRCRAFT) {
       }
 
       it('SAFE levels the wings when the sticks are released', () => {
-        expect(bankedRelease('safe')).toBeLessThan(5 * deg);
-        expect(bankedRelease('off')).toBeGreaterThan(15 * deg);
+        // Some models self-level partly on their own; SAFE must do clearly better.
+        const safe = bankedRelease('safe');
+        expect(safe).toBeLessThan(5 * deg);
+        expect(safe).toBeLessThan(bankedRelease('off') * 0.5);
       });
 
       it('SAFE limits the bank angle at full stick', () => {
@@ -217,6 +246,42 @@ describe('E-flite S.E.5a 900mm specification', () => {
     // CG 72 mm behind the top-wing leading edge (CG is the body origin).
     expect(getAircraft('eflite-se5a-900').geometry.upperLeX).toBeCloseTo(0.072, 3);
   });
+});
+
+describe('Buschtrottel leading-edge slats', () => {
+  const style = {
+    id: 'test', name: 'test', summary: '', mount: 'high', tips: 'round', tail: 'round',
+    mass: 0.45, tailIncidence: 3 * deg, rollTrim: 0, colors: { main: '#fff', accent: '#000', wing: '#fff', tail: '#fff' },
+  };
+
+  it('lower the stall speed', () => {
+    const vs = (slats) => {
+      def = buildBuschtrottel({ ...style, slats }).def;
+      return stallSpeed();
+    };
+    expect(vs(true)).toBeLessThan(vs(false) * 0.92);
+  });
+
+  // Classic stall: wings level, ease the elevator fully back over 7 s and hold.
+  function stallTest(id, throttle) {
+    def = getAircraft(id).def;
+    const ac = airborne(10, throttle);
+    ac.update(2);
+    let maxRoll = 0;
+    for (let t = 0; t < 10; t += 0.02) {
+      ac.controls.pitch = Math.min(0.85, (0.85 * t) / 7);
+      ac.update(0.02);
+      maxRoll = Math.max(maxRoll, Math.abs(ac.attitude().roll));
+    }
+    return maxRoll;
+  }
+
+  for (const id of ['buschtrottel-shockcub', 'buschtrottel-highlander', 'buschtrottel-agro']) {
+    it(`${id} stalls straight ahead without dropping a wing`, () => {
+      expect(stallTest(id, 0)).toBeLessThan(10 * deg);
+      expect(stallTest(id, 0.2)).toBeLessThan(10 * deg);
+    });
+  }
 });
 
 describe('aircraft registry', () => {
