@@ -161,10 +161,11 @@ function fuselage() {
   // wing's leading edge and the tail skid): short, deep, flat-sided nose
   // with the radiator just ahead of the top wing, a flat top back to the
   // cockpit (behind the wings), then tapering down to the sternpost.
+  // Nose length set by the overall length (716 mm on the real model).
   const st = [
-    [0.206, 0.066, -0.084, 0.08],
-    [0.196, 0.072, -0.089, 0.094],
-    [0.15, 0.078, -0.096, 0.1],
+    [0.356, 0.066, -0.084, 0.08],
+    [0.346, 0.072, -0.089, 0.094],
+    [0.3, 0.078, -0.096, 0.1],
     [0.0, 0.08, -0.105, 0.104],
     [-0.18, 0.08, -0.11, 0.102],
     [-0.31, 0.076, -0.108, 0.1],
@@ -278,12 +279,12 @@ export function createSE5aModel(G, scale) {
 
   // Radiator front with shutters
   const rad = new Mesh(new PlaneGeometry(0.12, 0.15), std('#2a2a28', { roughness: 0.5, metalness: 0.4 }));
-  rad.position.set(0.207, -0.002, 0);
+  rad.position.set(0.357, -0.002, 0);
   rad.rotation.y = Math.PI / 2;
   root.add(rad);
   for (let i = 0; i < 7; i++) {
     const s = new Mesh(new BoxGeometry(0.004, 0.006, 0.115), std(COWL));
-    s.position.set(0.209, -0.065 + i * 0.021, 0);
+    s.position.set(0.359, -0.065 + i * 0.021, 0);
     root.add(s);
   }
 
@@ -323,7 +324,7 @@ export function createSE5aModel(G, scale) {
 
   // Exhaust pipes along both sides
   for (const s of [-1, 1]) {
-    const a = new Vector3(0.15, 0.0, s * 0.082);
+    const a = new Vector3(0.3, 0.0, s * 0.082);
     const b = new Vector3(-0.31, -0.012, s * 0.08);
     const pipe = cylinderBetween(a, b, 0.009, std('#5d5750', { metalness: 0.4, roughness: 0.6 }));
     pipe.castShadow = true;
@@ -332,9 +333,9 @@ export function createSE5aModel(G, scale) {
 
   // Vickers gun on the cowl (left), Lewis gun on the top wing.
   const vickers = new Mesh(new BoxGeometry(0.16, 0.022, 0.022), dark);
-  vickers.position.set(0.07, 0.115, -0.035);
+  vickers.position.set(0.17, 0.115, -0.035);
   root.add(vickers);
-  const vbarrel = cylinderBetween(new Vector3(0.15, 0.115, -0.035), new Vector3(0.2, 0.113, -0.035), 0.007, dark);
+  const vbarrel = cylinderBetween(new Vector3(0.25, 0.115, -0.035), new Vector3(0.35, 0.113, -0.035), 0.007, dark);
   root.add(vbarrel);
   const lewis = cylinderBetween(new Vector3(-0.05, G.upperY + 0.03, 0), new Vector3(0.17, G.upperY + 0.03, 0), 0.008, dark);
   root.add(lewis);
