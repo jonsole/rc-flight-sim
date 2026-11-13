@@ -410,3 +410,50 @@ describe('collisions with obstacles', () => {
     expect(ac.crashed).toBe(false);
   });
 });
+
+describe('terrain', () => {
+  it('physics ground height matches the rendered terrain triangles exactly', async () => {
+    const { PlaneGeometry, Vector3: V } = await import('three');
+    const { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS } = await import('../src/sim/terrain.js');
+    // Build the render mesh exactly as the world does.
+    const geo = new PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, TERRAIN_SEGMENTS, TERRAIN_SEGMENTS);
+    geo.rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) pos.setY(i, gridHeight(i % (TERRAIN_SEGMENTS + 1), Math.floor(i / (TERRAIN_SEGMENTS + 1))));
+    const idx = geo.index.array;
+    const cell = TERRAIN_SIZE / TERRAIN_SEGMENTS;
+    const a = new V();
+    const b = new V();
+    const c = new V();
+    let rnd = 7;
+    const rand = () => ((rnd = (rnd * 16807) % 2147483647) / 2147483647);
+    let worst = 0;
+    let tested = 0;
+    for (let k = 0; k < 400; k++) {
+      // Points out in the hills (the flat field is trivially zero everywhere).
+      const ang = rand() * Math.PI * 2;
+      const r = 500 + rand() * 1500;
+      const x = Math.cos(ang) * r;
+      const z = Math.sin(ang) * r;
+      const ix = Math.floor((x + TERRAIN_SIZE / 2) / cell);
+      const iz = Math.floor((z + TERRAIN_SIZE / 2) / cell);
+      const t0 = (iz * TERRAIN_SEGMENTS + ix) * 6; // two triangles per cell
+      for (const t of [t0, t0 + 3]) {
+        a.fromBufferAttribute(pos, idx[t]);
+        b.fromBufferAttribute(pos, idx[t + 1]);
+        c.fromBufferAttribute(pos, idx[t + 2]);
+        // Barycentric coordinates in the xz plane.
+        const d = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
+        const w1 = ((b.z - c.z) * (x - c.x) + (c.x - b.x) * (z - c.z)) / d;
+        const w2 = ((c.z - a.z) * (x - c.x) + (a.x - c.x) * (z - c.z)) / d;
+        const w3 = 1 - w1 - w2;
+        if (w1 < -1e-6 || w2 < -1e-6 || w3 < -1e-6) continue;
+        const meshY = w1 * a.y + w2 * b.y + w3 * c.y;
+        worst = Math.max(worst, Math.abs(meshY - heightAt(x, z)));
+        tested++;
+      }
+    }
+    expect(tested).toBeGreaterThan(390);
+    expect(worst).toBeLessThan(1e-3); // metres
+  });
+});

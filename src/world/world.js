@@ -5,7 +5,7 @@ import {
   Object3D, BoxGeometry, ConeGeometry, Group, Vector3, MathUtils, DoubleSide, Float32BufferAttribute,
 } from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
-import { heightAt } from '../sim/terrain.js';
+import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS } from '../sim/terrain.js';
 
 export const RUNWAY = { x: 0, z: -22, length: 180, width: 18 };
 export const PILOT_POS = new Vector3(0, 0, 0);
@@ -121,8 +121,9 @@ export class World {
   }
 
   #terrain() {
-    const size = 7000;
-    const seg = 280;
+    // Same grid the physics uses (src/sim/terrain.js), so they always agree.
+    const size = TERRAIN_SIZE;
+    const seg = TERRAIN_SEGMENTS;
     const geo = new PlaneGeometry(size, size, seg, seg);
     geo.rotateX(-Math.PI / 2);
     const p = geo.attributes.position;
@@ -135,7 +136,8 @@ export class World {
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i);
       const z = p.getZ(i);
-      const h = heightAt(x, z);
+      // PlaneGeometry vertex i is grid point (i % (seg+1), floor(i / (seg+1))).
+      const h = gridHeight(i % (seg + 1), Math.floor(i / (seg + 1)));
       p.setY(i, h);
       const n = Math.sin(x * 0.011) * Math.cos(z * 0.013) * 0.5 + 0.5;
       tmp.copy(c1).lerp(c2, n * 0.8);
