@@ -4,11 +4,11 @@
 
 import {
   Group, Mesh, MeshStandardMaterial, Vector3, Color, CylinderGeometry,
-  SphereGeometry, TorusGeometry, CircleGeometry, ConeGeometry, PlaneGeometry, DoubleSide,
-  CanvasTexture, Shape, ExtrudeGeometry, ShapeGeometry, FrontSide,
-  SRGBColorSpace, Quaternion,
+  SphereGeometry, TorusGeometry, PlaneGeometry, DoubleSide,
+  Shape, ExtrudeGeometry, ShapeGeometry, FrontSide, Quaternion,
 } from 'three';
 import { loft, mirrorZ } from './geom.js';
+import { createProp } from './prop.js';
 
 const foam = (color) => new MeshStandardMaterial({ color, roughness: 0.92, metalness: 0, flatShading: true });
 
@@ -70,22 +70,6 @@ function kfm2Ring(f0, f1, L) {
     pts.push([r + r * Math.cos(a), r + r * Math.sin(a)]);
   }
   return pts;
-}
-
-function propDiscTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const ctx = c.getContext('2d');
-  const g = ctx.createRadialGradient(64, 64, 4, 64, 64, 64);
-  g.addColorStop(0, 'rgba(30,30,30,0)');
-  g.addColorStop(0.2, 'rgba(30,30,30,0.45)');
-  g.addColorStop(0.9, 'rgba(30,30,30,0.2)');
-  g.addColorStop(1, 'rgba(30,30,30,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 128, 128);
-  const t = new CanvasTexture(c);
-  t.colorSpace = SRGBColorSpace;
-  return t;
 }
 
 export function createBuschtrottelModel(L) {
@@ -447,45 +431,13 @@ export function createBuschtrottelModel(L) {
   motor.rotation.z = Math.PI / 2;
   motor.position.set(P.x - 0.023, P.y, 0);
   root.add(motor);
-  const prop = new Group();
+  const propeller = createProp(P);
+  const prop = propeller.group;
   prop.position.set(P.x, P.y, 0);
-  const spinner = new Mesh(new ConeGeometry(0.011, 0.022, 16), new MeshStandardMaterial({ color: '#d0d0d0', metalness: 0.5, roughness: 0.3 }));
-  spinner.rotation.z = -Math.PI / 2;
-  spinner.position.x = 0.011;
-  const blades = new Group();
-  const bladeMat = new MeshStandardMaterial({ color: '#1e1e1e', roughness: 0.5 });
-  // One blade along +y with the twist of the prop's pitch, copied round the hub.
-  const nBlades = P.blades || 2;
-  const pitchM = (P.pitchIn || 4) * 0.0254;
-  const rings2 = [];
-  for (let i = 0; i <= 6; i++) {
-    const r = 0.01 + ((P.radius - 0.01) * i) / 6;
-    const c = 0.02 * (1 - 0.5 * ((r - 0.045) / 0.06) ** 2) + 0.003;
-    const twist = Math.atan(pitchM / (2 * Math.PI * Math.max(r, 0.02)));
-    const ring = [];
-    for (let j = 0; j < 8; j++) {
-      const th = (j / 8) * Math.PI * 2;
-      const a = Math.cos(th) * c * 0.5;
-      const b = Math.sin(th) * 0.0018;
-      ring.push(new Vector3(b * Math.cos(twist) + a * Math.sin(twist), r, a * Math.cos(twist) - b * Math.sin(twist)));
-    }
-    rings2.push(ring);
-  }
-  const bladeGeo = loft(rings2);
-  for (let k = 0; k < nBlades; k++) {
-    const blade = new Mesh(bladeGeo, bladeMat);
-    blade.rotation.x = (k * 2 * Math.PI) / nBlades;
-    blades.add(blade);
-  }
-  const disc = new Mesh(new CircleGeometry(P.radius, 40), new MeshStandardMaterial({ map: propDiscTexture(), transparent: true, depthWrite: false, side: DoubleSide }));
-  disc.rotation.y = Math.PI / 2;
-  disc.visible = false;
-  prop.add(spinner, blades, disc);
   prop.userData.part = 'prop';
   root.add(prop);
 
   shadowAll(root);
-  let propAngle = 0;
   const tmpQ = new Quaternion();
 
   // Breakable parts (see src/view/debris.js), collected from the tags above.
@@ -530,12 +482,7 @@ export function createBuschtrottelModel(L) {
       const tailC = aircraft.contacts.find((c) => c.steer);
       tailWheel.rotation.y = tailC ? aircraft.servo.yaw * tailC.steer : 0;
 
-      const rpm = aircraft.rpm;
-      const fast = rpm > 1200;
-      blades.visible = !fast;
-      disc.visible = fast;
-      propAngle += (rpm / 60) * Math.PI * 2 * dt;
-      prop.rotation.x = aircraft.propBroken ? 0.4 : propAngle;
+      propeller.update(aircraft.rpm, dt, aircraft.propBroken);
     },
   };
 }

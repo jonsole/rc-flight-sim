@@ -63,6 +63,9 @@ describe('aerodynamic coefficients', () => {
 });
 
 for (const entry of AIRCRAFT) {
+  // Hand-launched models have no landing gear, and some have no rudder.
+  const handLaunch = !!entry.def.handLaunch;
+  const hasRudder = entry.def.surfaces.some((s) => s.controls.some((c) => c.input === 'yaw'));
   describe(entry.name, () => {
     beforeEach(() => {
       def = entry.def;
@@ -112,7 +115,7 @@ for (const entry of AIRCRAFT) {
         expect(rate({ roll: -1 }).x).toBeLessThan(-0.5);
         expect(rate({ pitch: 1 }).z).toBeGreaterThan(0.3); // nose up
         expect(rate({ pitch: -1 }).z).toBeLessThan(-0.3);
-        expect(rate({ yaw: 1 }).y).toBeLessThan(-0.2); // nose right (−ω_y)
+        if (hasRudder) expect(rate({ yaw: 1 }).y).toBeLessThan(-0.2); // nose right (−ω_y)
       });
 
       // Elevator commands below are after the default expo (0.3) and rate (1.0):
@@ -141,7 +144,7 @@ for (const entry of AIRCRAFT) {
         expect(pullFromCruise(1).rollRate).toBeLessThan(2.6); // rad/s, ~150°/s (a biplane may snap a little)
       });
 
-      it('sits on its main wheels and tail skid / tail wheel', () => {
+      it.skipIf(handLaunch)('sits on its main wheels and tail skid / tail wheel', () => {
         const ac = new Aircraft(def, { ground });
         ac.resetOnGround(0, 0, 0);
         ac.update(3);
@@ -154,7 +157,7 @@ for (const entry of AIRCRAFT) {
         expect(ac.attitude().pitch).toBeGreaterThan(5 * deg); // tail-down
       });
 
-      it('takes off under full power with a touch of up elevator', () => {
+      it.skipIf(handLaunch)('takes off under full power with a touch of up elevator', () => {
         const ac = new Aircraft(def, { ground });
         ac.resetOnGround(0, 0, 0);
         ac.controls.throttle = 1;
@@ -172,6 +175,29 @@ for (const entry of AIRCRAFT) {
         expect(ac.crashed).toBe(false);
         expect(liftoff).not.toBeNull();
         expect(liftoff).toBeLessThan(80);
+      });
+
+      it.runIf(handLaunch)('is thrown from the hand at full power and climbs away', () => {
+        const ac = new Aircraft(def, { ground });
+        ac.resetHandLaunch(0, 0, 0);
+        ac.controls.throttle = 0.3;
+        ac.update(1);
+        expect(ac.held).toBeTruthy(); // stays in the hand below launch throttle
+        expect(ac.velocity.length()).toBe(0);
+        ac.controls.throttle = 1;
+        let minY = Infinity;
+        for (let t = 0; t < 4; t += 0.02) {
+          // Wings level, a little up elevator once it is away.
+          ac.controls.roll = Math.max(-1, Math.min(1, -2 * ac.attitude().roll));
+          ac.controls.pitch = Math.max(-0.3, Math.min(0.3, -1.5 * (ac.attitude().pitch - 0.25)));
+          ac.update(0.02);
+          if (!ac.held) minY = Math.min(minY, ac.position.y);
+        }
+        expect(ac.held).toBeFalsy();
+        expect(ac.crashed).toBe(false);
+        expect(minY).toBeGreaterThan(1); // no sink to the ground after the throw
+        expect(ac.position.y).toBeGreaterThan(8);
+        expect(ac.position.x).toBeGreaterThan(15);
       });
 
       it('has a dihedral effect: sideslip rolls it away from the slip', () => {
@@ -212,7 +238,7 @@ for (const entry of AIRCRAFT) {
         expect(far.ge).toBeLessThan(0.01);
       });
 
-      it('runs straight on a hands-off, full-power takeoff', () => {
+      it.skipIf(handLaunch)('runs straight on a hands-off, full-power takeoff', () => {
         const ac = new Aircraft(def, { ground });
         ac.assistMode = 'off';
         ac.resetOnGround(0, 0, 0);
@@ -229,7 +255,7 @@ for (const entry of AIRCRAFT) {
         expect(swing).toBeLessThan(3 * deg);
       });
 
-      it('can be steered on the ground with rudder', () => {
+      it.skipIf(handLaunch)('can be steered on the ground with rudder', () => {
         const ac = new Aircraft(def, { ground });
         ac.assistMode = 'off';
         ac.resetOnGround(0, 0, 0);
@@ -380,6 +406,21 @@ describe('Buschtrottel leading-edge slats', () => {
   }
 });
 
+describe('FT Mighty Mini F-22 specification', () => {
+  const f22 = getAircraft('ft-mini-f22');
+
+  it('matches the published size and weight', () => {
+    expect(f22.id).toBe('ft-mini-f22');
+    expect(f22.def.wingSpan).toBeCloseTo(0.508, 2);
+    expect(f22.def.mass).toBeCloseTo(0.211, 3);
+    // 14.2 dm² published; the prop slot is cut out here.
+    expect(f22.def.wingArea).toBeGreaterThan(0.13);
+    expect(f22.def.wingArea).toBeLessThan(0.145);
+    // Pusher: the prop is behind the CG, in the slot.
+    expect(f22.def.motor.position[0]).toBeLessThan(-0.03);
+  });
+});
+
 describe('aircraft registry', () => {
   it('has unique ids and complete entries', () => {
     const ids = AIRCRAFT.map((a) => a.id);
@@ -520,7 +561,7 @@ describe('ground surfaces', () => {
     const { physicsGround, surfaceAt } = await import('../src/sim/terrain.js');
     expect(surfaceAt(0, -22).name).toMatch(/runway/);
     expect(surfaceAt(0, -60).name).toMatch(/grass/);
-    for (const e of AIRCRAFT) {
+    for (const e of AIRCRAFT.filter((a) => !a.def.handLaunch)) {
       const rollout = (x, z) => {
         const ac = new Aircraft(e.def, { ground: physicsGround });
         ac.assistMode = 'off';
@@ -544,7 +585,7 @@ describe('ground surfaces', () => {
 
   it('has stiction: a parked model stays put and needs some throttle to roll', async () => {
     const { physicsGround } = await import('../src/sim/terrain.js');
-    for (const e of AIRCRAFT) {
+    for (const e of AIRCRAFT.filter((a) => !a.def.handLaunch)) {
       const moved = (throttle) => {
         const ac = new Aircraft(e.def, { ground: physicsGround });
         ac.assistMode = 'off';

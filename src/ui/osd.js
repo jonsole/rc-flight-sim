@@ -140,6 +140,7 @@ export class OSD {
     this.#text(info.assist, pad, top + fs * 2.5, 'left', fs * 0.85);
     if (info.assistFlash) this.#text(`ASSIST: ${info.assist}`, w / 2, h / 2 + 70 * s, 'center', fs * 1.2);
     if (!ac.crashed && ac.inFoliage) this.#text('IN THE TREES', w / 2, h / 2 - 60 * s, 'center', fs * 1.3);
+    if (ac.held) this.#text('THROTTLE UP TO LAUNCH', w / 2, h / 2 - 60 * s, 'center', fs * 1.3);
     if (ac.crashed) this.#text(`CRASH: ${ac.crashReason.toUpperCase()}`, w / 2, h / 2 - 60 * s, 'center', fs * 1.3);
     else if (info.paused) this.#text('PAUSED', w / 2, h / 2 - 60 * s, 'center', fs * 1.3);
   }
@@ -161,6 +162,7 @@ export class OSD {
       y += fs * 1.35;
     }
     if (info.assistFlash) this.#text(`Flight assist: ${info.assist}`, this.w / 2, 120, 'center', 20);
+    if (ac.held) this.#text('Hand launch: throttle up to throw it', this.w / 2, info.touch ? 150 : 80, 'center', info.touch ? 18 : 22);
     if (!ac.crashed && ac.inFoliage) this.#text(`Caught in a tree - ${info.touch ? 'tap RESET' : 'press R to reset'}`, this.w / 2, info.touch ? 150 : 80, 'center', info.touch ? 18 : 22);
     if (ac.crashed) this.#text(`Crashed: ${ac.crashReason} - ${info.touch ? 'tap RESET' : 'press R to reset'}`, this.w / 2, info.touch ? 150 : 80, 'center', info.touch ? 18 : 22);
     else if (info.paused) this.#text('PAUSED', this.w / 2, 80, 'center', 22);

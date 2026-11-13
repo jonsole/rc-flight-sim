@@ -9,12 +9,21 @@ A browser-based radio-control aeroplane simulator with **line-of-sight** and
 | **Buschtrottel ShockCub** | Thomas Buchwald's DIY 6 mm Depron bush plane, 900 mm: high wing, rounded tail. |
 | **Buschtrottel Highlander** | Same airframe with an angular tail and square wing tips. |
 | **Buschtrottel Agro** | Low wing with V-struts to the upper fuselage, full-span ailerons, black canopy block, low tailplane; orange and white; 8x4.5 three-blade prop. |
+| **Flite Test Mighty Mini F-22** | Foam-board pusher jet, 508 mm: the prop spins in a slot in the middle of the diamond wing; elevons, canted fins, no rudder or wheels. Hand-launched. |
 
 The Buschtrottels are set up as built here: AT2308 1450Kv,
 3S 1350 mAh with an 8x6 prop (Agro: 8x4.5 three-blade), ~450 g, KFm2 wing,
 100 mm foam wheels on springy wire legs,
 and a rudder-linked tail wheel.
 Plan figures: ~900 mm span, ~22 dm² wing (19.8 g/dm² published loading).
+
+The Mini F-22 (`src/aircraft/f22.js`) is traced off the FT plan sheets: 508 mm
+span, 667 mm long, 14.2 dm², 211 g all up on a 2204 2300Kv with a 6x4.5 prop
+and 3S 800 mAh, elevons ±25°. The CG is at the build article's 355 mm from the
+nose (the plan sheet marks 305 mm). Thrust and inertia are estimates. There
+is no landing gear: with *Start position: On the runway* you hold it at
+shoulder height, and it is thrown once the throttle passes 60%. Land it on its
+belly with the motor off, since the prop hangs below the wing.
 
 It runs in any modern browser (Chrome or Edge recommended on Windows). There is
 nothing to install for flying: the build is a static website.
@@ -146,6 +155,9 @@ Each aircraft is a registry entry in `src/aircraft/index.js`:
 - `views`: camera mounts in body axes (`cockpit`, `pod`), `span` for LOS
   auto-zoom, and `chase` distances.
 - `createModel()`: returns `{ root, update(aircraft, dt), setPilotVisible(bool) }`.
+- `def.handLaunch` (optional): `{ height, speed, pitch, throttle }` for a model
+  with no wheels. It starts in the pilot's hand and is thrown along its nose
+  once the throttle reaches `throttle`. The wheel tests are skipped for it.
 
 Another size of S.E.5a is one `buildSE5a({...})` call in `src/aircraft/se5a.js`.
 A different type needs its own definition and 3D model module. The flight
