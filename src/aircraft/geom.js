@@ -120,13 +120,31 @@ export function mirrorZ(geometry) {
   const g = geometry.clone();
   g.scale(1, 1, -1);
   const index = g.getIndex();
-  const arr = index.array;
-  for (let t = 0; t < arr.length; t += 3) {
-    const tmp = arr[t + 1];
-    arr[t + 1] = arr[t + 2];
-    arr[t + 2] = tmp;
+  if (index) {
+    const arr = index.array;
+    for (let t = 0; t < arr.length; t += 3) {
+      const tmp = arr[t + 1];
+      arr[t + 1] = arr[t + 2];
+      arr[t + 2] = tmp;
+    }
+    index.needsUpdate = true;
+  } else {
+    // Non-indexed: swap whole vertices to flip each triangle's winding.
+    for (const attr of Object.values(g.attributes)) {
+      const n = attr.itemSize;
+      const a = attr.array;
+      for (let t = 0; t < attr.count; t += 3) {
+        for (let k = 0; k < n; k++) {
+          const i1 = (t + 1) * n + k;
+          const i2 = (t + 2) * n + k;
+          const tmp = a[i1];
+          a[i1] = a[i2];
+          a[i2] = tmp;
+        }
+      }
+      attr.needsUpdate = true;
+    }
   }
-  index.needsUpdate = true;
   g.computeVertexNormals();
   return g;
 }

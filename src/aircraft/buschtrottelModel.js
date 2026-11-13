@@ -5,7 +5,7 @@
 import {
   Group, Mesh, MeshStandardMaterial, Vector3, Color, CylinderGeometry,
   SphereGeometry, TorusGeometry, CircleGeometry, ConeGeometry, PlaneGeometry, DoubleSide,
-  CanvasTexture,
+  CanvasTexture, Shape, ExtrudeGeometry,
   SRGBColorSpace, Quaternion,
 } from 'three';
 import { loft, mirrorZ } from './geom.js';
@@ -30,18 +30,28 @@ function cylinderBetween(a, b, radius, material, segments = 6) {
   return m;
 }
 
-/**
- * Thin flat plate between two outline curves, lofted along v.
- * @param {number[]} vs        stations along the plate
- * @param {(v:number)=>[number,number]} xs  front and back x at station v
- * @param {(x:number, v:number, d:number)=>Vector3} map  to 3D (d = thickness offset)
- */
-function plate(vs, xs, map, t) {
-  const rings = vs.map((v) => {
-    const [xa, xb] = xs(v);
-    return [map(xa, v, t / 2), map(xb, v, t / 2), map(xb, v, -t / 2), map(xa, v, -t / 2)];
-  });
-  return loft(rings);
+/** Keep the part of a polygon [[x, y]...] on one side of x = x0 (Sutherland-Hodgman). */
+function clipX(pts, x0, keepAbove) {
+  const inside = (p) => (keepAbove ? p[0] >= x0 : p[0] <= x0);
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    if (inside(a)) out.push(a);
+    if (inside(a) !== inside(b)) {
+      const t = (x0 - a[0]) / (b[0] - a[0]);
+      out.push([x0, a[1] + (b[1] - a[1]) * t]);
+    }
+  }
+  return out;
+}
+
+/** Flat foam plate from an outline, `t` thick, centred on the outline's plane (z = 0). */
+function slab(pts, t) {
+  const shape = new Shape(pts.map(([x, y]) => ({ x, y })));
+  const g = new ExtrudeGeometry(shape, { depth: t, bevelEnabled: false, curveSegments: 1 });
+  g.translate(0, 0, -t / 2);
+  return g;
 }
 
 /** KFm2 section as a closed ring of [chordFraction, y/chord], between f0..f1. */
@@ -50,9 +60,15 @@ function kfm2Ring(f0, f1, L) {
   const tr = L.thickRear / L.chord;
   const st = L.step;
   if (f0 >= st) return [[f0, 0], [f1, 0], [f1, tr], [f0, tr]];
-  const pts = [[0, tf * 0.45], [0.008, tf * 0.1], [0.03, 0], [f1, 0], [f1, f1 > st ? tr : tf]];
+  // Fully rounded leading edge: a half-circle the depth of the front section.
+  const r = tf / 2;
+  const pts = [[r, 0], [f1, 0], [f1, f1 > st ? tr : tf]];
   if (f1 > st) pts.push([st, tr], [st, tf]);
-  pts.push([0.05, tf], [0.012, tf * 0.85]);
+  pts.push([r, tf]);
+  for (const deg of [120, 150, 180, 210, 240]) {
+    const a = (deg * Math.PI) / 180;
+    pts.push([r + r * Math.cos(a), r + r * Math.sin(a)]);
+  }
   return pts;
 }
 
@@ -100,23 +116,41 @@ export function createBuschtrottelModel(L) {
   const paints = C.split
     ? [new Color(C.main), new Color(C.top)] // 0 = lower part, 1 = top part
     : [new Color(C.main), new Color(C.accent)]; // 0 = body, 1 = stripe
-  let ringPaint = [];
-  const rings = L.fuselage.map(([x, hw, yb, yt]) => {
-    let pts;
-    if (C.split) {
-      const at = yb + C.split * (yt - yb);
-      pts = [
-        [hw, yb, 0], [hw, at, 0], [hw, at, 1], [hw, yt, 1],
-        [-hw, yt, 1], [-hw, at, 1], [-hw, at, 0], [-hw, yb, 0],
-      ];
-    } else {
-      const s1 = yb + 0.42 * (yt - yb);
-      const s2 = yb + 0.58 * (yt - yb);
-      pts = [
-        [hw, yb, 0], [hw, s1, 0], [hw, s1, 1], [hw, s2, 1], [hw, s2, 0], [hw, yt, 0],
-        [-hw, yt, 0], [-hw, s2, 0], [-hw, s2, 1], [-hw, s1, 1], [-hw, s1, 0], [-hw, yb, 0],
-      ];
+  // Cross-section: a box with rounded corners (radius r; well rounded at the
+  // cowl, almost square further back). Points run up the right side, over the
+  // top, down the left side and back along the bottom; paint changes sit at
+  // duplicated points on the sides.
+  const arc = (cz, cy, r, a0, a1, n) => {
+    const out = [];
+    for (let i = 1; i <= n; i++) {
+      const a = ((a0 + ((a1 - a0) * i) / n) * Math.PI) / 180;
+      out.push([cz + r * Math.cos(a), cy + r * Math.sin(a)]);
     }
+    return out;
+  };
+  let ringPaint = [];
+  const rings = L.fuselage.map(([x, hw, yb, yt, rIn = 0.002]) => {
+    const r = Math.min(rIn, hw * 0.95, (yt - yb) * 0.45);
+    const lo = yb + r;
+    const hi = yt - r;
+    const clampY = (y) => Math.min(hi, Math.max(lo, y));
+    // Paint bands on the side: [y, paintBelow, paintAbove]
+    const bands = C.split
+      ? [[clampY(yb + C.split * (yt - yb)), 0, 1]]
+      : [[clampY(yb + 0.42 * (yt - yb)), 0, 1], [clampY(yb + 0.58 * (yt - yb)), 1, 0]];
+    const topPaint = C.split ? 1 : 0;
+    const pts = [];
+    // Right side, bottom to top.
+    pts.push([hw, lo, 0]);
+    for (const [y, below, above] of bands) pts.push([hw, y, below], [hw, y, above]);
+    pts.push([hw, hi, topPaint]);
+    for (const [z, y] of arc(hw - r, hi, r, 0, 90, 3)) pts.push([z, y, topPaint]);
+    for (const [z, y] of arc(-hw + r, hi, r, 90, 180, 3)) pts.push([z, y, topPaint]);
+    // Left side, top to bottom.
+    for (const [y, below, above] of [...bands].reverse()) pts.push([-hw, y, above], [-hw, y, below]);
+    pts.push([-hw, lo, 0]);
+    for (const [z, y] of arc(-hw + r, lo, r, 180, 270, 3)) pts.push([z, y, 0]);
+    for (const [z, y] of arc(hw - r, lo, r, 270, 360, 3).slice(0, -1)) pts.push([z, y, 0]);
     ringPaint = pts.map((p) => p[2]);
     return pts.map(([z, y]) => new Vector3(x, y, z));
   });
@@ -128,18 +162,21 @@ export function createBuschtrottelModel(L) {
   const head = new Mesh(new SphereGeometry(0.017, 12, 8), new MeshStandardMaterial({ color: '#6b4a32', roughness: 0.7 }));
   pilot.add(head);
   if (high) {
+    // Cabin side windows under the wing, and the 45° windscreen between the
+    // hood (x 0.105, y 0.04) and the wing (x 0.05, y 0.091).
     for (const s of [-1, 1]) {
-      const w = new Mesh(new PlaneGeometry(0.15, 0.045), glass);
-      w.position.set(-0.03, 0.046, s * 0.0405);
+      const w = new Mesh(new PlaneGeometry(0.11, 0.04), glass);
+      w.position.set(-0.005, 0.064, s * 0.0428);
       w.rotation.y = s > 0 ? 0 : Math.PI;
       root.add(w);
     }
-    const ws = new Mesh(new PlaneGeometry(0.084, 0.07), screenGlass);
-    ws.position.set(0.11, 0.064, 0);
-    ws.rotation.set(-Math.PI / 2, 0, 0);
-    ws.rotateOnWorldAxis(new Vector3(0, 0, 1), -Math.atan2(0.025, 0.08));
+    const a = new Vector3(0.105, 0.0405, 0);
+    const b = new Vector3(0.05, 0.0915, 0);
+    const ws = new Mesh(new PlaneGeometry(a.distanceTo(b), 0.072), screenGlass);
+    ws.position.copy(a).lerp(b, 0.5).add(new Vector3(0.0015, 0.0015, 0));
+    ws.rotation.set(Math.PI / 2, Math.atan2(b.y - a.y, a.x - b.x), 0, 'ZYX');
     root.add(ws);
-    head.position.set(-0.02, 0.04, 0);
+    head.position.set(0.0, 0.06, 0);
   } else {
     // Low wing (Agro): canopy block on top of the fuselage.
     const fusAt = (x) => {
@@ -169,24 +206,22 @@ export function createBuschtrottelModel(L) {
     };
     const cabRings = xs.map((_, i) => [corner(i, 1, false), corner(i, 1, true), corner(i, -1, true), corner(i, -1, false)]);
     const canopy = new Mesh(loft(cabRings), new MeshStandardMaterial({ color: '#141414', roughness: 0.75, flatShading: true }));
+    canopy.userData.part = 'canopy';
     root.add(canopy);
     const top = cabRings[2][1].clone().lerp(cabRings[2][2], 0.5);
     const aerial = [top.clone().add(new Vector3(0.005, 0, 0)), top.clone().add(new Vector3(-0.012, 0.06, 0)), top.clone().add(new Vector3(-0.04, 0.1, 0))];
-    root.add(cylinderBetween(aerial[0], aerial[1], 0.0008, new MeshStandardMaterial({ color: '#111' })));
-    root.add(cylinderBetween(aerial[1], aerial[2], 0.0008, new MeshStandardMaterial({ color: '#111' })));
+    for (const [a, b] of [[aerial[0], aerial[1]], [aerial[1], aerial[2]]]) {
+      const wire = cylinderBetween(a, b, 0.0008, new MeshStandardMaterial({ color: '#111' }));
+      wire.userData.part = 'canopy';
+      root.add(wire);
+    }
     head.position.set(-0.13, 0.07, 0);
   }
   root.add(pilot);
 
   // --- Wing: KFm2 Depron, ailerons on their own hinges ------------------------
   const HALF = L.span / 2;
-  const chordAt = (z) => {
-    if (S.tips !== 'round') return 1;
-    const s = z / HALF;
-    if (s < 0.82) return 1;
-    const t = (s - 0.82) / 0.18;
-    return Math.max(0.35, Math.sqrt(1 - t * t * 0.9));
-  };
+  const chordAt = () => 1; // constant chord, square tips (plan)
   const wingPoint = (f, yN, z) => {
     const k = chordAt(z);
     const c = L.chord * k;
@@ -213,7 +248,7 @@ export function createBuschtrottelModel(L) {
     return loft(rs, { color: (_p, _ri, pi) => (isBottom[pi] ? wingBottom : wingTop) });
   };
   const rootZ = high ? 0 : L.rootZ - 0.006;
-  const nTip = S.tips === 'round' ? 10 : 3;
+  const nTip = 3;
   const wingR = new Group();
   if (L.ailFrom - rootZ > 0.003) wingR.add(new Mesh(wingPart(rootZ, L.ailFrom, 0, 1, 2), vcMat));
   wingR.add(new Mesh(wingPart(L.ailFrom, HALF, 0, L.hinge, nTip), vcMat));
@@ -240,7 +275,7 @@ export function createBuschtrottelModel(L) {
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
     const n = [(-(b[1] - a[1]) / len) * t, ((b[0] - a[0]) / len) * t];
     const ring = [a, b, [b[0] + n[0], b[1] + n[1]], [a[0] + n[0], a[1] + n[1]]];
-    const zEnd = Math.min(L.slats.to, S.tips === 'round' ? HALF * 0.84 : HALF - 0.005);
+    const zEnd = Math.min(L.slats.to, HALF - 0.005);
     const rs = [];
     for (let i = 0; i <= 4; i++) {
       const z = L.slats.from + ((zEnd - L.slats.from) * i) / 4;
@@ -251,6 +286,27 @@ export function createBuschtrottelModel(L) {
     wingR.add(new Mesh(slatGeo, vcMat));
     wingL.add(new Mesh(mirrorZ(slatGeo), vcMat));
   }
+  // Tip plates, centred vertically on the wing.
+  {
+    const mid = L.thickFront / 2;
+    const pts = L.tipPlate.map(([d, h]) => [d, h + mid]);
+    // Outline in (chord distance, height) -> 3D at the tip.
+    const geo = slab(pts.map(([d, h]) => [-d, h]), 0.006);
+    const ci = Math.cos(L.incidence);
+    const si = Math.sin(L.incidence);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const relx = pos.getX(i);
+      const y = pos.getY(i);
+      pos.setXYZ(i, L.wingLeX + relx * ci - y * si, L.wingY + relx * si + y * ci + Math.tan(L.dihedral) * HALF, HALF + 0.003 + pos.getZ(i));
+    }
+    geo.computeVertexNormals();
+    const tipMat = foam(C.tip || C.accent || C.wing);
+    wingR.add(new Mesh(geo, tipMat));
+    wingL.add(new Mesh(mirrorZ(geo), tipMat));
+  }
+  wingR.userData.part = ailR.userData.part = 'wingR';
+  wingL.userData.part = ailL.userData.part = 'wingL';
   root.add(wingR, wingL, ailR, ailL);
   const ailerons = [
     { pivot: ailR, axis: axisR, side: 1 },
@@ -259,16 +315,8 @@ export function createBuschtrottelModel(L) {
 
   // --- Wing struts ---------------------------------------------------------------
   const strutMat = new MeshStandardMaterial({ color: '#3a3c3e', roughness: 0.6 });
-  if (high) {
-    for (const s of [-1, 1]) {
-      const base = new Vector3(0.02, -0.056, s * 0.04);
-      for (const f of [0.15, 0.65]) {
-        const top = wingPoint(f, -0.01, HALF * 0.55);
-        top.z *= s;
-        root.add(cylinderBetween(base, top, 0.0025, strutMat));
-      }
-    }
-  } else {
+  // High wing: none (a 6x1 carbon spar in the wing instead).
+  if (!high) {
     // Low wing: V-struts from the fuselage side, about 3/4 of the way up, down
     // to the top of the wing.
     const fx = 0.0;
@@ -279,88 +327,64 @@ export function createBuschtrottelModel(L) {
       for (const f of [0.15, 0.65]) {
         const top = wingPoint(f, L.thickFront / L.chord + 0.004, HALF * 0.55);
         top.z *= s;
-        root.add(cylinderBetween(base, top, 0.0025, strutMat));
+        const strut = cylinderBetween(base, top, 0.0025, strutMat);
+        strut.userData.part = s > 0 ? 'wingR' : 'wingL';
+        root.add(strut);
       }
     }
   }
 
-  // --- Tail: flat 3 mm Depron plates ------------------------------------------
+  // --- Tail: flat 6 mm Depron plates, outlines from the plan --------------------
   const T = L.tail;
-  const hs = T.span / 2;
-  const hingeX = T.leX - T.fixed;
-  const stabEdges = (v) => {
-    const s = v / hs;
-    if (S.tail === 'round') {
-      const c = T.chord * Math.max(0.12, (1 - s * s) ** 0.6);
-      const le = T.leX - (T.chord - c) * 0.35;
-      return [le, le - c];
-    }
-    return [T.leX - 0.03 * s, T.leX - T.chord + 0.02 * s];
+  const O = L.outlines;
+  const tailT = 0.006;
+  // Stab outline is [x, z]: build it in the x-y plane, then lay it flat
+  // (y -> z) at the tail height, with the tail incidence about the hinge.
+  const layFlat = (g) => {
+    g.rotateX(Math.PI / 2); // (x, y, w) -> (x, -w, y)
+    g.translate(-O.stabHinge, 0, 0);
+    g.rotateZ(T.incidence);
+    g.translate(O.stabHinge, T.y, 0);
+    return g;
   };
-  const vs = Array.from({ length: 11 }, (_, i) => (hs * i) / 10);
-  const tailMap = (x, v, d) => {
-    const ci = Math.cos(T.incidence);
-    const si = Math.sin(T.incidence);
-    const dx = x - T.leX;
-    return new Vector3(T.leX + dx * ci - d * si, T.y + dx * si + d * ci, v);
-  };
-  const stabR = plate(vs, (v) => {
-    const [le, te] = stabEdges(v);
-    return [le, Math.max(te, hingeX)];
-  }, tailMap, 0.003);
-  root.add(new Mesh(stabR, tailMat), new Mesh(mirrorZ(stabR), tailMat));
+  const stabPts = O.stab; // rotateX(+90°) maps the shape's y onto z
+  const stabMesh = new Mesh(layFlat(slab(clipX(stabPts, O.stabHinge, true), tailT)), tailMat);
+  stabMesh.userData.part = 'tail';
+  root.add(stabMesh);
   const elev = new Group();
-  const eh = tailMap(hingeX, 0, 0);
+  const eh = new Vector3(O.stabHinge, T.y, 0);
   elev.position.copy(eh);
-  const elevR = plate(vs, (v) => {
-    const [, te] = stabEdges(v);
-    const xa = hingeX - 0.002;
-    return [xa, Math.min(te, xa)];
-  }, tailMap, 0.003);
-  elevR.translate(-eh.x, -eh.y, -eh.z);
-  elev.add(new Mesh(elevR, tailMat), new Mesh(mirrorZ(elevR), tailMat));
+  const elevGeo = layFlat(slab(clipX(stabPts, O.stabHinge - 0.002, false), tailT));
+  elevGeo.translate(-eh.x, -eh.y, -eh.z);
+  elev.add(new Mesh(elevGeo, tailMat));
+  elev.userData.part = 'tail';
   root.add(elev);
 
   const F = L.fin;
-  const finEdges = (h) => {
-    const s = h / F.height;
-    const te = F.leX - F.chord;
-    if (S.tail === 'round') {
-      const c = F.chord * Math.max(0.15, (1 - s * s) ** 0.55);
-      return [te + c, te];
-    }
-    return [F.leX - 0.075 * s, te];
-  };
-  const hsFin = Array.from({ length: 11 }, (_, i) => (F.height * i) / 10);
-  const finMap = (x, h, d) => new Vector3(x, F.baseY + h, d);
-  const finGeo = plate(hsFin, (h) => {
-    const [le, te] = finEdges(h);
-    return [le, Math.max(te, F.hingeX)];
-  }, finMap, 0.003);
-  root.add(new Mesh(finGeo, tailMat));
+  const finMesh = new Mesh(slab(clipX(O.fin, F.hingeX, true), tailT), tailMat);
+  finMesh.userData.part = 'tail';
+  root.add(finMesh);
   const rudder = new Group();
   rudder.position.set(F.hingeX, 0, 0);
-  const rudGeo = plate(hsFin, (h) => {
-    const [, te] = finEdges(h);
-    const xa = F.hingeX - 0.002;
-    return [xa, Math.min(te, xa)];
-  }, finMap, 0.003);
+  const rudGeo = slab(clipX(O.fin, F.hingeX - 0.002, false), tailT);
   rudGeo.translate(-F.hingeX, 0, 0);
   rudder.add(new Mesh(rudGeo, tailMat));
+  rudder.userData.part = 'tail';
   root.add(rudder);
 
   // --- Landing gear: wire legs, bush wheels, rudder-linked tail wheel -----------
   const W = L.wheel;
-  const fusBottomAtGear = high ? -0.06 : -0.065;
+  const fusBottomAtGear = high ? -0.054 : -0.065;
   const tyreMat = new MeshStandardMaterial({ color: '#2b2b2b', roughness: 0.95 });
   const mainGear = [];
   for (const s of [-1, 1]) {
     // Wire legs (front and rear) from the fuselage to the axle. They are
     // re-aimed every frame as the springy wire flexes.
-    const front = new Vector3(0.1, fusBottomAtGear, s * 0.03);
-    const rear = new Vector3(0.03, fusBottomAtGear, s * 0.03);
+    const front = new Vector3(high ? 0.105 : 0.1, fusBottomAtGear, s * 0.03);
+    const rear = new Vector3(high ? 0.045 : 0.03, fusBottomAtGear, s * 0.03);
     const legF = cylinderBetween(front, new Vector3(W.x, W.y, s * W.z), 0.0016, metal);
     const legR = cylinderBetween(rear, new Vector3(W.x, W.y, s * W.z), 0.0016, metal);
+    legF.userData.part = legR.userData.part = s > 0 ? 'wheelR' : 'wheelL';
     root.add(legF, legR);
     // 100 mm foam wheel: fat tyre, small hub.
     const wheel = new Group();
@@ -371,6 +395,7 @@ export function createBuschtrottelModel(L) {
     hub.rotation.x = Math.PI / 2;
     const spoke = new Mesh(new CylinderGeometry(0.003, 0.003, (W.radius - tube) * 2, 6), tyreMat);
     wheel.add(tyre, hub, spoke);
+    wheel.userData.part = s > 0 ? 'wheelR' : 'wheelL';
     root.add(wheel);
     mainGear.push({ side: s, front, rear, legF, legR, wheel, axle: new Vector3() });
   }
@@ -379,14 +404,15 @@ export function createBuschtrottelModel(L) {
   tailWheel.position.set(TW.x, 0, 0);
   const tw = new Mesh(new TorusGeometry(TW.radius * 0.65, TW.radius * 0.35, 6, 12), new MeshStandardMaterial({ color: '#2a2a2a' }));
   tw.position.set(0, TW.y, 0);
-  tailWheel.add(tw, cylinderBetween(new Vector3(0.012, -0.005, 0), new Vector3(0, TW.y, 0), 0.0012, metal));
+  tailWheel.add(tw, cylinderBetween(new Vector3(0.012, TW.y + 0.016, 0), new Vector3(0, TW.y, 0), 0.0012, metal));
+  tailWheel.userData.part = 'tail';
   root.add(tailWheel);
 
   // --- Motor, spinner, propeller ----------------------------------------------
   const P = L.prop;
   const motor = new Mesh(new CylinderGeometry(0.014, 0.014, 0.022, 16), metal);
   motor.rotation.z = Math.PI / 2;
-  motor.position.set(0.212, P.y, 0);
+  motor.position.set(P.x - 0.023, P.y, 0);
   root.add(motor);
   const prop = new Group();
   prop.position.set(P.x, P.y, 0);
@@ -422,14 +448,23 @@ export function createBuschtrottelModel(L) {
   disc.rotation.y = Math.PI / 2;
   disc.visible = false;
   prop.add(spinner, blades, disc);
+  prop.userData.part = 'prop';
   root.add(prop);
 
   shadowAll(root);
   let propAngle = 0;
   const tmpQ = new Quaternion();
 
+  // Breakable parts (see src/view/debris.js), collected from the tags above.
+  const parts = {};
+  for (const o of root.children) {
+    const p = o.userData.part;
+    if (p) (parts[p] ||= []).push(o);
+  }
+
   return {
     root,
+    parts,
     setPilotVisible(v) {
       pilot.visible = v;
     },
@@ -449,6 +484,7 @@ export function createBuschtrottelModel(L) {
       // wire legs, and roll the wheels along the ground.
       const fwdSpeed = aircraft.velocity.clone().applyQuaternion(aircraft.orientation.clone().invert()).x;
       for (const g of mainGear) {
+        if (g.wheel.userData.broken) continue; // fallen off
         const c = aircraft.contacts.find((k) => k.name === (g.side > 0 ? 'wheel-R' : 'wheel-L'));
         const lift = Math.min(c?.depth ?? 0, 0.05);
         g.axle.set(W.x, W.y + lift, g.side * W.z);

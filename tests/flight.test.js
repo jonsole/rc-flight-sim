@@ -220,6 +220,9 @@ for (const entry of AIRCRAFT) {
         const h0 = ac.attitude().heading;
         let swing = 0;
         for (let t = 0; t < 5 && ac.position.y < 0.5; t += 0.02) {
+          // Hold a little up elevator for the first part of the run (needed on
+          // small-wheeled models to stop them nosing over), then neutral.
+          ac.controls.pitch = t < 1.5 ? 0.3 : 0;
           ac.update(0.02);
           swing = Math.max(swing, Math.abs(ac.attitude().heading - h0));
         }
@@ -230,7 +233,8 @@ for (const entry of AIRCRAFT) {
         const ac = new Aircraft(def, { ground });
         ac.assistMode = 'off';
         ac.resetOnGround(0, 0, 0);
-        ac.controls = { roll: 0, pitch: 0, yaw: 1, throttle: 0.35 };
+        // Full right rudder, up elevator to keep the tail down, taxi power.
+        ac.controls = { roll: 0, pitch: 0.5, yaw: 1, throttle: 0.45 };
         const h0 = ac.attitude().heading;
         ac.update(1.5); // short enough that the heading can't wrap past 180°
         expect(ac.onGround).toBe(true);
@@ -244,6 +248,32 @@ for (const entry of AIRCRAFT) {
         ac.velocity.set(10, -10, 0);
         ac.update(1);
         expect(ac.crashed).toBe(true);
+      });
+
+      it('breaks the prop on a nose-in crash', () => {
+        const ac = airborne(15, 0.5);
+        ac.position.y = 3;
+        ac.orientation.setFromAxisAngle(new Vector3(0, 0, 1), -60 * deg);
+        ac.velocity.set(10, -10, 0);
+        ac.update(1);
+        expect(ac.broken.has('prop')).toBe(true);
+        expect(ac.propBroken).toBe(true);
+        expect(ac.breakEvents.some((e) => e.part === 'prop')).toBe(true);
+      });
+
+      it('loses lift from a wing that broke off', () => {
+        const ac = airborne(stallSpeed() * 1.6, 0.5);
+        ac.breakAt({ part: 'wingL' }, 5);
+        ac.update(0.5);
+        expect(ac.attitude().roll).toBeLessThan(-20 * deg); // rolls towards the missing wing
+      });
+
+      it('is put back together on reset', () => {
+        const ac = airborne(15, 0.5);
+        ac.breakAt({ part: 'wingR' }, 5);
+        ac.resetOnGround(0, 0, 0);
+        expect(ac.broken.size).toBe(0);
+        expect(ac.breakEvents.length).toBe(0);
       });
 
       it('drains the battery under power', () => {
@@ -522,11 +552,43 @@ describe('ground surfaces', () => {
         ac.update(1);
         const p0 = ac.position.clone();
         ac.controls.throttle = throttle;
+        ac.controls.pitch = 0.5; // up elevator, as when taxiing on grass
         ac.update(2);
         return ac.position.distanceTo(p0);
       };
       expect(moved(0.15)).toBeLessThan(0.1);
       expect(moved(0.8)).toBeGreaterThan(1);
     }
+  });
+});
+
+describe('E-flite S.E.5a on grass (like the real model)', () => {
+  // Takes off from three spots on the field grass; returns how many nosed over.
+  async function noseOvers(upElevator) {
+    const { physicsGround } = await import('../src/sim/terrain.js');
+    let n = 0;
+    for (const x of [0, -7, -14]) {
+      const ac = new Aircraft(getAircraft('eflite-se5a-900').def, { ground: physicsGround });
+      ac.resetOnGround(x, -60, Math.PI);
+      ac.update(1);
+      ac.controls = { roll: 0, pitch: upElevator, yaw: 0, throttle: 1 };
+      for (let t = 0; t < 5; t += 0.02) {
+        ac.update(0.02);
+        if (ac.crashed || ac.attitude().pitch < -35 * deg) {
+          n++;
+          break;
+        }
+        if (ac.position.y - physicsGround.heightAt(ac.position.x, ac.position.z) > 1.5) break;
+      }
+    }
+    return n;
+  }
+
+  it('noses over on a full-power takeoff without up elevator', async () => {
+    expect(await noseOvers(0)).toBeGreaterThanOrEqual(2);
+  });
+
+  it('takes off safely when up elevator is held', async () => {
+    expect(await noseOvers(0.35)).toBe(0);
   });
 });
