@@ -1,6 +1,6 @@
 import { WebGLRenderer, ACESFilmicToneMapping, PCFSoftShadowMap, SRGBColorSpace, Vector3 } from 'three';
 import { Aircraft } from './sim/aircraft.js';
-import { ground } from './sim/terrain.js';
+import { physicsGround as ground } from './sim/terrain.js';
 import { Obstacles } from './sim/obstacles.js';
 import { Wind } from './sim/wind.js';
 import { World, RUNWAY } from './world/world.js';

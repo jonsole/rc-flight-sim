@@ -85,6 +85,8 @@ export function createBuschtrottelModel(L) {
   const vcMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.92, flatShading: true });
   const wingTop = new Color(C.wing);
   const wingBottom = new Color(C.wingBottom || C.wing);
+  const slatTop = new Color(C.slatTop || C.wing);
+  const slatBottom = new Color(C.slatBottom || C.wingBottom || C.wing);
   const metal = new MeshStandardMaterial({ color: '#9a9c9e', roughness: 0.4, metalness: 0.6 });
   // Side windows read as dark glass from outside; the windscreen stays clear
   // enough to fly FPV through.
@@ -139,7 +141,7 @@ export function createBuschtrottelModel(L) {
     root.add(ws);
     head.position.set(-0.02, 0.04, 0);
   } else {
-    // Low wing: glass-enclosed cockpit on top of the fuselage.
+    // Low wing (Agro): canopy block on top of the fuselage.
     const fusAt = (x) => {
       const st = L.fuselage;
       for (let i = 0; i < st.length - 1; i++) {
@@ -152,47 +154,26 @@ export function createBuschtrottelModel(L) {
       }
       return { hw: st[0][1], yt: st[0][3] };
     };
-    // Angular Air Tractor-style cab: flat glass panels in a painted frame.
-    // Stations along x: windscreen foot, windscreen top, roof end, rear foot.
-    const H = 0.055;
-    const xs = [0.03, -0.035, -0.15, -0.25];
+    // Solid black canopy block: an angular trapezoid prism with sloped front
+    // and back and chamfered sides, with the receiver aerial poking out.
+    const H = 0.05;
+    // Front foot, front of the flat top, start of the long rear slope, rear foot.
+    const xs = [0.0, -0.055, -0.13, -0.25];
     const hs = [0.002, H, H, 0.002];
     const corner = (i, side, top) => {
       const { hw, yt } = fusAt(xs[i]);
-      const base = hw * 0.97;
-      const roof = hw * 0.72;
+      const base = hw * 0.9;
+      const roof = hw * 0.6;
       const z = side * (top ? base + (roof - base) * (hs[i] / H) : base);
       return new Vector3(xs[i], yt + 0.001 + (top ? hs[i] : 0), z);
     };
-    // Each ring: base right, roof right, roof left, base left.
     const cabRings = xs.map((_, i) => [corner(i, 1, false), corner(i, 1, true), corner(i, -1, true), corner(i, -1, false)]);
-    const cab = new Mesh(
-      loft(cabRings),
-      new MeshStandardMaterial({ color: '#a9cbe0', roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.22, depthWrite: false, side: DoubleSide, flatShading: true }),
-    );
-    cab.userData.noShadow = true;
-    root.add(cab);
-    // Frame: pillars and roof rails along every panel edge, plus a door post
-    // and a windscreen centre bar.
-    const frameMat = new MeshStandardMaterial({ color: C.top || C.main, roughness: 0.8 });
-    const bar = (p, q) => root.add(cylinderBetween(p, q, 0.0016, frameMat));
-    for (const side of [1, -1]) {
-      const sideIdx = side > 0 ? [0, 1] : [3, 2]; // [base, roof] ring indices
-      for (let i = 0; i < xs.length - 1; i++) {
-        bar(cabRings[i][sideIdx[1]], cabRings[i + 1][sideIdx[1]]); // roof rail / sloped edges
-      }
-      for (const i of [1, 2]) bar(cabRings[i][sideIdx[0]], cabRings[i][sideIdx[1]]); // pillars
-      // Door post between the windscreen pillar and the rear pillar.
-      const t = 0.45;
-      const pb = cabRings[1][sideIdx[0]].clone().lerp(cabRings[2][sideIdx[0]], t);
-      const pt = cabRings[1][sideIdx[1]].clone().lerp(cabRings[2][sideIdx[1]], t);
-      bar(pb, pt);
-    }
-    bar(cabRings[1][1], cabRings[1][2]); // windscreen header
-    bar(cabRings[2][1], cabRings[2][2]); // rear roof edge
-    const wsFoot = cabRings[0][0].clone().lerp(cabRings[0][3], 0.5);
-    const wsTop = cabRings[1][1].clone().lerp(cabRings[1][2], 0.5);
-    bar(wsFoot, wsTop); // windscreen centre bar
+    const canopy = new Mesh(loft(cabRings), new MeshStandardMaterial({ color: '#141414', roughness: 0.75, flatShading: true }));
+    root.add(canopy);
+    const top = cabRings[2][1].clone().lerp(cabRings[2][2], 0.5);
+    const aerial = [top.clone().add(new Vector3(0.005, 0, 0)), top.clone().add(new Vector3(-0.012, 0.06, 0)), top.clone().add(new Vector3(-0.04, 0.1, 0))];
+    root.add(cylinderBetween(aerial[0], aerial[1], 0.0008, new MeshStandardMaterial({ color: '#111' })));
+    root.add(cylinderBetween(aerial[1], aerial[2], 0.0008, new MeshStandardMaterial({ color: '#111' })));
     head.position.set(-0.13, 0.07, 0);
   }
   root.add(pilot);
@@ -266,7 +247,7 @@ export function createBuschtrottelModel(L) {
       rs.push(ring.map(([f, y]) => wingPoint(f, y, z)));
     }
     // Points 0-1 are the slat's underside, 2-3 its upper surface.
-    const slatGeo = loft(rs, { color: (_p, _ri, pi) => (pi < 2 ? wingBottom : wingTop) });
+    const slatGeo = loft(rs, { color: (_p, _ri, pi) => (pi < 2 ? slatBottom : slatTop) });
     wingR.add(new Mesh(slatGeo, vcMat));
     wingL.add(new Mesh(mirrorZ(slatGeo), vcMat));
   }
@@ -414,22 +395,28 @@ export function createBuschtrottelModel(L) {
   spinner.position.x = 0.011;
   const blades = new Group();
   const bladeMat = new MeshStandardMaterial({ color: '#1e1e1e', roughness: 0.5 });
-  for (const s of [-1, 1]) {
-    const rings2 = [];
-    for (let i = 0; i <= 6; i++) {
-      const r = 0.01 + ((P.radius - 0.01) * i) / 6;
-      const c = 0.02 * (1 - 0.5 * ((r - 0.045) / 0.06) ** 2) + 0.003;
-      const twist = Math.atan(0.1016 / (2 * Math.PI * Math.max(r, 0.02)));
-      const ring = [];
-      for (let j = 0; j < 8; j++) {
-        const th = (j / 8) * Math.PI * 2;
-        const a = Math.cos(th) * c * 0.5;
-        const b = Math.sin(th) * 0.0018;
-        ring.push(new Vector3(b * Math.cos(twist) + a * Math.sin(twist), s * r, s * (a * Math.cos(twist) - b * Math.sin(twist))));
-      }
-      rings2.push(ring);
+  // One blade along +y with the twist of the prop's pitch, copied round the hub.
+  const nBlades = P.blades || 2;
+  const pitchM = (P.pitchIn || 4) * 0.0254;
+  const rings2 = [];
+  for (let i = 0; i <= 6; i++) {
+    const r = 0.01 + ((P.radius - 0.01) * i) / 6;
+    const c = 0.02 * (1 - 0.5 * ((r - 0.045) / 0.06) ** 2) + 0.003;
+    const twist = Math.atan(pitchM / (2 * Math.PI * Math.max(r, 0.02)));
+    const ring = [];
+    for (let j = 0; j < 8; j++) {
+      const th = (j / 8) * Math.PI * 2;
+      const a = Math.cos(th) * c * 0.5;
+      const b = Math.sin(th) * 0.0018;
+      ring.push(new Vector3(b * Math.cos(twist) + a * Math.sin(twist), r, a * Math.cos(twist) - b * Math.sin(twist)));
     }
-    blades.add(new Mesh(loft(rings2), bladeMat));
+    rings2.push(ring);
+  }
+  const bladeGeo = loft(rings2);
+  for (let k = 0; k < nBlades; k++) {
+    const blade = new Mesh(bladeGeo, bladeMat);
+    blade.rotation.x = (k * 2 * Math.PI) / nBlades;
+    blades.add(blade);
   }
   const disc = new Mesh(new CircleGeometry(P.radius, 40), new MeshStandardMaterial({ map: propDiscTexture(), transparent: true, depthWrite: false, side: DoubleSide }));
   disc.rotation.y = Math.PI / 2;

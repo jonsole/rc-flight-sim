@@ -5,9 +5,9 @@ import {
   Object3D, BoxGeometry, ConeGeometry, Group, Vector3, MathUtils, DoubleSide, Float32BufferAttribute,
 } from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
-import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS } from '../sim/terrain.js';
+import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY } from '../sim/terrain.js';
 
-export const RUNWAY = { x: 0, z: -22, length: 180, width: 18 };
+export { RUNWAY } from '../sim/terrain.js';
 export const PILOT_POS = new Vector3(0, 0, 0);
 
 function grassTexture() {

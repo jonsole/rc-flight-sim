@@ -343,7 +343,9 @@ describe('Buschtrottel leading-edge slats', () => {
   for (const id of ['buschtrottel-shockcub', 'buschtrottel-highlander', 'buschtrottel-agro']) {
     it(`${id} stalls straight ahead without dropping a wing`, () => {
       expect(stallTest(id, 0)).toBeLessThan(10 * deg);
-      expect(stallTest(id, 0.2)).toBeLessThan(10 * deg);
+      // With power a little motor torque may slowly roll it (more with a
+      // three-blade prop), but no wing drop.
+      expect(stallTest(id, 0.2)).toBeLessThan(20 * deg);
     });
   }
 });
@@ -480,5 +482,51 @@ describe('terrain', () => {
     }
     expect(tested).toBeGreaterThan(390);
     expect(worst).toBeLessThan(1e-3); // metres
+  });
+});
+
+describe('ground surfaces', () => {
+  it('long grass has more rolling resistance than the runway, and gear rides bumps', async () => {
+    const { physicsGround, surfaceAt } = await import('../src/sim/terrain.js');
+    expect(surfaceAt(0, -22).name).toMatch(/runway/);
+    expect(surfaceAt(0, -60).name).toMatch(/grass/);
+    for (const e of AIRCRAFT) {
+      const rollout = (x, z) => {
+        const ac = new Aircraft(e.def, { ground: physicsGround });
+        ac.assistMode = 'off';
+        ac.resetOnGround(x, z, Math.PI);
+        ac.update(0.5);
+        ac.velocity.set(-7, 0, 0);
+        const x0 = ac.position.x;
+        let bounce = 0;
+        for (let t = 0; t < 10; t += 0.02) {
+          ac.update(0.02);
+          bounce = Math.max(bounce, Math.abs(ac.velocity.y));
+        }
+        return { dist: Math.abs(ac.position.x - x0), bounce };
+      };
+      const runway = rollout(0, -22);
+      const grass = rollout(0, -60);
+      expect(grass.dist).toBeLessThan(runway.dist * 0.85);
+      expect(grass.bounce).toBeGreaterThan(0.02); // the bumps are felt
+    }
+  });
+
+  it('has stiction: a parked model stays put and needs some throttle to roll', async () => {
+    const { physicsGround } = await import('../src/sim/terrain.js');
+    for (const e of AIRCRAFT) {
+      const moved = (throttle) => {
+        const ac = new Aircraft(e.def, { ground: physicsGround });
+        ac.assistMode = 'off';
+        ac.resetOnGround(0, -60, Math.PI);
+        ac.update(1);
+        const p0 = ac.position.clone();
+        ac.controls.throttle = throttle;
+        ac.update(2);
+        return ac.position.distanceTo(p0);
+      };
+      expect(moved(0.15)).toBeLessThan(0.1);
+      expect(moved(0.8)).toBeGreaterThan(1);
+    }
   });
 });

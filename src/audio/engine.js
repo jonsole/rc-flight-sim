@@ -79,7 +79,7 @@ export class EngineSound {
     const rpm = aircraft.propBroken ? 0 : aircraft.rpm;
     const thr = aircraft.throttleActual;
     const motorHz = 40 + (rpm / 60) * 7; // 14-pole motor electrical freq / 2
-    const bladeHz = Math.max(1, (rpm / 60) * 2);
+    const bladeHz = Math.max(1, (rpm / 60) * (aircraft.def.motor.blades || 2));
     this.motor.frequency.setTargetAtTime(motorHz, t, 0.05);
     this.motor2.frequency.setTargetAtTime(motorHz * 1.502, t, 0.05);
     this.motorFilter.frequency.setTargetAtTime(motorHz * 1.5, t, 0.05);

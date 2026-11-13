@@ -464,9 +464,13 @@ export class Aircraft {
         _lift.crossVectors(_n, _u); // lateral
         const vRoll = _vt.dot(_u);
         const vLat = _vt.dot(_lift);
-        const muRoll = c.muRoll ?? 0.035;
+        // Rolling resistance from the surface (scaled for the wheel: big soft
+        // wheels roll over grass more easily), with stiction near standstill.
+        const surf = ground.surfaceAt ? ground.surfaceAt(px, pz) : null;
+        const muRoll0 = (surf ? surf.roll : 0.035) * (c.rollScale ?? 1);
+        const muRoll = muRoll0 * (1 + (surf ? surf.stiction : 0) * Math.exp(-Math.abs(vRoll) / 0.4));
         const muLat = 0.7;
-        const fRoll = -muRoll * fn * Math.tanh(vRoll / 0.2);
+        const fRoll = -muRoll * fn * Math.tanh(vRoll / 0.03);
         // Tyre side force builds with slip angle (the angle between where the
         // wheel points and where it is going) and saturates around 10-15°,
         // rather than gripping fully at the slightest sideways motion. At a
@@ -484,10 +488,11 @@ export class Aircraft {
         _lift.crossVectors(_n, _u);
         const vAlong = _vt.dot(_u);
         const vSide = _vt.dot(_lift);
-        _f.addScaledVector(_u, -(c.mu ?? 0.4) * fn * Math.tanh(vAlong / 0.2));
+        const skidDrag = ground.surfaceAt ? ground.surfaceAt(px, pz).drag : 1;
+        _f.addScaledVector(_u, -(c.mu ?? 0.4) * skidDrag * fn * Math.tanh(vAlong / 0.1));
         _f.addScaledVector(_lift, -c.muLat * fn * Math.tanh(vSide / 0.05));
       } else if (vtLen > 1e-5) {
-        const mu = c.mu ?? 0.6;
+        const mu = (c.mu ?? 0.6) * (ground.surfaceAt ? ground.surfaceAt(px, pz).drag : 1);
         _f.addScaledVector(_vt, (-mu * fn * Math.tanh(vtLen / 0.2)) / vtLen);
       }
 

@@ -8,10 +8,11 @@ A browser-based radio-control aeroplane simulator with **line-of-sight** and
 | **E-flite S.E.5a 900mm** (EFL10950 / EFL10975) | Foam BNF WWI biplane with AS3X+/SAFE. |
 | **Buschtrottel ShockCub** | Thomas Buchwald's DIY 6 mm Depron bush plane, 900 mm: high wing, rounded tail. |
 | **Buschtrottel Highlander** | Same airframe with an angular tail and square wing tips. |
-| **Buschtrottel Agro** | Low wing with V-struts to the upper fuselage, full-span ailerons, angular Air Tractor-style glass cab, angular tail; orange and white. |
+| **Buschtrottel Agro** | Low wing with V-struts to the upper fuselage, full-span ailerons, black canopy block, low tailplane; orange and white; 8x4.5 three-blade prop. |
 
-The Buschtrottels are set up as built here: AT2308 1450Kv, 8x4 prop (assumed),
-3S 1350 mAh, ~450 g, KFm2 wing, 100 mm foam wheels on springy wire legs,
+The Buschtrottels are set up as built here: AT2308 1450Kv,
+3S 1350 mAh with an 8x6 prop (Agro: 8x4.5 three-blade), ~450 g, KFm2 wing,
+100 mm foam wheels on springy wire legs,
 and a rudder-linked tail wheel.
 Plan figures: ~900 mm span, ~22 dm² wing (19.8 g/dm² published loading).
 
@@ -94,7 +95,9 @@ panel sees its own local airflow (body rotation, prop wash and wing downwash),
 with lift and drag curves that stall and become flat-plate past the stall.
 Stability, damping, adverse yaw, dihedral effect, wing drop at the stall and
 the tail-dragger ground handling come out of that rather than being scripted.
-Also modelled: collisions with trees, the club hut, the windsock pole, the
+Also modelled: ground surfaces (mown runway, field grass, rough ground and the
+gravel pad, each with its own rolling resistance, stiction and bumps),
+collisions with trees, the club hut, the windsock pole, the
 fence and the table (solid objects push back and crash the model on a hard
 hit; foliage is soft and catches a slow model in the branches),
 ground effect (within about a wingspan of the ground: less
