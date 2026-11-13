@@ -95,7 +95,25 @@ export function f22Outlines() {
   // the front 159 mm between them, leaving a square intake at the front.
   const plate = [[694, 109], [733, 290], [735, 661]].map(P);
   const underbody = { plate, depth: 0.028, panEnd: plate[0][0] - 0.159 };
-  return { wing, elevon, hingeX, fin, finZ, slot, underbody, nose: P([0, 845])[0] + 0.667 };
+  // Fuselage (part 01): a 40 mm box whose side walls carry its side profile.
+  // Traced off a wall in 60 dpi plan pixels: [column, bottom, top], heights
+  // as rows from the fold line (row 1040), which is the box's floor. The tab
+  // on the wall's rear strip (column 1185) sits in the wing slots beside the
+  // motor cut-out (wing row 293.5), and that strip stands on the wing, 38 mm
+  // up from the floor. So the deep nose passes down through the wing's front
+  // notch to the belly pan, and behind it a 31 mm box sits on the wing and
+  // ends at the motor.
+  const px60 = 0.0254 / 60;
+  const fx = (col) => P([0, 293.5])[0] + (1185 - col) * px60;
+  const fuselage = {
+    halfWidth: 0.0215,
+    wingStep: (1130 - 1040) * px60, // floor to the top of the wing
+    stations: [
+      [425, 65, 65], [440, 50, 90], [480, 28, 112], [530, 14, 130], [580, 0, 142], [620, 0, 150],
+      [700, 0, 160], [900, 0, 165], [960, 25, 165], [1000, 55, 165], [1060, 90, 165], [1390, 90, 165],
+    ].map(([c, b, t]) => [fx(c), b * px60, t * px60]),
+  };
+  return { wing, elevon, hingeX, fin, finZ, slot, underbody, fuselage, nose: fuselage.stations[0][0] };
 }
 
 export function buildF22(style) {
@@ -208,10 +226,10 @@ export function buildF22(style) {
   // Fuselage box on top and the side plates underneath, side-on.
   const body = [{
     name: 'fuselage-side',
-    pos: [0.03, -0.005, 0],
+    pos: [0.06, -0.012, 0],
     chord: [1, 0, 0],
     span: [0, -1, 0],
-    area: 0.027,
+    area: 0.031,
     foil: { cla: liftSlope(0.2), alpha0: 0, alphaStall: 25 * deg, cd0: 0.02, ar: 0.2, e: 0.5 },
     controls: [],
   }];
@@ -226,6 +244,7 @@ export function buildF22(style) {
   const radius = style.prop.diameterIn * 0.0254 / 2;
   const U = O.underbody;
   const bottomY = wingY - 0.0025 - U.depth;
+  const floorY = wingY + 0.0025 - O.fuselage.wingStep; // underside of the nose
 
   const def = {
     name: style.name,
@@ -271,10 +290,11 @@ export function buildF22(style) {
       { name: 'belly-rear', pos: [U.plate[2][0] + 0.01, bottomY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
       // The pusher prop hangs below the wing in its slot.
       { name: 'prop-low', pos: [propX, propY - radius, 0], type: 'prop', k: 600, c: 5, crashSpeed: 0 },
-      hard('nose', [O.nose - 0.004, 0.0, 0], 3),
+      hard('nose', [O.nose - 0.004, floorY + O.fuselage.stations[0][1], 0], 3),
+      { name: 'chin', pos: [O.fuselage.stations[5][0], floorY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
       hard('wing-tip-L', [tip[0] - 0.02, wingY, -tip[1]]),
       hard('wing-tip-R', [tip[0] - 0.02, wingY, tip[1]]),
-      hard('cabin-top', [0.12, 0.045, 0], 3),
+      hard('cabin-top', [0.15, floorY + 0.07 + 0.02, 0], 3),
       hard('fin-top-L', [O.fin[2][0], wingY + finH * Math.cos(cant), -(O.finZ + finH * Math.sin(cant))], 3),
       hard('fin-top-R', [O.fin[2][0], wingY + finH * Math.cos(cant), O.finZ + finH * Math.sin(cant)], 3),
       hard('tail-end-L', [elevTip[0], wingY, -elevTip[1]], 3.5),
@@ -294,8 +314,8 @@ export function buildF22(style) {
     views: {
       span: SPAN,
       // Under the canopy, and a camera on top of the fuselage box.
-      cockpit: [0.13, 0.03, 0],
-      pod: [0.04, 0.05, 0],
+      cockpit: [0.19, floorY + 0.075, 0],
+      pod: [0.0, floorY + 0.08, 0],
       chase: { back: 1.4, up: 0.45 },
     },
     createModel: () => createF22Model(geometry),

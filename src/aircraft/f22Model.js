@@ -81,37 +81,33 @@ export function createF22Model(G) {
     root.add(fin);
   }
 
-  // --- Fuselage box with a pointed nose, sitting on the wing ------------------
-  // [x, half-width, bottom, top]; behind the wing's front edge the box sits on
-  // the wing.
-  const fy = wingTop;
-  const stations = [
-    [G.nose, 0.002, -0.003, 0.0005],
-    [G.nose - 0.03, 0.01, -0.009, 0.008],
-    [G.nose - 0.08, 0.018, -0.013, 0.017],
-    [G.nose - 0.13, 0.021, -0.014, 0.023],
-    [0.17, 0.021, fy, 0.028],
-    [0.11, 0.021, fy, 0.031],
-    [0.03, 0.021, fy, 0.028],
-    [G.prop.x + 0.03, 0.02, fy, 0.026],
-  ];
-  const box = new Mesh(loft(stations.map((s) => boxRing(...s))), foam(C.box));
+  // --- Fuselage: a 40 mm box, deep nose through the wing, low box behind -------
+  const F = G.fuselage;
+  const floor = wingTop - F.wingStep;
+  const box = new Mesh(loft(F.stations.map(([x, b, t], i) => boxRing(x, i === 0 ? 0.012 : F.halfWidth, floor + b, floor + t + (i === 0 ? 0.002 : 0)))), foam(C.box));
   root.add(box);
+  const topAt = (x) => {
+    const st = F.stations;
+    for (let i = 0; i < st.length - 1; i++) {
+      if (x <= st[i][0] && x >= st[i + 1][0]) return floor + st[i][2] + ((st[i + 1][2] - st[i][2]) * (st[i][0] - x)) / (st[i][0] - st[i + 1][0]);
+    }
+    return floor + st[st.length - 1][2];
+  };
 
-  // Canopy: a bubble on the front of the box.
+  // Canopy (parts 03 and 04): a bubble on the front of the box.
   const canopyMat = new MeshStandardMaterial({ color: C.canopy, roughness: 0.15, metalness: 0.5 });
   const canopyRings = [];
-  const c0 = G.nose - 0.07;
-  const c1 = 0.06;
+  const c0 = G.nose - 0.06;
+  const c1 = 0.1;
   for (let i = 0; i <= 8; i++) {
     const t = i / 8;
     const x = c0 + (c1 - c0) * t;
     const k = Math.sin(Math.PI * Math.min(1, t * 1.6)) ** 0.6 * (t > 0.6 ? Math.cos(((t - 0.6) / 0.4) * Math.PI / 2) ** 0.5 : 1);
-    const base = 0.018 + 0.01 * Math.min(1, t * 1.5);
+    const base = topAt(x) - 0.001;
     const ring = [];
     for (let j = 0; j <= 8; j++) {
       const a = (j / 8) * Math.PI;
-      ring.push(new Vector3(x, base + Math.max(0.0005, 0.017 * k) * Math.sin(a), 0.0135 * Math.max(0.1, k) * Math.cos(a)));
+      ring.push(new Vector3(x, base + Math.max(0.0005, 0.02 * k) * Math.sin(a), 0.016 * Math.max(0.1, k) * Math.cos(a)));
     }
     canopyRings.push(ring);
   }
