@@ -136,7 +136,21 @@ export class TouchControls {
   }
 }
 
-/** True on phones/tablets (coarse pointer or touch support). */
+/**
+ * True on phones and tablets. Uses several signals because no single one is
+ * reliable: the primary pointer being a finger, the browser's own "mobile"
+ * hint, the user agent, and iPadOS (which reports itself as a Mac).
+ * Touch-screen laptops with a mouse are not treated as mobile; if one is
+ * actually flown by touch, main.js switches the sticks on at the first touch.
+ */
 export function isTouchDevice() {
-  return (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window;
+  const mm = (q) => window.matchMedia && window.matchMedia(q).matches;
+  const ua = navigator.userAgent || '';
+  return (
+    mm('(pointer: coarse)') ||
+    mm('(hover: none) and (any-pointer: coarse)') ||
+    navigator.userAgentData?.mobile === true ||
+    /Android|iPhone|iPad|iPod|Mobile|Silk|Kindle/i.test(ua) ||
+    (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) // iPadOS
+  );
 }

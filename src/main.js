@@ -91,6 +91,7 @@ const analog = document.getElementById('analog');
 
 let paused = false;
 let assistFlash = 0; // seconds to show the assist-mode banner
+let touchSeen = false; // a real finger touched the screen (auto-enables the sticks)
 
 function applySettings() {
   aircraft.assistMode = settings.assist;
@@ -100,7 +101,7 @@ function applySettings() {
   world.setSun(settings.sunElevation, settings.sunAzimuth);
   sound.volume = settings.volume;
   osd.showHud = settings.showHud;
-  const showTouch = settings.touchControls === 'on' || (settings.touchControls === 'auto' && TOUCH_DEVICE);
+  const showTouch = settings.touchControls === 'on' || (settings.touchControls === 'auto' && (TOUCH_DEVICE || touchSeen));
   touch.setVisible(showTouch);
   touch.setMode(Number(settings.stickMode));
   if (rig.mode !== settings.cameraMode) rig.setMode(settings.cameraMode);
@@ -154,6 +155,14 @@ const touch = new TouchControls({
   onMenu: () => setMenu(!panel.visible),
 });
 input.touch = touch;
+// Auto mode: if detection missed this device, show the sticks as soon as the
+// screen is actually touched.
+window.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'touch' && settings.touchControls === 'auto' && !touch.visible) {
+    touchSeen = true;
+    applySettings();
+  }
+});
 
 function setMenu(open) {
   panel.show(open);
