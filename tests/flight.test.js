@@ -80,7 +80,7 @@ for (const entry of AIRCRAFT) {
 
       it('trims in pitch at a sensible cruise speed (wings held level)', () => {
         const vs = stallSpeed();
-        const ac = airborne(vs * 1.6, 0.5);
+        const ac = airborne(vs * 1.6, entry.def.cruiseThrottle ?? 0.5);
         for (let t = 0; t < 20; t += 0.05) {
           ac.controls.roll = Math.max(-1, Math.min(1, -2 * ac.attitude().roll));
           ac.update(0.05);
@@ -105,11 +105,17 @@ for (const entry of AIRCRAFT) {
       });
 
       it('responds to the sticks in the right sense', () => {
+        // Strongest rate on each axis in the first 0.1 s: small models respond
+        // (and stall, or overshoot and bounce back) very quickly.
         const rate = (ctl) => {
           const ac = airborne();
           Object.assign(ac.controls, ctl);
-          ac.update(0.1); // the 900 mm model responds (and stalls) quickly
-          return ac.omega;
+          const peak = new Vector3();
+          for (let i = 0; i < 10; i++) {
+            ac.update(0.01);
+            for (const k of ['x', 'y', 'z']) if (Math.abs(ac.omega[k]) > Math.abs(peak[k])) peak[k] = ac.omega[k];
+          }
+          return peak;
         };
         expect(rate({ roll: 1 }).x).toBeGreaterThan(0.5); // right roll
         expect(rate({ roll: -1 }).x).toBeLessThan(-0.5);
