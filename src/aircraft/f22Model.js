@@ -163,7 +163,8 @@ export function createF22Model(G) {
     update(aircraft, dt) {
       for (const e of elevons) {
         const s = aircraft.surfaces.find((k) => k.name === e.name);
-        e.pivot.rotation.z = s ? s.deflection : 0; // TE down positive
+        // TE down positive, from the reflex the elevons are trimmed to.
+        e.pivot.rotation.z = (s ? s.deflection : 0) - G.reflex;
       }
       propeller.update(aircraft.rpm, dt, aircraft.propBroken);
     },

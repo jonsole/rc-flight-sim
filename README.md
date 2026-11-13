@@ -18,12 +18,16 @@ and a rudder-linked tail wheel.
 Plan figures: ~900 mm span, ~22 dm² wing (19.8 g/dm² published loading).
 
 The Mini F-22 (`src/aircraft/f22.js`) is traced off the FT plan sheets: 508 mm
-span, 667 mm long, 14.2 dm², 211 g all up on a 2204 2300Kv with a 6x4.5 prop
-and 3S 800 mAh, elevons ±25°. The CG is at the build article's 355 mm from the
-nose (the plan sheet marks 305 mm). Thrust and inertia are estimates. There
-is no landing gear: with *Start position: On the runway* you hold it at
-shoulder height, and it is thrown once the throttle passes 60%. Land it on its
-belly with the motor off, since the prop hangs below the wing.
+span, 667 mm long, 14.2 dm², 211 g all up on a 2204 2300Kv with a 6x4.5
+five-blade prop and 3S 800 mAh. The flat wing makes lift only from its angle
+of attack, so the elevons are trimmed with the plan's 8° of reflex, and the CG
+is at the plan's 305 mm from the nose. Elevons: 25° for roll, 16° for pitch.
+At the stall the elevons sit in the wing's dead air and lose most of their
+bite, and it falls off on the left wing. Thrust and inertia are estimates.
+There is no landing gear: with *Start position: On the runway* the pilot holds
+it at the flight line (your pilot position) and throws it once the throttle
+passes 60%. Land it on its belly with the motor off, since the prop hangs
+below the wing.
 
 It runs in any modern browser (Chrome or Edge recommended on Windows). There is
 nothing to install for flying: the build is a static website.

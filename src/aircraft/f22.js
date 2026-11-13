@@ -6,8 +6,9 @@
 //
 // Published (plan sheet): 508 mm span, 667 mm long, 14.2 dm² wing area,
 // 134 g dry, 211 g all up, CG 305 mm from the nose (marked on the wing),
-// elevons ±25° with 30% expo. Power: 2204 2300Kv (or 1806 2280Kv), 6x4.5
-// prop, 12 A ESC, 3S 800 mAh, two 5 g servos.
+// elevons ±25° with 30% expo, set with 8° of up reflex (the plan's reflex
+// gauge). Power: 2204 2300Kv (or 1806 2280Kv), 6x4.5 prop, 12 A ESC, 3S
+// 800 mAh, two 5 g servos. This one flies a five-blade prop.
 //
 // The outlines below are traced off the 1:1 plan sheets in plan pixels
 // (40 dpi render, 0.635 mm each, scaled to the published 508 mm span), so the
@@ -22,11 +23,12 @@ import { createF22Model } from './f22Model.js';
 
 const deg = Math.PI / 180;
 
-// Plan pixels -> body axes. The centreline is plan column 591. The plan
-// sheet marks the CG at row 285 (305 mm from the nose); the build article
-// gives 14 in (355 mm), which is where it is here: 50 mm further back.
+// Plan pixels -> body axes. The centreline is plan column 591 and the CG is
+// at the plan's marks, row 285 (305 mm from the nose). The build article
+// says 14 in (355 mm), but the plan's CG goes with the plan's 8° of elevon
+// reflex: together they trim at ~10° angle of attack, like the real one.
 const K = (0.635 / 1000) * (508 / 498);
-const CG_ROW = 285 + 50 / 1000 / K;
+const CG_ROW = 285;
 const P = ([col, row]) => [(CG_ROW - row) * K, (col - 591) * K];
 
 /** Polygon area and centroid [x, z] (shoelace). */
@@ -111,6 +113,8 @@ export function buildF22(style) {
     e: 0.85,
   };
 
+  const plateEarly = { ...plate, alphaStall: plate.alphaStall - style.stallAsymmetry };
+
   // Spanwise strips of the main wing, each with its own area, centroid and
   // chord, swept along the quarter-chord line.
   const bands = [0, 0.045, 0.1, 0.16, 0.21, SPAN / 2];
@@ -131,7 +135,9 @@ export function buildF22(style) {
         chord: [1, 0, 0],
         span: [-side * Math.tan(sweep), side * Math.sin(style.aeroDihedral), 1],
         area: s.area,
-        foil: plate,
+        // No foam-board model is built perfectly true: one wing stalls a
+        // little earlier, so at the stall it falls off to that side.
+        foil: side < 0 ? plateEarly : plate,
         wing: true,
         chordLen: s.chord,
         controls: [],
@@ -144,7 +150,8 @@ export function buildF22(style) {
   // Elevons: all-moving tail halves, mixed for pitch and roll.
   const elevAr = (2 * Math.max(...O.elevon.map((p) => p[1]))) ** 2 / (2 * elevP.area);
   const elevChord = elevP.area / Math.max(...O.elevon.map((p) => p[1]));
-  const elevFoil = { cla: liftSlope(elevAr), alpha0: 0, alphaStall: 20 * deg, stallWidth: 0.03, cd0: 0.025, ar: elevAr, e: 0.75 };
+  // Low aspect ratio (~2): it stalls late.
+  const elevFoil = { cla: liftSlope(elevAr), alpha0: 0, alphaStall: 28 * deg, stallWidth: 0.03, cd0: 0.025, ar: elevAr, e: 0.75 };
   const inc = -style.reflex;
   const elevons = [-1, 1].map((side) => ({
     name: `stab-${side > 0 ? 'R' : 'L'}`,
@@ -155,6 +162,10 @@ export function buildF22(style) {
     foil: elevFoil,
     downwash: true,
     propwash: 0.2, // the inner part sits in the slipstream
+    // Right behind the wing: as it stalls they sit in its dead air and stop
+    // answering the stick.
+    wake: style.elevonWake,
+    maxDeflection: style.throws.max,
     controls: [
       { input: 'pitch', gain: -1, max: style.throws.pitch, tau: 0.9 },
       { input: 'roll', gain: -side, max: style.throws.roll, tau: 0.9 },
@@ -198,7 +209,9 @@ export function buildF22(style) {
   const def = {
     name: style.name,
     mass: style.mass,
-    inertia: [0.0018, 0.0042, 0.0026], // roll, yaw, pitch (estimated)
+    // Roll, yaw, pitch (estimated): ~120 g of foam spread over the span and
+    // the 667 mm length, battery at the CG, motor 7 cm behind it.
+    inertia: [0.0025, 0.006, 0.004],
     parasite: { x: 0.0035, y: 0.02, z: 0.03 },
     surfaces: [...wing, ...elevons, ...fins, ...body],
     wingAspectRatio: AR,
@@ -213,7 +226,7 @@ export function buildF22(style) {
       downThrust: 0,
       rightThrust: 0,
       maxRpm: style.prop.rpm,
-      blades: 2,
+      blades: style.prop.blades,
       position: [propX, propY, 0],
       discArea: Math.PI * radius ** 2,
     },
@@ -227,8 +240,8 @@ export function buildF22(style) {
       maxPitch: 30 * deg,
       levelGain: { roll: 1.2, pitch: 1.4 },
     },
-    // Thrown at shoulder height once the motor is up to speed.
-    handLaunch: { height: 1.7, speed: 7.5, pitch: 12 * deg, throttle: 0.6 },
+    // Thrown from shoulder height once the motor is up to speed.
+    handLaunch: { height: 1.5, speed: 7.5, pitch: 12 * deg, throttle: 0.6 },
     contacts: [
       // Belly-landed on the foam belly pan.
       { name: 'belly-front', pos: [belly.front, belly.y, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
@@ -246,7 +259,7 @@ export function buildF22(style) {
     ],
   };
 
-  const geometry = { ...O, wingY, cant, finH, prop: { x: propX, y: propY, radius, pitchIn: style.prop.pitchIn, blades: 2 }, belly, colors: style.colors };
+  const geometry = { ...O, wingY, cant, finH, prop: { x: propX, y: propY, radius, pitchIn: style.prop.pitchIn, blades: style.prop.blades }, reflex: style.reflex, belly, colors: style.colors };
 
   return {
     id: style.id,
@@ -266,18 +279,23 @@ export function buildF22(style) {
   };
 }
 
-// 2204 2300Kv on 3S with a 6x4.5: about 400 g static thrust at ~9 A
-// (estimated from typical prop data); pitch speed = pitch × loaded rpm.
-const PROP_6x45 = { diameterIn: 6, pitchIn: 4.5, rpm: 17500, staticThrust: 3.9, pitchSpeed: 33, current: 9, y: 0.014 };
+// 2204 2300Kv on 3S. A two-blade 6x4.5 gives about 400 g static thrust at
+// ~9 A; a five-blade of the same size loads the motor more: fewer rpm, more
+// static thrust and current (estimated). Pitch speed = pitch × loaded rpm.
+const PROP_6x45x5 = { diameterIn: 6, pitchIn: 4.5, blades: 5, rpm: 15000, staticThrust: 4.4, pitchSpeed: 28.5, current: 12, y: 0.014 };
 
 export const FT_MINI_F22 = buildF22({
   id: 'ft-mini-f22',
   name: 'Flite Test Mighty Mini F-22',
-  summary: 'Foam-board pusher jet, 508 mm. Prop in a slot in the wing, elevons, canted fins. Hand launch. 2204 2300Kv, 6x4.5, 3S 800 mAh, 211 g.',
-  prop: PROP_6x45,
+  summary: 'Foam-board pusher jet, 508 mm. Prop in a slot in the wing, elevons, canted fins. Hand launch. 2204 2300Kv, 6x4.5 five-blade, 3S 800 mAh, 211 g.',
+  prop: PROP_6x45x5,
   mass: 0.211,
-  throws: { pitch: 16 * deg, roll: 12 * deg },
-  reflex: 3 * deg,
+  // Elevons 25° each way on the plan: all of it for roll, less for pitch so
+  // half stick doesn't stall it. Mixed, they share the 25° of servo travel.
+  throws: { pitch: 16 * deg, roll: 25 * deg, max: 25 * deg },
+  stallAsymmetry: 3 * deg, // left wing
+  elevonWake: 0.95,
+  reflex: 8 * deg, // elevons trimmed trailing edge up: the plan's reflex gauge
   downwashGain: 0.5,
   // Effective dihedral for the aerodynamics (the wing is flat): the swept
   // leading edge and the fins standing above the wing roll it away from a
