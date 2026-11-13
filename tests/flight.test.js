@@ -173,6 +173,25 @@ for (const entry of AIRCRAFT) {
         expect(liftoff).toBeLessThan(80);
       });
 
+      it('gets ground effect: more lift and less drag just above the ground', () => {
+        const forcesAt = (heightInSpans) => {
+          const ac = airborne(9, 0);
+          ac.throttleActual = 0;
+          ac.orientation.setFromAxisAngle(new Vector3(0, 0, 1), 5 * deg);
+          ac.velocity.set(9, 0, 0);
+          const lowestWing = Math.min(...ac.surfaces.filter((s) => s.wing).map((s) => s.pos.y));
+          ac.position.set(0, heightInSpans * ac.wingSpan - lowestWing, 0);
+          ac.step(1e-6);
+          return { lift: ac.lastForces.aero.y, drag: -ac.lastForces.aero.x, ge: ac.groundEffect };
+        };
+        const near = forcesAt(0.1);
+        const far = forcesAt(3);
+        expect(near.lift).toBeGreaterThan(far.lift * 1.03);
+        expect(near.drag).toBeLessThan(far.drag * 0.9);
+        expect(near.ge).toBeGreaterThan(0.1); // biplanes get less: the upper wing is higher
+        expect(far.ge).toBeLessThan(0.01);
+      });
+
       it('detects a nose-in crash', () => {
         const ac = airborne(15, 0.5);
         ac.position.y = 3;

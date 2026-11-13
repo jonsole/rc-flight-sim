@@ -197,6 +197,7 @@ export function buildSE5a(o) {
     ],
     wingAspectRatio: WING_AR,
     wingArea: 2 * SPAN * CHORD,
+    wingSpan: SPAN,
     downwashGain: 0.9, // scales classical 2·CL/(π·AR) downwash at the tail
     motor: {
       ...o.motor,
