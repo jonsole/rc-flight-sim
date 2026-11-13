@@ -125,9 +125,12 @@ function layout(style) {
     prop: { x: high ? 0.243 : 0.235, y: high ? -0.005 : 0, radius: 0.1016, blades: style.prop.blades, pitchIn: style.prop.pitchIn }, // 8" prop
     wheel: high ? { x: 0.085, y: -0.119, z: 0.09, radius: 0.05 } : { x: 0.12, y: -0.145, z: 0.09, radius: 0.05 }, // 100 mm foam wheels
     tailWheel: { x: -0.43, y: high ? -0.024 : -0.03, radius: 0.01 },
-    // Drooped tip plates ("saumons"): a profile under each tip, deepest at
-    // the trailing edge. [distance from the plate's front, depth below].
-    tipPlate: [[0, 0], [0.01, 0.008], [0.027, 0.016], [0.067, 0.029], [0.117, 0.039], [0.165, 0.045], [0.172, 0.04], [0.167, 0.022], [0.175, 0]],
+    // Tip plates ("saumons"), traced off the plan: a 176 mm lens with a notch
+    // at the back to clear the aileron, centred vertically on the wing and
+    // starting at the leading edge. [distance from the LE, height above the
+    // wing's mid-thickness].
+    tipPlate: [[33, 46.5], [40, 38.5], [50, 31], [62, 26], [75, 22], [100, 18], [115, 17.5], [150, 19], [175, 21], [200, 25], [209, 27.5], [205, 34], [203.5, 40], [204.5, 47], [209, 58.5], [200, 60], [175, 62.5], [150, 64.5], [115, 66], [100, 65.5], [75, 62], [62, 59], [50, 55], [40, 51]]
+      .map(([x, y]) => [(x - 33) / 1000, (42 - y) / 1000]),
   };
 }
 

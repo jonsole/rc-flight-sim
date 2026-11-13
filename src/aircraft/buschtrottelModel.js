@@ -286,13 +286,10 @@ export function createBuschtrottelModel(L) {
     wingR.add(new Mesh(slatGeo, vcMat));
     wingL.add(new Mesh(mirrorZ(slatGeo), vcMat));
   }
-  // Drooped tip plates, flush with the trailing edge.
+  // Tip plates, centred vertically on the wing.
   {
-    const tp = L.tipPlate;
-    const len = tp[tp.length - 1][0];
-    const x0 = L.chord - len; // plate front, from the LE
-    const top = L.thickFront;
-    const pts = [[0, top], ...tp.map(([d, h]) => [x0 + d, -h]), [L.chord, L.thickRear], [x0 + len * 0.4, top]];
+    const mid = L.thickFront / 2;
+    const pts = L.tipPlate.map(([d, h]) => [d, h + mid]);
     // Outline in (chord distance, height) -> 3D at the tip.
     const geo = slab(pts.map(([d, h]) => [-d, h]), 0.006);
     const ci = Math.cos(L.incidence);
