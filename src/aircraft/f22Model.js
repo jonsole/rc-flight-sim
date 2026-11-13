@@ -119,16 +119,38 @@ export function createF22Model(G) {
   canopy.userData.part = 'canopy';
   root.add(canopy);
 
-  // Belly pan under the wing (the "intakes"): a shallow tray.
-  const B = G.belly;
-  const bellyRings = [B.front, (B.front + B.rear) / 2, B.rear].map((x, i) => {
-    const hwTop = i === 0 ? 0.04 : 0.055;
-    const hwBot = i === 0 ? 0.03 : 0.04;
-    const yTop = G.wingY - T / 2;
-    return [new Vector3(x, yTop, hwTop), new Vector3(x, yTop, -hwTop), new Vector3(x, B.y, -hwBot), new Vector3(x, B.y, hwBot)];
-  });
-  const belly = new Mesh(loft(bellyRings), darkMat);
-  root.add(belly);
+  // --- Underneath: side plates down to the belly pan (the intakes) -----------
+  const U = G.underbody;
+  const under = G.wingY - T / 2; // underside of the wing
+  const bottom = under - U.depth;
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < U.plate.length - 1; i++) {
+      const [ax, az] = U.plate[i];
+      const [bx, bz] = U.plate[i + 1];
+      const len = Math.hypot(bx - ax, bz - az);
+      // Plate segment in its own (along, up) plane; the front end is cut back
+      // at the bottom.
+      const cut = i === 0 ? 0.016 : 0;
+      const seg = new Mesh(slab([[0, 0], [-len, 0], [-len, -U.depth], [-cut, -U.depth]]), darkMat);
+      seg.position.set(ax, under, side * az);
+      seg.rotation.y = Math.atan2(-(side * (bz - az)), bx - ax) + Math.PI;
+      root.add(seg);
+    }
+  }
+  // Belly pan: between the plates, from their front ends back 159 mm.
+  const plateZ = (x) => {
+    for (let i = 0; i < U.plate.length - 1; i++) {
+      const [ax, az] = U.plate[i];
+      const [bx, bz] = U.plate[i + 1];
+      if (x <= ax && x >= bx) return az + ((bz - az) * (ax - x)) / (ax - bx);
+    }
+    return U.plate[U.plate.length - 1][1];
+  };
+  const panXs = [U.plate[0][0] - 0.016, U.plate[1][0], U.panEnd].filter((x, i, a) => i === 0 || x < a[0]).sort((a, b) => b - a);
+  const panRight = panXs.map((x) => [x, plateZ(x) - T / 2]);
+  const pan = new Mesh(flatSlab([...panRight, ...panRight.slice().reverse().map(([x, z]) => [x, -z])]), darkMat);
+  pan.position.y = bottom + T / 2;
+  root.add(pan);
 
   // --- Power pod: motor at the back of the box, pusher prop in the slot --------
   const P = G.prop;

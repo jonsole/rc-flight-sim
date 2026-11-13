@@ -89,7 +89,13 @@ export function f22Outlines() {
     .map(([u, v]) => [(CG_ROW - (547 + (u - 195))) * K, (265 - v) * K]);
   // T-shaped prop slot: the prop spins in the cross bar.
   const slot = { front: P([0, 437])[0], back: P([0, 493])[0], halfWidth: (730 - 591) * K, stemFront: P([0, 328])[0], stemHalf: (615 - 591) * K };
-  return { wing, elevon, hingeX, fin, finZ, slot, nose: P([0, 845])[0] + 0.667 };
+  // Under the wing (parts 05, 06 and 08): two side plates hang 28 mm below
+  // it, down the chine line (bent at their score line), then straight back
+  // to the hinge either side of the prop. The belly pan closes the bottom of
+  // the front 159 mm between them, leaving a square intake at the front.
+  const plate = [[694, 109], [733, 290], [735, 661]].map(P);
+  const underbody = { plate, depth: 0.028, panEnd: plate[0][0] - 0.159 };
+  return { wing, elevon, hingeX, fin, finZ, slot, underbody, nose: P([0, 845])[0] + 0.667 };
 }
 
 export function buildF22(style) {
@@ -199,13 +205,13 @@ export function buildF22(style) {
     controls: [],
   }));
 
-  // Fuselage box and belly pan, side-on.
+  // Fuselage box on top and the side plates underneath, side-on.
   const body = [{
     name: 'fuselage-side',
-    pos: [0.08, 0.01, 0],
+    pos: [0.03, -0.005, 0],
     chord: [1, 0, 0],
     span: [0, -1, 0],
-    area: 0.022,
+    area: 0.027,
     foil: { cla: liftSlope(0.2), alpha0: 0, alphaStall: 25 * deg, cd0: 0.02, ar: 0.2, e: 0.5 },
     controls: [],
   }];
@@ -218,7 +224,8 @@ export function buildF22(style) {
   // above it, half below.
   const propY = wingY;
   const radius = style.prop.diameterIn * 0.0254 / 2;
-  const belly = style.belly;
+  const U = O.underbody;
+  const bottomY = wingY - 0.0025 - U.depth;
 
   const def = {
     name: style.name,
@@ -259,9 +266,9 @@ export function buildF22(style) {
     // Thrown from shoulder height once the motor is up to speed.
     handLaunch: { height: 1.5, speed: 7.5, pitch: 12 * deg, throttle: 0.6 },
     contacts: [
-      // Belly-landed on the foam belly pan.
-      { name: 'belly-front', pos: [belly.front, belly.y, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
-      { name: 'belly-rear', pos: [belly.rear, belly.y, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
+      // Belly-landed on the belly pan and the side plates.
+      { name: 'belly-front', pos: [U.plate[0][0] - 0.02, bottomY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
+      { name: 'belly-rear', pos: [U.plate[2][0] + 0.01, bottomY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
       // The pusher prop hangs below the wing in its slot.
       { name: 'prop-low', pos: [propX, propY - radius, 0], type: 'prop', k: 600, c: 5, crashSpeed: 0 },
       hard('nose', [O.nose - 0.004, 0.0, 0], 3),
@@ -275,7 +282,7 @@ export function buildF22(style) {
     ],
   };
 
-  const geometry = { ...O, wingY, cant, finH, prop: { x: propX, y: propY, radius, pitchIn: style.prop.pitchIn, blades: style.prop.blades }, reflex: style.reflex, belly, colors: style.colors };
+  const geometry = { ...O, wingY, cant, finH, prop: { x: propX, y: propY, radius, pitchIn: style.prop.pitchIn, blades: style.prop.blades }, reflex: style.reflex, colors: style.colors };
 
   return {
     id: style.id,
@@ -319,7 +326,6 @@ export const FT_MINI_F22 = buildF22({
   // sideslip.
   aeroDihedral: 10 * deg,
   finCant: 20 * deg,
-  belly: { front: 0.16, rear: 0.02, y: -0.03 },
   // Painted in two greys like the full-size Raptor, with a gold-tinted canopy.
   colors: { main: '#8d949b', dark: '#5f666d', canopy: '#6b5a2e', box: '#7f868d' },
 });
