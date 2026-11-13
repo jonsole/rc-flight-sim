@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { Vector3 } from 'three';
+import { Vector3, Quaternion } from 'three';
 import { Aircraft } from '../src/sim/aircraft.js';
 import { AIRCRAFT, getAircraft } from '../src/aircraft/index.js';
 import { buildBuschtrottel } from '../src/aircraft/buschtrottel.js';
@@ -171,6 +171,25 @@ for (const entry of AIRCRAFT) {
         expect(ac.crashed).toBe(false);
         expect(liftoff).not.toBeNull();
         expect(liftoff).toBeLessThan(80);
+      });
+
+      it('has a dihedral effect: sideslip rolls it away from the slip', () => {
+        const ac = airborne(10, 0);
+        ac.throttleActual = 0;
+        const beta = 5 * deg;
+        ac.velocity.set(10 * Math.cos(beta), 0, 10 * Math.sin(beta)); // slipping right
+        ac.step(1e-6);
+        const q = 0.5 * 1.225 * 100;
+        const clBeta = ac.lastForces.moment.x / (q * def.wingArea * ac.wingSpan) / beta;
+        expect(clBeta).toBeLessThan(-0.08); // rolls left, raising the right wing
+      });
+
+      it('rolls back towards level when a bank is released (hands off)', () => {
+        const ac = airborne(stallSpeed() * 1.7, 0.45);
+        ac.update(3);
+        ac.orientation.multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), 30 * deg));
+        ac.update(10);
+        expect(Math.abs(ac.attitude().roll)).toBeLessThan(15 * deg);
       });
 
       it('gets ground effect: more lift and less drag just above the ground', () => {
