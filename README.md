@@ -94,7 +94,10 @@ panel sees its own local airflow (body rotation, prop wash and wing downwash),
 with lift and drag curves that stall and become flat-plate past the stall.
 Stability, damping, adverse yaw, dihedral effect, wing drop at the stall and
 the tail-dragger ground handling come out of that rather than being scripted.
-Also modelled: ground effect (within about a wingspan of the ground: less
+Also modelled: collisions with trees, the club hut, the windsock pole, the
+fence and the table (solid objects push back and crash the model on a hard
+hit; foliage is soft and catches a slow model in the branches),
+ground effect (within about a wingspan of the ground: less
 induced drag, more lift, less downwash at the tail), electric motor thrust
 fall-off with airspeed, torque reaction,
 a LiPo battery with voltage sag, wind with a boundary-layer gradient and gusts,
@@ -117,7 +120,7 @@ npm test           # flight-model checks: stability, trim, stall, controls, take
 ## Project layout
 
 ```
-src/sim/       physics (no rendering): aero.js, aircraft.js, terrain.js, wind.js
+src/sim/       physics (no rendering): aero.js, aircraft.js, obstacles.js, terrain.js, wind.js
 src/aircraft/  aircraft registry (index.js) and models: definitions + procedural 3D
 src/world/     sky, terrain, runway, trees, windsock
 src/view/      camera rig (LOS / FPV / chase)

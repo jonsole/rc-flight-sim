@@ -7,6 +7,7 @@
 
 import { Vector3, Quaternion } from 'three';
 import { coefficients, liftSlope } from './aero.js';
+import { Obstacles } from './obstacles.js';
 
 const RHO = 1.225;
 const G = 9.81;
@@ -57,6 +58,19 @@ export class Aircraft {
     this.groundEffect = 0; // telemetry: 0 = none .. 1 = full
     this.contacts = def.contacts.map((c) => ({ ...c, pos: vec(c.pos), load: 0, onGround: false }));
     this.motorPos = vec(def.motor.position);
+
+    // Points checked against obstacles (trees, buildings...): every ground
+    // contact plus the leading edge of each wing panel, so a wing can't slice
+    // through a trunk between its tip and the fuselage.
+    this.collisionPoints = [...this.contacts];
+    for (const s of this.surfaces) {
+      if (!s.wing) continue;
+      const le = s.pos.clone().addScaledVector(s.chord, 0.25 * (s.chordLen || 0));
+      this.collisionPoints.push({ name: `${s.name}-le`, pos: le, type: 'hard', crashSpeed: 3.5 });
+    }
+    this.reach = Math.max(...this.collisionPoints.map((c) => c.pos.length())) + 0.5;
+    this._near = [];
+    this.inFoliage = false;
 
     // State
     this.position = new Vector3();
@@ -275,6 +289,7 @@ export class Aircraft {
     const fWorld = _fw.copy(_f).applyQuaternion(q);
     fWorld.y -= this.mass * G;
     this.#groundContacts(fWorld, _m, q, _qi);
+    if (this.env.obstacles) this.#obstacleContacts(fWorld, _m, q, _qi);
 
     // --- Integrate (semi-implicit Euler) ----------------------------------
     this.velocity.addScaledVector(fWorld, dt / this.mass);
@@ -341,6 +356,57 @@ export class Aircraft {
     out.pitch = Math.max(-1, Math.min(1, out.pitch));
     out.yaw = Math.max(-1, Math.min(1, out.yaw));
     return out;
+  }
+
+  /**
+   * Collisions with obstacles. Solids (trunks, buildings, poles, fence) push
+   * back like the ground, with friction, and crash the model on a hard enough
+   * impact. Foliage is soft: it drags strongly on any point inside it, so a
+   * fast hit is a crash and a slow one leaves the model caught in the branches.
+   */
+  #obstacleContacts(fWorld, mBody, q, qi) {
+    const near = this.env.obstacles.near(this.position.x, this.position.z, this.reach, this._near);
+    this.inFoliage = false;
+    if (!near.length) return;
+    const kSolid = 2000 * this.mass;
+    const cSolid = 40 * this.mass;
+    const cFoliage = 3 * this.mass; // N per (m/s) per point inside the foliage
+    for (const c of this.collisionPoints) {
+      _r.copy(c.pos).applyQuaternion(q);
+      const px = this.position.x + _r.x;
+      const py = this.position.y + _r.y;
+      const pz = this.position.z + _r.z;
+      for (const s of near) {
+        const hit = Obstacles.test(s, px, py, pz);
+        if (!hit) continue;
+        // Point velocity (world) = v + (q ω) × r
+        _w.copy(this.omega).applyQuaternion(q);
+        _vt.crossVectors(_w, _r).add(this.velocity);
+        if (hit.soft) {
+          this.inFoliage = true;
+          if (_vt.length() > 4) this.crash(`Flew into ${s.name}`);
+          _f.copy(_vt).multiplyScalar(-cFoliage);
+        } else {
+          _n.set(hit.nx, hit.ny, hit.nz);
+          const vn = _vt.dot(_n);
+          if (c.type === 'prop' && this.rpm > 500) {
+            this.propBroken = true;
+            this.crash(`Prop hit ${s.name}`);
+          } else if (-vn > (c.crashSpeed ?? 3)) {
+            this.crash(`Hit ${s.name}`);
+          }
+          const fn = Math.max(0, kSolid * Math.min(hit.depth, 0.1) - cSolid * vn);
+          _f.copy(_n).multiplyScalar(fn);
+          // Friction along the surface.
+          _vt.addScaledVector(_n, -vn);
+          const vtLen = _vt.length();
+          if (vtLen > 1e-5) _f.addScaledVector(_vt, (-0.6 * fn * Math.tanh(vtLen / 0.2)) / vtLen);
+        }
+        fWorld.add(_f);
+        _tmp.copy(_f).applyQuaternion(qi);
+        mBody.add(_tmp.crossVectors(c.pos, _tmp));
+      }
+    }
   }
 
   #groundContacts(fWorld, mBody, q, qi) {

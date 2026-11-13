@@ -4,6 +4,7 @@ import { Aircraft } from '../src/sim/aircraft.js';
 import { AIRCRAFT, getAircraft } from '../src/aircraft/index.js';
 import { buildBuschtrottel } from '../src/aircraft/buschtrottel.js';
 import { ground } from '../src/sim/terrain.js';
+import { Obstacles } from '../src/sim/obstacles.js';
 import { coefficients, liftSlope } from '../src/sim/aero.js';
 import { applyExpo } from '../src/input/input.js';
 
@@ -342,5 +343,70 @@ describe('input shaping', () => {
     expect(applyExpo(1, 0.5)).toBeCloseTo(1);
     expect(applyExpo(-1, 0.5)).toBeCloseTo(-1);
     expect(applyExpo(0.3, 0.5)).toBeLessThan(0.3);
+  });
+});
+
+describe('collisions with obstacles', () => {
+  const obstacles = new Obstacles();
+  const def = getAircraft('buschtrottel-shockcub').def;
+  // A broadleaf tree reasonably close to the field.
+  const tree = obstacles.trees.find((t) => !t.conifer && Math.hypot(t.x, t.z) < 300);
+
+  /** Fly level along +x at `speed`, aimed so the nose reaches (x, y, z) after ~1 s. */
+  function flyAt(target, speed, seconds = 3) {
+    const ac = new Aircraft(def, { ground, obstacles });
+    ac.assistMode = 'off';
+    ac.resetInAir(new Vector3(target.x - speed * 1.2, target.y, target.z), 0, speed);
+    ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 0.6 };
+    ac.update(seconds);
+    return ac;
+  }
+
+  it('crashes into a tree trunk', () => {
+    const ac = flyAt({ x: tree.x, y: tree.y + 1.2, z: tree.z }, 9);
+    expect(ac.crashed).toBe(true);
+    expect(ac.crashReason).toMatch(/tree trunk/);
+    expect(ac.position.x).toBeLessThan(tree.x + 1); // stopped, not passed through
+  });
+
+  it('crashes into the club hut', () => {
+    const ac = flyAt({ x: -29, y: 1.5, z: 26 }, 10);
+    expect(ac.crashed).toBe(true);
+    expect(ac.crashReason).toMatch(/club hut/);
+  });
+
+  it('crashes into foliage at speed', () => {
+    const ac = flyAt({ x: tree.x - tree.crownW, y: tree.y + tree.h * 0.62, z: tree.z }, 10);
+    expect(ac.crashed).toBe(true);
+    expect(ac.crashReason).toMatch(/tree/);
+  });
+
+  it('is caught by the branches when it drifts in slowly', () => {
+    const ac = new Aircraft(def, { ground, obstacles });
+    ac.assistMode = 'off';
+    const cy = tree.y + tree.h * 0.62;
+    ac.resetInAir(new Vector3(tree.x - tree.crownW - 0.3, cy, tree.z), 0, 2.5);
+    ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 0 };
+    let caught = false;
+    for (let t = 0; t < 2; t += 0.02) {
+      ac.update(0.02);
+      caught ||= ac.inFoliage;
+    }
+    expect(caught).toBe(true);
+    expect(ac.crashed).toBe(false);
+    expect(ac.velocity.length()).toBeLessThan(2); // held back by the foliage
+  });
+
+  it('leaves the runway and the circuit clear', () => {
+    const ac = new Aircraft(def, { ground, obstacles });
+    ac.assistMode = 'off';
+    ac.resetOnGround(40, -22, Math.PI);
+    ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 1 };
+    for (let t = 0; t < 8; t += 0.05) {
+      ac.controls.roll = Math.max(-1, Math.min(1, -2 * ac.attitude().roll));
+      ac.controls.pitch = Math.max(-0.3, Math.min(0.3, -1.5 * (ac.attitude().pitch - 0.2)));
+      ac.update(0.05);
+    }
+    expect(ac.crashed).toBe(false);
   });
 });
