@@ -359,8 +359,9 @@ export const BUSCHTROTTEL_SHOCKCUB = buildBuschtrottel({
   mass: 0.45,
   tailIncidence: 3 * deg,
   rollTrim: 0,
-  // Yellow with dark blue ailerons and tail (fin, rudder, tailplane, elevator).
-  colors: { main: '#f2c230', accent: '#1d1d1d', wing: '#f2c230', aileron: '#1c2f6e', tail: '#1c2f6e' },
+  // Plain yellow body (no stripe), dark blue ailerons and tail (fin, rudder,
+  // tailplane, elevator), black tip plates.
+  colors: { main: '#f2c230', accent: '#1d1d1d', stripe: false, wing: '#f2c230', aileron: '#1c2f6e', tail: '#1c2f6e' },
 });
 
 export const BUSCHTROTTEL_HIGHLANDER = buildBuschtrottel({

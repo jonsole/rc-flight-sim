@@ -94,7 +94,8 @@ export function createBuschtrottelModel(L) {
   const root = new Group();
   root.name = 'Buschtrottel';
   // Colour scheme. Optional keys: top + split (two-tone fuselage), wingBottom,
-  // aileron; otherwise the fuselage has a side stripe and the wing is one colour.
+  // aileron, stripe: false; otherwise the fuselage has a side stripe and the
+  // wing is one colour.
   const C = S.colors;
   const tailMat = foam(C.tail);
   const ailMat = foam(C.aileron || C.wing);
@@ -137,7 +138,9 @@ export function createBuschtrottelModel(L) {
     // Paint bands on the side: [y, paintBelow, paintAbove]
     const bands = C.split
       ? [[clampY(yb + C.split * (yt - yb)), 0, 1]]
-      : [[clampY(yb + 0.42 * (yt - yb)), 0, 1], [clampY(yb + 0.58 * (yt - yb)), 1, 0]];
+      : C.stripe === false
+        ? []
+        : [[clampY(yb + 0.42 * (yt - yb)), 0, 1], [clampY(yb + 0.58 * (yt - yb)), 1, 0]];
     const topPaint = C.split ? 1 : 0;
     const pts = [];
     // Right side, bottom to top.
