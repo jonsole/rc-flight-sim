@@ -254,7 +254,7 @@ export const BUSCHTROTTEL_HIGHLANDER = buildBuschtrottel({
 export const BUSCHTROTTEL_AGRO = buildBuschtrottel({
   id: 'buschtrottel-agro',
   name: 'Buschtrottel Agro',
-  summary: `DIY 6 mm Depron, 900 mm. Low wing with struts to the fuselage, glass canopy, angular tail. ${COMMON}`,
+  summary: `DIY 6 mm Depron, 900 mm. Low wing with struts to the fuselage, framed glass cab, angular tail. ${COMMON}`,
   mount: 'low',
   tips: 'square',
   tail: 'square',
