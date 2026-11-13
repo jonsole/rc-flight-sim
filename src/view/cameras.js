@@ -1,12 +1,12 @@
 // Camera modes: line-of-sight (pilot on the ground), FPV, and chase.
 import { PerspectiveCamera, Vector3, Quaternion, MathUtils } from 'three';
-import { geometry as G } from '../sim/se5a.js';
 
 export const CAMERA_MODES = ['los', 'fpv', 'chase'];
 export const CAMERA_LABELS = { los: 'Line of sight', fpv: 'FPV', chase: 'Chase' };
 
 const _v = new Vector3();
 const _q = new Quaternion();
+const _m = new Vector3();
 
 /** Convert a horizontal FOV (deg) to three.js vertical FOV for an aspect. */
 function hToVFov(hDeg, aspect) {
@@ -24,6 +24,14 @@ export class CameraRig {
     this.losLook = new Vector3();
     this.losInit = false;
     this.shake = new Vector3();
+    this.views = null;
+  }
+
+  /** Use the camera mounts and framing of an aircraft registry entry. */
+  setAircraft(entry) {
+    this.views = entry.views;
+    this.chaseInit = false;
+    this.losInit = false;
   }
 
   setMode(mode) {
@@ -69,16 +77,14 @@ export class CameraRig {
       let fov = s.losFov;
       if (s.losZoom > 0) {
         // Auto-zoom: keep the model from shrinking to a dot at range.
-        const apparent = MathUtils.radToDeg(2 * Math.atan(G.span / 2 / Math.max(dist, 1)));
+        const apparent = MathUtils.radToDeg(2 * Math.atan(this.views.span / 2 / Math.max(dist, 1)));
         const wanted = apparent * (s.losZoom >= 2 ? 6 : 10);
         fov = MathUtils.clamp(wanted, 8, s.losFov);
       }
       cam.fov = MathUtils.lerp(cam.fov, fov, 1 - Math.exp(-dt * 4));
       cam.near = 0.1;
     } else if (this.mode === 'fpv') {
-      const mount = s.fpvMount === 'wing'
-        ? new Vector3(G.upperLeX - 0.05, G.upperY + 0.05, 0)
-        : new Vector3(G.pilotEye.x, G.pilotEye.y, G.pilotEye.z);
+      const mount = _m.fromArray(s.fpvMount === 'wing' ? this.views.pod : this.views.cockpit);
       _v.copy(mount).applyQuaternion(aircraft.orientation).add(aircraft.position);
       // Engine vibration
       const vib = aircraft.throttleActual * 0.0012 * (s.fpvShake ? 1 : 0);
@@ -93,8 +99,9 @@ export class CameraRig {
       cam.near = 0.02;
     } else {
       // Chase: behind and above along the flight path.
-      const back = new Vector3(-2.1, 0.6, 0).applyQuaternion(aircraft.orientation);
-      back.y = Math.max(back.y, 0.4);
+      const c = this.views.chase;
+      const back = new Vector3(-c.back, c.up, 0).applyQuaternion(aircraft.orientation);
+      back.y = Math.max(back.y, c.up * 0.7);
       const target = _v.copy(aircraft.position).add(back);
       if (!this.chaseInit) {
         this.chasePos.copy(target);

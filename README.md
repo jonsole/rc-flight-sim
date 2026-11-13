@@ -1,8 +1,12 @@
 # RC Flight Sim
 
 A browser-based radio-control aeroplane simulator with **line-of-sight** and
-**FPV** views. The first model is the **E-flite S.E.5a 900mm** (EFL10950 /
-EFL10975), a foam park-flyer of the WWI Royal Aircraft Factory biplane.
+**FPV** views. Pick your aircraft on the start screen or in the menu:
+
+| Aircraft | Notes |
+| --- | --- |
+| **E-flite S.E.5a 900mm** (EFL10950 / EFL10975) | Foam BNF park-flyer, AS3X+/SAFE. Default. |
+| **S.E.5a 1/5 scale (1.62 m)** | Generic kit/plan-built electric model, heavier and more stately. |
 
 It runs in any modern browser (Chrome or Edge recommended on Windows). There is
 nothing to install for flying: the build is a static website.
@@ -65,7 +69,7 @@ Also modelled: electric motor thrust fall-off with airspeed, torque reaction,
 a LiPo battery with voltage sag, wind with a boundary-layer gradient and gusts,
 spring/damper landing gear with wheel and skid friction, and crash detection.
 
-The aircraft numbers (`src/sim/se5a.js`) follow E-flite's published specs:
+The E-flite numbers (`src/aircraft/se5a.js`) follow E-flite's published specs:
 899 mm span, 716 mm length, 1303 g with a 4S 2200 mAh pack, 3513-1100Kv motor
 with a 10x5 prop, and the CG at 72 mm behind the top-wing leading edge. Wing
 area (~0.28 m²), inertia, drag and the thrust curve are not published and are
@@ -82,8 +86,8 @@ npm test           # flight-model checks: stability, trim, stall, controls, take
 ## Project layout
 
 ```
-src/sim/       physics (no rendering): aero.js, aircraft.js, se5a.js, terrain.js, wind.js
-src/models/    procedural 3D model of the S.E.5a
+src/sim/       physics (no rendering): aero.js, aircraft.js, terrain.js, wind.js
+src/aircraft/  aircraft registry (index.js) and models: definitions + procedural 3D
 src/world/     sky, terrain, runway, trees, windsock
 src/view/      camera rig (LOS / FPV / chase)
 src/input/     transmitter (Gamepad API) + keyboard, expo & rates
@@ -92,5 +96,20 @@ src/audio/     synthesised motor and prop sound
 tests/         vitest flight-model tests
 ```
 
-Adding another aircraft means a new definition next to `se5a.js` (mass,
-inertia, surfaces, contacts, motor) and a 3D model.
+## Adding an aircraft
+
+Each aircraft is a registry entry in `src/aircraft/index.js`:
+
+```js
+{ id, name, summary, defaultAssist, def, geometry, views, createModel }
+```
+
+- `def`: the flight model (mass, inertia, lifting surfaces, contact points,
+  motor, battery, trim, assist gains), as consumed by `src/sim/aircraft.js`.
+- `views`: camera mounts in body axes (`cockpit`, `pod`), `span` for LOS
+  auto-zoom, and `chase` distances.
+- `createModel()`: returns `{ root, update(aircraft, dt), setPilotVisible(bool) }`.
+
+Another size of S.E.5a is one `buildSE5a({...})` call in `src/aircraft/se5a.js`.
+A different type needs its own definition and 3D model module. The flight
+tests run automatically for every registered aircraft.

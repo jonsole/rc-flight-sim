@@ -50,7 +50,9 @@ ul { padding-left: 20px; color: #ccd; font-size: 14px; line-height: 1.5; }
 #splash { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(0,0,0,0.35), rgba(0,0,0,0.7)); }
 #splash .card { background: rgba(22,26,30,0.95); border: 1px solid #3a4148; border-radius: 14px; padding: 26px 30px; width: min(460px, 92vw); }
 #splash h1 { margin: 0 0 4px; font-size: 26px; }
-#splash .sub { margin: 0 0 14px; color: #e0a030; }
+#splash .sub { margin: 0 0 8px; color: #e0a030; }
+#splash select { width: 100%; padding: 8px 10px; font-size: 15px; }
+#splash .summary { color: #99a; font-size: 13px; line-height: 1.45; min-height: 2.9em; margin: 8px 0 4px; }
 #splash table { width: 100%; font-size: 14px; margin: 12px 0 18px; border-collapse: collapse; }
 #splash td { padding: 3px 0; color: #ccd; }
 #splash td:first-child { width: 80px; color: #fff; font-family: Consolas, monospace; }

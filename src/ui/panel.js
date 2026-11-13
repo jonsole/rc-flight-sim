@@ -1,6 +1,7 @@
 // Settings / setup panel (plain DOM).
 import { CHANNELS } from '../input/input.js';
 import { CAMERA_LABELS } from '../view/cameras.js';
+import { AIRCRAFT, getAircraft } from '../aircraft/index.js';
 
 const CH_LABEL = { roll: 'Aileron (roll)', pitch: 'Elevator (pitch)', yaw: 'Rudder (yaw)', throttle: 'Throttle' };
 
@@ -81,7 +82,8 @@ export class Panel {
 
   tab_fly() {
     return [
-      el('p', { class: 'hint' }, 'Aircraft: E-flite S.E.5a 900mm — 899 mm span, 1.3 kg on 4S 2200 mAh, 3513-1100Kv with a 10x5 prop.'),
+      this.#select('Aircraft', 'aircraft', Object.fromEntries(AIRCRAFT.map((a) => [a.id, a.name]))),
+      el('p', { class: 'hint' }, getAircraft(this.settings.aircraft).summary),
       this.#select('Flight assist', 'assist', { off: 'Off (manual)', as3x: 'AS3X (gyro stabilised)', safe: 'SAFE (self-levelling, angle limits)' }),
       this.#select('Start position', 'startMode', { runway: 'On the runway', air: 'In the air (30 m)' }),
       this.#select('Camera', 'cameraMode', CAMERA_LABELS),
@@ -180,11 +182,12 @@ export class Panel {
 
   tab_help() {
     return [
-      el('h3', {}, 'Flying the S.E.5a'),
+      el('h3', {}, 'Flying the S.E.5a models'),
       el('ul', {},
         el('li', {}, 'Take off into wind (the windsock tail points downwind). Open the throttle smoothly and hold a little right rudder against the swing; let the tail come up, then ease back.'),
         el('li', {}, 'It is a biplane with lots of drag: it slows down fast when you throttle back. Keep speed up on the approach and flare gently for a three-pointer.'),
-        el('li', {}, 'Flight assist mirrors the BNF receiver: AS3X damps gusts and wobbles; SAFE also levels the wings when you let go and limits bank and pitch. Switch modes in flight with G or an assigned transmitter switch.'),
+        el('li', {}, 'The 900 mm E-flite is light and quick: it reacts fast and stalls abruptly on full elevator. The 1/5 scale model is heavier and more stately.'),
+        el('li', {}, 'Flight assist mirrors E-flite BNF receivers: AS3X damps gusts and wobbles; SAFE also levels the wings when you let go and limits bank and pitch. Switch modes in flight with G or an assigned transmitter switch.'),
         el('li', {}, 'Coordinate turns with rudder; the dihedral gives a strong rudder–roll coupling.'),
         el('li', {}, 'Low and slow in a turn will drop a wing. Unload (release elevator) to recover.')),
       el('h3', {}, 'Views'),

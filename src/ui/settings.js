@@ -3,6 +3,7 @@ const KEY = 'rcsim.settings.v1';
 
 export const DEFAULT_SETTINGS = {
   cameraMode: 'los',
+  aircraft: 'eflite-se5a-900', // see src/aircraft/index.js
   startMode: 'runway', // 'runway' | 'air'
   assist: 'as3x',      // 'off' | 'as3x' | 'safe'
   // FPV

@@ -1,10 +1,9 @@
 import { WebGLRenderer, ACESFilmicToneMapping, PCFSoftShadowMap, SRGBColorSpace, Vector3 } from 'three';
 import { Aircraft } from './sim/aircraft.js';
-import { SE5a } from './sim/se5a.js';
 import { ground } from './sim/terrain.js';
 import { Wind } from './sim/wind.js';
 import { World, RUNWAY } from './world/world.js';
-import { createSE5aModel } from './models/se5aModel.js';
+import { AIRCRAFT, getAircraft } from './aircraft/index.js';
 import { Input } from './input/input.js';
 import { CameraRig, CAMERA_LABELS } from './view/cameras.js';
 import { OSD } from './ui/osd.js';
@@ -28,12 +27,34 @@ renderer.shadowMap.type = PCFSoftShadowMap;
 // --- Simulation ----------------------------------------------------------------
 const world = new World();
 const wind = new Wind();
-const aircraft = new Aircraft(SE5a, { ground, wind });
-const model = createSE5aModel();
-world.scene.add(model.root);
-
 const input = new Input();
 const rig = new CameraRig(settings);
+
+let entry = null; // selected aircraft (registry entry)
+let aircraft = null; // flight model
+let model = null; // 3D model
+
+/** Swap in another aircraft: new flight model, 3D model and camera mounts. */
+function loadAircraft(id) {
+  entry = getAircraft(id);
+  settings.aircraft = entry.id;
+  if (model) {
+    world.scene.remove(model.root);
+    model.root.traverse((o) => {
+      o.geometry?.dispose();
+      for (const m of [o.material].flat()) {
+        m?.map?.dispose();
+        m?.dispose();
+      }
+    });
+  }
+  aircraft = new Aircraft(entry.def, { ground, wind });
+  aircraft.assistMode = settings.assist;
+  model = entry.createModel();
+  world.scene.add(model.root);
+  rig.setAircraft(entry);
+}
+loadAircraft(settings.aircraft);
 const osd = new OSD(document.getElementById('osd'));
 const sound = new EngineSound();
 const analog = document.getElementById('analog');
@@ -83,6 +104,17 @@ function resetAircraft() {
   rig.losInit = false;
 }
 
+/** User picked a different model: load it with its default flight assist. */
+function selectAircraft(id) {
+  loadAircraft(id);
+  settings.assist = entry.defaultAssist;
+  applySettings();
+  saveSettings(settings);
+  resetAircraft();
+  if (panel?.visible) panel.render();
+  updateSplash();
+}
+
 const panel = new Panel(document.getElementById('panel'), {
   settings,
   input,
@@ -90,6 +122,7 @@ const panel = new Panel(document.getElementById('panel'), {
     if (key === 'losZoom') settings.losZoom = Number(value);
     applySettings();
     saveSettings(settings);
+    if (key === 'aircraft') selectAircraft(value);
     if (key === 'startMode') resetAircraft();
   },
   onReset: resetAircraft,
@@ -141,6 +174,18 @@ input.onAction = (code) => {
 };
 
 document.getElementById('menu-btn').addEventListener('click', () => setMenu(!panel.visible));
+// Start screen: aircraft picker.
+const splashSelect = document.getElementById('splash-aircraft');
+const splashSummary = document.getElementById('splash-summary');
+for (const a of AIRCRAFT) splashSelect.append(new Option(a.name, a.id));
+splashSelect.addEventListener('change', (e) => selectAircraft(e.target.value));
+function updateSplash() {
+  if (!splashSelect.isConnected) return;
+  splashSelect.value = entry.id;
+  splashSummary.textContent = entry.summary;
+}
+updateSplash();
+
 document.getElementById('start').addEventListener('click', () => {
   document.getElementById('splash').remove();
   sound.start();
@@ -216,4 +261,16 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // Expose for debugging in the console.
-window.sim = { aircraft, world, rig, input, settings };
+window.sim = {
+  get aircraft() {
+    return aircraft;
+  },
+  get entry() {
+    return entry;
+  },
+  world,
+  rig,
+  input,
+  settings,
+  selectAircraft,
+};
