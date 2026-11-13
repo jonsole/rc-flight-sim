@@ -8,7 +8,8 @@
 // 134 g dry, 211 g all up, CG 305 mm from the nose (marked on the wing),
 // elevons ±25° with 30% expo, set with 8° of up reflex (the plan's reflex
 // gauge). Power: 2204 2300Kv (or 1806 2280Kv), 6x4.5 prop, 12 A ESC, 3S
-// 800 mAh, two 5 g servos. This one flies a five-blade prop.
+// 800 mAh, two 5 g servos. This one has a 2600Kv motor and a 5" five-blade
+// prop (see below).
 //
 // The outlines below are traced off the 1:1 plan sheets in plan pixels
 // (40 dpi render, 0.635 mm each, scaled to the published 508 mm span), so the
@@ -161,7 +162,8 @@ export function buildF22(style) {
     area: elevP.area,
     foil: elevFoil,
     downwash: true,
-    propwash: 0.2, // the inner part sits in the slipstream
+    // The inner part sits in the slipstream: less of it behind a smaller prop.
+    propwash: 0.2 * (style.prop.diameterIn / 6) ** 2,
     // Right behind the wing: as it stalls they sit in its dead air and stop
     // answering the stick.
     wake: style.elevonWake,
@@ -240,6 +242,8 @@ export function buildF22(style) {
       maxPitch: 30 * deg,
       levelGain: { roll: 1.2, pitch: 1.4 },
     },
+    // About 2.4:1 thrust to weight: it cruises on a third of the throttle.
+    cruiseThrottle: 0.35,
     // Thrown from shoulder height once the motor is up to speed.
     handLaunch: { height: 1.5, speed: 7.5, pitch: 12 * deg, throttle: 0.6 },
     contacts: [
@@ -279,16 +283,17 @@ export function buildF22(style) {
   };
 }
 
-// 2204 2300Kv on 3S. A two-blade 6x4.5 gives about 400 g static thrust at
-// ~9 A; a five-blade of the same size loads the motor more: fewer rpm, more
-// static thrust and current (estimated). Pitch speed = pitch × loaded rpm.
-const PROP_6x45x5 = { diameterIn: 6, pitchIn: 4.5, blades: 5, rpm: 15000, staticThrust: 4.4, pitchSpeed: 28.5, current: 12, y: 0.014 };
+// This one: a 2204 2600Kv on 3S (~29,000 rpm unloaded) with a 5x4.5
+// five-blade quad prop, loaded to ~22,000 rpm: about 510 g static thrust at
+// ~16 A (estimated from typical 5" prop data). Pitch speed = pitch × loaded
+// rpm, so it is faster flat out than the plan's 2300Kv and 6x4.5.
+const PROP_5x45x5 = { diameterIn: 5, pitchIn: 4.5, blades: 5, rpm: 22000, staticThrust: 5.0, pitchSpeed: 42, current: 16, y: 0.014 };
 
 export const FT_MINI_F22 = buildF22({
   id: 'ft-mini-f22',
   name: 'Flite Test Mighty Mini F-22',
-  summary: 'Foam-board pusher jet, 508 mm. Prop in a slot in the wing, elevons, canted fins. Hand launch. 2204 2300Kv, 6x4.5 five-blade, 3S 800 mAh, 211 g.',
-  prop: PROP_6x45x5,
+  summary: 'Foam-board pusher jet, 508 mm. Prop in a slot in the wing, elevons, canted fins. Hand launch. 2204 2600Kv, 5x4.5 five-blade, 3S 800 mAh, 211 g.',
+  prop: PROP_5x45x5,
   mass: 0.211,
   // Elevons 25° each way on the plan: all of it for roll, less for pitch so
   // half stick doesn't stall it. Mixed, they share the 25° of servo travel.

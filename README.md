@@ -18,8 +18,8 @@ and a rudder-linked tail wheel.
 Plan figures: ~900 mm span, ~22 dm² wing (19.8 g/dm² published loading).
 
 The Mini F-22 (`src/aircraft/f22.js`) is traced off the FT plan sheets: 508 mm
-span, 667 mm long, 14.2 dm², 211 g all up on a 2204 2300Kv with a 6x4.5
-five-blade prop and 3S 800 mAh. The flat wing makes lift only from its angle
+span, 667 mm long, 14.2 dm², 211 g all up, 3S 800 mAh. This one has a 2204
+2600Kv with a 5x4.5 five-blade prop (the plan's 2300Kv and 6x4.5 is slower). The flat wing makes lift only from its angle
 of attack, so the elevons are trimmed with the plan's 8° of reflex, and the CG
 is at the plan's 305 mm from the nose. Elevons: 25° for roll, 16° for pitch.
 At the stall the elevons sit in the wing's dead air and lose most of their
@@ -162,6 +162,8 @@ Each aircraft is a registry entry in `src/aircraft/index.js`:
 - `def.handLaunch` (optional): `{ height, speed, pitch, throttle }` for a model
   with no wheels. It starts in the pilot's hand and is thrown along its nose
   once the throttle reaches `throttle`. The wheel tests are skipped for it.
+- `def.cruiseThrottle` (optional, default 0.5): the throttle the trim test
+  flies at, for an overpowered model that climbs at half throttle.
 
 Another size of S.E.5a is one `buildSE5a({...})` call in `src/aircraft/se5a.js`.
 A different type needs its own definition and 3D model module. The flight
