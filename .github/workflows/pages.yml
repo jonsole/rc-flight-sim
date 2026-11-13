@@ -1,9 +1,18 @@
 name: Deploy to GitHub Pages
 
+# One Pages site holds both channels:
+#   /      <- main (live)
+#   /dev/  <- the development branch
+# A push to either branch rebuilds and republishes both, so neither disappears.
+
 on:
   push:
-    branches: [main]
+    branches: [main, ccr-232fa4e5-67vp61]
   workflow_dispatch:
+
+env:
+  LIVE_BRANCH: main
+  DEV_BRANCH: ccr-232fa4e5-67vp61
 
 permissions:
   contents: read
@@ -19,17 +28,47 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.LIVE_BRANCH }}
+          path: live
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEV_BRANCH }}
+          path: dev
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
+          cache-dependency-path: '*/package-lock.json'
+
+      - name: Build live (main)
+        working-directory: live
+        run: npm ci && npm test && npm run build
+
+      # A broken dev branch must never block the live site.
+      - name: Build dev
+        id: dev
+        continue-on-error: true
+        working-directory: dev
+        env:
+          VITE_CHANNEL: dev
+        run: npm ci && npm test && npm run build
+
+      - name: Assemble site
+        run: |
+          mkdir -p site
+          cp -r live/dist/. site/
+          if [ "${{ steps.dev.outcome }}" = "success" ]; then
+            mkdir -p site/dev
+            cp -r dev/dist/. site/dev/
+          else
+            echo "::warning::Dev build failed; publishing the live site only."
+          fi
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: site
 
   deploy:
     needs: build

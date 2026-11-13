@@ -15,6 +15,10 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-f
   80% { background-position: 0 1px, 29px 61px; }
   100% { background-position: 0 2px, 0 0; }
 }
+#dev-badge {
+  position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 6; pointer-events: none;
+  padding: 2px 10px; border-radius: 4px; background: #c0392b; color: #fff; font: 700 12px/1.6 system-ui, sans-serif; letter-spacing: 0.1em;
+}
 #menu-btn {
   position: fixed; bottom: 12px; right: 12px; z-index: 5; width: 40px; height: 40px; border-radius: 8px;
   border: 1px solid rgba(255,255,255,0.3); background: rgba(20,24,28,0.55); color: #fff; font-size: 20px; cursor: pointer;

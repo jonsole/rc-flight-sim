@@ -29,9 +29,17 @@ npm run preview
 
 ## Hosting on GitHub Pages
 
-`.github/workflows/pages.yml` tests, builds and deploys the site on every push
-to `main` (other branches do not deploy). One-time setup: in the repository go to **Settings → Pages** and set
-**Source** to **GitHub Actions**.
+`.github/workflows/pages.yml` publishes one Pages site with two channels:
+
+| URL | Branch |
+| --- | --- |
+| https://jonsole.github.io/rc-flight-sim/ | `main` (live) |
+| https://jonsole.github.io/rc-flight-sim/dev/ | development branch (badged "DEV") |
+
+A push to either branch tests, builds and republishes both. If the dev build
+fails, the live site is still published. One-time setup: **Settings → Pages →
+Source: GitHub Actions**, and allow both branches under **Settings →
+Environments → github-pages → Deployment branches**.
 
 ## Flying with your transmitter
 

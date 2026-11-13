@@ -11,6 +11,17 @@ import { Panel } from './ui/panel.js';
 import { loadSettings, saveSettings } from './ui/settings.js';
 import { EngineSound } from './audio/engine.js';
 
+// Development builds (the /dev/ page) are badged so they're never mistaken for live.
+if (import.meta.env.VITE_CHANNEL === 'dev') {
+  document.title = `[DEV] ${document.title}`;
+  const badge = document.createElement('div');
+  badge.id = 'dev-badge';
+  badge.textContent = 'DEV';
+  badge.title = 'Development build: may be unfinished. Live version is one folder up.';
+  document.body.append(badge);
+  document.querySelector('#splash h1')?.append(' (dev)');
+}
+
 const settings = loadSettings();
 settings.losZoom = Number(settings.losZoom);
 
