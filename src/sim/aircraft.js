@@ -59,6 +59,10 @@ export class Aircraft {
     this.omega = new Vector3(); // body frame rad/s
 
     this.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 0 };
+    /** Control positions actually sent to the servos (after flight assist). */
+    this.servo = { roll: 0, pitch: 0, yaw: 0 };
+    /** 'off' | 'as3x' (rate damping) | 'safe' (self-levelling with angle limits) */
+    this.assistMode = def.assist ? 'as3x' : 'off';
     this.throttleActual = 0;
     this.thrust = 0;
     this.propWash = 0;
@@ -169,7 +173,7 @@ export class Aircraft {
     const downwash = (def.downwashGain * 2 * this.wingCL) / (Math.PI * def.wingAspectRatio);
     let wingLift = 0;
     let wingArea = 0;
-    const c = this.controls;
+    const c = this.#assist(this.servo);
     for (const s of this.surfaces) {
       // Panel velocity through the air = V + ω × r
       _u.crossVectors(this.omega, s.pos).add(_v);
@@ -250,6 +254,46 @@ export class Aircraft {
     this.battery.voltage = b.cells * restCell - current * b.internalResistance;
   }
 
+  /** Mix stick inputs with gyro/attitude feedback, like AS3X+ and SAFE Select. */
+  #assist(out) {
+    const c = this.controls;
+    const a = this.def.assist;
+    // Transmitter trims (set once, like trimming on a first flight).
+    const trim = this.def.trim || {};
+    out.roll = c.roll + (trim.roll || 0);
+    out.pitch = c.pitch + (trim.pitch || 0);
+    out.yaw = c.yaw + (trim.yaw || 0);
+    if (!a || this.assistMode === 'off' || this.crashed) return out;
+    // Surface authority grows with V², so gains fall with 1/V².
+    const v = Math.max(6, this.airspeed);
+    const gs = Math.min(3, (a.refSpeed / v) ** 2);
+    const w = this.omega;
+    const g = a.rateGain;
+    if (this.assistMode === 'safe') {
+      // Stick commands an attitude; the controller flies to it.
+      const q = this.orientation;
+      _r.set(1, 0, 0).applyQuaternion(q);
+      const pitch = Math.asin(Math.max(-1, Math.min(1, _r.y)));
+      _r.set(0, 0, 1).applyQuaternion(q);
+      _tmp.set(0, 1, 0).applyQuaternion(q);
+      const roll = Math.atan2(-_r.y, _tmp.y);
+      const rollErr = c.roll * a.maxBank - roll;
+      const pitchErr = c.pitch * a.maxPitch - pitch;
+      out.roll = (a.levelGain.roll * rollErr - 2.5 * g.roll * w.x) * gs + (trim.roll || 0);
+      out.pitch = (a.levelGain.pitch * pitchErr - 2.5 * g.pitch * w.z) * gs;
+    } else {
+      // Rate damping, backed off as the pilot moves the stick.
+      out.roll -= g.roll * w.x * gs * (1 - 0.6 * Math.abs(c.roll));
+      out.pitch -= g.pitch * w.z * gs * (1 - 0.6 * Math.abs(c.pitch));
+    }
+    // Yaw: ω_y > 0 is yawing left, so add it (right rudder opposes).
+    out.yaw += g.yaw * w.y * gs * (1 - 0.6 * Math.abs(c.yaw));
+    out.roll = Math.max(-1, Math.min(1, out.roll));
+    out.pitch = Math.max(-1, Math.min(1, out.pitch));
+    out.yaw = Math.max(-1, Math.min(1, out.yaw));
+    return out;
+  }
+
   #groundContacts(fWorld, mBody, q, qi) {
     const ground = this.env.ground;
     let any = false;
@@ -284,8 +328,8 @@ export class Aircraft {
 
       const kSpring = c.k ?? 4000;
       const damp = c.c ?? 50;
-      let fn = kSpring * Math.min(depth, 0.08) - damp * vn;
-      if (depth > 0.08) fn += 40000 * (depth - 0.08);
+      let fn = kSpring * Math.min(depth, 0.05) - damp * vn;
+      if (depth > 0.05) fn += 30000 * (depth - 0.05);
       if (fn < 0) fn = 0;
       c.load = fn;
 

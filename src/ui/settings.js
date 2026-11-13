@@ -4,6 +4,7 @@ const KEY = 'rcsim.settings.v1';
 export const DEFAULT_SETTINGS = {
   cameraMode: 'los',
   startMode: 'runway', // 'runway' | 'air'
+  assist: 'as3x',      // 'off' | 'as3x' | 'safe'
   // FPV
   fpvMount: 'cockpit', // 'cockpit' | 'wing'
   fpvTilt: 4,          // degrees of camera uptilt

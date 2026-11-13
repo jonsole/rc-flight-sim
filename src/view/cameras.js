@@ -93,8 +93,8 @@ export class CameraRig {
       cam.near = 0.02;
     } else {
       // Chase: behind and above along the flight path.
-      const back = new Vector3(-3.2, 0.9, 0).applyQuaternion(aircraft.orientation);
-      back.y = Math.max(back.y, 0.6);
+      const back = new Vector3(-2.1, 0.6, 0).applyQuaternion(aircraft.orientation);
+      back.y = Math.max(back.y, 0.4);
       const target = _v.copy(aircraft.position).add(back);
       if (!this.chaseInit) {
         this.chasePos.copy(target);

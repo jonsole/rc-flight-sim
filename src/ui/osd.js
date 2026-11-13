@@ -134,6 +134,8 @@ export class OSD {
     this.#text(`THR ${Math.round(ac.controls.throttle * 100)}%`, pad, h - pad, 'left', fs);
     const hdg = ((90 + (att.heading * 180) / Math.PI) % 360 + 360) % 360; // compass, north = -z
     this.#text(`${String(Math.round(hdg) % 360).padStart(3, '0')}°`, w / 2, pad, 'center', fs);
+    this.#text(info.assist, pad, pad + fs * 2.5, 'left', fs * 0.85);
+    if (info.assistFlash) this.#text(`ASSIST: ${info.assist}`, w / 2, h / 2 + 70 * s, 'center', fs * 1.2);
     if (ac.crashed) this.#text(`CRASH: ${ac.crashReason.toUpperCase()}`, w / 2, h / 2 - 60 * s, 'center', fs * 1.3);
     else if (info.paused) this.#text('PAUSED', w / 2, h / 2 - 60 * s, 'center', fs * 1.3);
   }
@@ -147,12 +149,13 @@ export class OSD {
       `SPD ${Math.round(ac.airspeed * 3.6)} km/h`,
       `ALT ${ac.position.y.toFixed(1)} m`,
       `THR ${Math.round(ac.controls.throttle * 100)}%   BAT ${ac.battery.voltage.toFixed(1)}V`,
-      `${info.inputSource === 'transmitter' ? 'TX' : 'KEYS'}   ${info.cameraLabel}`,
+      `${info.inputSource === 'transmitter' ? 'TX' : 'KEYS'}   ${info.assist}   ${info.cameraLabel}`,
     ];
     for (const l of lines) {
       this.#text(l, x, y, 'left', fs);
       y += fs * 1.35;
     }
+    if (info.assistFlash) this.#text(`Flight assist: ${info.assist}`, this.w / 2, 120, 'center', 20);
     if (ac.crashed) this.#text(`Crashed: ${ac.crashReason} - press R to reset`, this.w / 2, 80, 'center', 22);
     else if (info.paused) this.#text('PAUSED', this.w / 2, 80, 'center', 22);
   }

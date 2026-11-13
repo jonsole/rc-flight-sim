@@ -53,8 +53,10 @@ const analog = document.getElementById('analog');
 }
 
 let paused = false;
+let assistFlash = 0; // seconds to show the assist-mode banner
 
 function applySettings() {
+  aircraft.assistMode = settings.assist;
   wind.speed = settings.windSpeed;
   wind.directionDeg = settings.windDir;
   wind.turbulence = settings.turbulence;
@@ -111,6 +113,15 @@ input.onAction = (code) => {
       saveSettings(settings);
       if (panel.visible) panel.render();
       break;
+    case 'KeyG': {
+      const modes = ['off', 'as3x', 'safe'];
+      settings.assist = modes[(modes.indexOf(settings.assist) + 1) % modes.length];
+      aircraft.assistMode = settings.assist;
+      saveSettings(settings);
+      assistFlash = 2;
+      if (panel.visible) panel.render();
+      break;
+    }
     case 'KeyP':
       paused = !paused;
       break;
@@ -195,6 +206,8 @@ function frame(now) {
     paused,
     inputSource: input.source,
     cameraLabel: CAMERA_LABELS[rig.mode],
+    assist: { off: 'MANUAL', as3x: 'AS3X', safe: 'SAFE' }[settings.assist],
+    assistFlash: (assistFlash = Math.max(0, assistFlash - dt)) > 0,
     vfov: rig.camera.fov,
     tilt: (settings.fpvTilt * Math.PI) / 180,
   });

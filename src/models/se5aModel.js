@@ -1,4 +1,4 @@
-// Procedural 3D model of the S.E.5a, built in the same body axes as the
+// Procedural 3D model of the E-flite S.E.5a 900mm, built in the same body axes as the
 // flight model (+x forward, +y up, +z right, metres, origin at the CG).
 //
 // Colour scheme: PC10 (khaki-brown) upper surfaces, clear-doped linen
@@ -11,7 +11,8 @@ import {
   Quaternion, PlaneGeometry,
 } from 'three';
 import { loft, mirrorZ, airfoilRing, naca } from './geom.js';
-import { geometry as G } from '../sim/se5a.js';
+// Built in the reference layout, then scaled to the real model size.
+import { refGeometry as G, SCALE } from '../sim/se5a.js';
 
 const PC10 = new Color('#5a5536');
 const LINEN = new Color('#d9cfae');
@@ -211,8 +212,11 @@ function propDiscTexture() {
 
 /** Build the S.E.5a model. Returns { root, update(aircraft, dt), setPilotVisible(b) } */
 export function createSE5aModel() {
+  const outer = new Group();
+  outer.name = 'SE5a';
   const root = new Group();
-  root.name = 'SE5a';
+  root.scale.setScalar(SCALE);
+  outer.add(root);
   const structure = std(WOOD);
   const metal = std(METAL, { metalness: 0.5, roughness: 0.45 });
   const dark = std(DARK, { roughness: 0.6 });
@@ -507,7 +511,7 @@ export function createSE5aModel() {
   const tmpQ = new Quaternion();
 
   return {
-    root,
+    root: outer,
     pilot,
     setPilotVisible(v) {
       pilot.visible = v;

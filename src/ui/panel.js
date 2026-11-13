@@ -81,7 +81,8 @@ export class Panel {
 
   tab_fly() {
     return [
-      el('p', { class: 'hint' }, 'Aircraft: Royal Aircraft Factory S.E.5a — 1/5 scale electric, 1.62 m span, 2.2 kg.'),
+      el('p', { class: 'hint' }, 'Aircraft: E-flite S.E.5a 900mm — 899 mm span, 1.3 kg on 4S 2200 mAh, 3513-1100Kv with a 10x5 prop.'),
+      this.#select('Flight assist', 'assist', { off: 'Off (manual)', as3x: 'AS3X (gyro stabilised)', safe: 'SAFE (self-levelling, angle limits)' }),
       this.#select('Start position', 'startMode', { runway: 'On the runway', air: 'In the air (30 m)' }),
       this.#select('Camera', 'cameraMode', CAMERA_LABELS),
       el('div', { class: 'row' }, el('button', { onclick: () => { this.opts.onReset(); this.opts.onClose(); } }, 'Reset aircraft (R)')),
@@ -171,8 +172,9 @@ export class Panel {
       el('h3', {}, 'Switches'),
       btnRow('reset', 'Reset aircraft'),
       btnRow('camera', 'Change camera'),
+      btnRow('assist', 'Flight assist (cycle)'),
       el('h3', {}, 'Keyboard'),
-      el('p', { class: 'hint' }, 'Arrows: aileron/elevator · A/D: rudder · W/S: throttle · R: reset · C: camera · P: pause · H: HUD · Esc: menu'),
+      el('p', { class: 'hint' }, 'Arrows: aileron/elevator · A/D: rudder · W/S: throttle · R: reset · C: camera · G: flight assist · P: pause · H: HUD · Esc: menu'),
     ];
   }
 
@@ -182,6 +184,7 @@ export class Panel {
       el('ul', {},
         el('li', {}, 'Take off into wind (the windsock tail points downwind). Open the throttle smoothly and hold a little right rudder against the swing; let the tail come up, then ease back.'),
         el('li', {}, 'It is a biplane with lots of drag: it slows down fast when you throttle back. Keep speed up on the approach and flare gently for a three-pointer.'),
+        el('li', {}, 'Flight assist mirrors the BNF receiver: AS3X damps gusts and wobbles; SAFE also levels the wings when you let go and limits bank and pitch. Switch modes in flight with G or an assigned transmitter switch.'),
         el('li', {}, 'Coordinate turns with rudder; the dihedral gives a strong rudder–roll coupling.'),
         el('li', {}, 'Low and slow in a turn will drop a wing. Unload (release elevator) to recover.')),
       el('h3', {}, 'Views'),

@@ -8,9 +8,10 @@ import { applyExpo } from '../src/input/input.js';
 
 const deg = Math.PI / 180;
 
-function airborne(speed = 13, throttle = 0.5) {
+function airborne(speed = 13, throttle = 0.5, assist = 'off') {
   const ac = new Aircraft(SE5a, { ground });
   ac.resetInAir(new Vector3(0, 150, 0), 0, speed);
+  ac.assistMode = assist;
   ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle };
   return ac;
 }
@@ -80,7 +81,7 @@ describe('S.E.5a flight model', () => {
     const rate = (ctl) => {
       const ac = airborne();
       Object.assign(ac.controls, ctl);
-      ac.update(0.3);
+      ac.update(0.1); // the 900 mm model responds (and stalls) quickly
       return ac.omega;
     };
     expect(rate({ roll: 1 }).x).toBeGreaterThan(0.5); // right roll
@@ -131,6 +132,52 @@ describe('S.E.5a flight model', () => {
     ac.update(30);
     expect(ac.battery.used).toBeGreaterThan(200);
     expect(ac.battery.voltage).toBeLessThan(v0);
+  });
+});
+
+describe('E-flite S.E.5a 900mm specification', () => {
+  it('matches the published size and weight', () => {
+    const tips = ac => ac.contacts.filter((c) => c.name.startsWith('upper-tip'));
+    const ac = new Aircraft(SE5a, { ground });
+    const [l, r] = tips(ac);
+    expect(r.pos.z - l.pos.z).toBeCloseTo(0.899, 2);
+    expect(SE5a.mass).toBeCloseTo(1.303, 2);
+  });
+});
+
+describe('flight assist', () => {
+  function bankedRelease(mode) {
+    const ac = airborne(13, 0.5, mode);
+    ac.orientation.setFromAxisAngle(new Vector3(1, 0, 0), 40 * deg);
+    ac.velocity.set(13, 0, 0);
+    ac.update(4);
+    return Math.abs(ac.attitude().roll);
+  }
+
+  it('SAFE levels the wings when the sticks are released', () => {
+    expect(bankedRelease('safe')).toBeLessThan(5 * deg);
+    expect(bankedRelease('off')).toBeGreaterThan(15 * deg);
+  });
+
+  it('SAFE limits the bank angle at full stick', () => {
+    const ac = airborne(13, 0.6, 'safe');
+    ac.controls.roll = 1;
+    ac.update(4);
+    expect(Math.abs(ac.attitude().roll)).toBeLessThan(55 * deg);
+  });
+
+  it('AS3X damps a pitch disturbance faster than manual', () => {
+    const settle = (mode) => {
+      const ac = airborne(13, 0.5, mode);
+      ac.omega.set(0, 0, 1.5); // sudden nose-up gust
+      let sum = 0;
+      for (let i = 0; i < 40; i++) {
+        ac.update(0.025);
+        sum += Math.abs(ac.omega.z);
+      }
+      return sum;
+    };
+    expect(settle('as3x')).toBeLessThan(settle('off'));
   });
 });
 

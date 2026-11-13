@@ -17,7 +17,7 @@ const DEFAULT_CONFIG = {
     throttle: { index: 2, invert: false, min: -1, max: 1, center: 0 },
     yaw: { index: 3, invert: false, min: -1, max: 1, center: 0 },
   },
-  buttons: { reset: null, camera: null },
+  buttons: { reset: null, camera: null, assist: null },
   expo: { roll: 0.35, pitch: 0.3, yaw: 0.2 },
   rates: { roll: 0.8, pitch: 0.85, yaw: 1.0 },
   deadband: 0.02,
@@ -135,6 +135,7 @@ export class Input {
         if (b.pressed && !was) {
           if (i === cfg.buttons.reset) this.onAction('KeyR');
           if (i === cfg.buttons.camera) this.onAction('KeyC');
+          if (i === cfg.buttons.assist) this.onAction('KeyG');
         }
         this._prevButtons[i] = b.pressed;
       });

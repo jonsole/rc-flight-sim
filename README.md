@@ -1,8 +1,8 @@
 # RC Flight Sim
 
 A browser-based radio-control aeroplane simulator with **line-of-sight** and
-**FPV** views. The first model is a 1/5 scale electric **Royal Aircraft
-Factory S.E.5a** WWI biplane.
+**FPV** views. The first model is the **E-flite S.E.5a 900mm** (EFL10950 /
+EFL10975), a foam park-flyer of the WWI Royal Aircraft Factory biplane.
 
 It runs in any modern browser (Chrome or Edge recommended on Windows). There is
 nothing to install for flying: the build is a static website.
@@ -43,7 +43,7 @@ bars, tick *Reverse* where needed, and run **Calibrate sticks**. Switches can
 be assigned to *reset* and *change camera*. Settings are saved in the browser.
 
 Keyboard fallback: arrows = aileron/elevator, A/D = rudder, W/S = throttle,
-R = reset, C = camera, P = pause, H = HUD, M = mute, Esc = menu.
+R = reset, C = camera, G = flight assist, P = pause, H = HUD, M = mute, Esc = menu.
 
 ## Views
 
@@ -65,8 +65,15 @@ Also modelled: electric motor thrust fall-off with airspeed, torque reaction,
 a LiPo battery with voltage sag, wind with a boundary-layer gradient and gusts,
 spring/damper landing gear with wheel and skid friction, and crash detection.
 
-The S.E.5a numbers (`src/sim/se5a.js`) are a 1/5 scale model: 1.62 m span,
-0.9 m² wing area, 2.2 kg, about 0.8:1 static thrust to weight.
+The aircraft numbers (`src/sim/se5a.js`) follow E-flite's published specs:
+899 mm span, 716 mm length, 1303 g with a 4S 2200 mAh pack, 3513-1100Kv motor
+with a 10x5 prop, and the CG at 72 mm behind the top-wing leading edge. Wing
+area (~0.28 m²), inertia, drag and the thrust curve are not published and are
+estimated (about 1.25:1 static thrust to weight on 4S).
+
+Flight assist mimics the BNF receiver: **AS3X** (rate-gyro damping, gains
+scaled with airspeed) and **SAFE** (self-levelling with bank and pitch
+limits). Switch with G or an assigned transmitter switch.
 
 ```bash
 npm test           # flight-model checks: stability, trim, stall, controls, takeoff, crash
