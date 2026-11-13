@@ -7,6 +7,8 @@ Factory S.E.5a** WWI biplane.
 It runs in any modern browser (Chrome or Edge recommended on Windows). There is
 nothing to install for flying: the build is a static website.
 
+**Play online:** https://jonsole.github.io/rc-flight-sim/
+
 ## Quick start
 
 ```bash
@@ -20,6 +22,12 @@ To produce a static build you can open from any web server:
 npm run build      # output in dist/
 npm run preview
 ```
+
+## Hosting on GitHub Pages
+
+`.github/workflows/pages.yml` tests, builds and deploys the site on every push
+to `main`. One-time setup: in the repository go to **Settings → Pages** and set
+**Source** to **GitHub Actions**.
 
 ## Flying with your transmitter
 
