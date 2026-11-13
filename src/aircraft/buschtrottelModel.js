@@ -5,7 +5,7 @@
 import {
   Group, Mesh, MeshStandardMaterial, Vector3, Color, CylinderGeometry, BoxGeometry,
   SphereGeometry, TorusGeometry, CircleGeometry, ConeGeometry, PlaneGeometry, DoubleSide,
-  LineSegments, BufferGeometry, Float32BufferAttribute, LineBasicMaterial, CanvasTexture,
+  CanvasTexture,
   SRGBColorSpace, Quaternion,
 } from 'three';
 import { loft, mirrorZ } from './geom.js';
@@ -18,12 +18,6 @@ function cylinderBetween(a, b, radius, material, segments = 6) {
   m.position.copy(a).addScaledVector(dir, 0.5);
   m.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), dir.normalize());
   return m;
-}
-
-function lines(pairs, color = 0x9a9a9a) {
-  const g = new BufferGeometry();
-  g.setAttribute('position', new Float32BufferAttribute(pairs.flatMap(([a, b]) => [a.x, a.y, a.z, b.x, b.y, b.z]), 3));
-  return new LineSegments(g, new LineBasicMaterial({ color }));
 }
 
 /**
@@ -73,9 +67,15 @@ export function createBuschtrottelModel(L) {
   const high = S.mount === 'high';
   const root = new Group();
   root.name = 'Buschtrottel';
-  const mainMat = foam(S.colors.main);
-  const wingMat = foam(S.colors.wing);
-  const tailMat = foam(S.colors.tail);
+  // Colour scheme. Optional keys: top + split (two-tone fuselage), wingBottom,
+  // aileron; otherwise the fuselage has a side stripe and the wing is one colour.
+  const C = S.colors;
+  const mainMat = foam(C.top || C.main);
+  const tailMat = foam(C.tail);
+  const ailMat = foam(C.aileron || C.wing);
+  const vcMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.92, flatShading: true });
+  const wingTop = new Color(C.wing);
+  const wingBottom = new Color(C.wingBottom || C.wing);
   const dark = new MeshStandardMaterial({ color: '#202224', roughness: 0.6 });
   const metal = new MeshStandardMaterial({ color: '#9a9c9e', roughness: 0.4, metalness: 0.6 });
   // Side windows read as dark glass from outside; the windscreen stays clear
@@ -84,26 +84,33 @@ export function createBuschtrottelModel(L) {
   const screenGlass = new MeshStandardMaterial({ color: '#cfe3ee', roughness: 0.05, transparent: true, opacity: 0.18, depthWrite: false, side: DoubleSide });
   const shadowAll = (o) => o.traverse((m) => m.isMesh && (m.castShadow = true));
 
-  // --- Fuselage: Depron box with a stripe along each side -----------------------
-  const main = new Color(S.colors.main);
-  const accent = new Color(S.colors.accent);
-  const ringCols = [];
+  // --- Fuselage: Depron box, either two-tone (split) or with a side stripe -------
+  // Each ring point carries a paint index; colour changes happen at duplicated
+  // points so the boundary is a crisp line on the flat-shaded foam.
+  const paints = C.split
+    ? [new Color(C.main), new Color(C.top)] // 0 = lower part, 1 = top part
+    : [new Color(C.main), new Color(C.accent)]; // 0 = body, 1 = stripe
+  let ringPaint = [];
   const rings = L.fuselage.map(([x, hw, yb, yt]) => {
-    const s1 = yb + 0.42 * (yt - yb);
-    const s2 = yb + 0.58 * (yt - yb);
-    const pts = [
-      [hw, yb, 0], [hw, s1, 0], [hw, s1, 1], [hw, s2, 1], [hw, s2, 0], [hw, yt, 0],
-      [-hw, yt, 0], [-hw, s2, 0], [-hw, s2, 1], [-hw, s1, 1], [-hw, s1, 0], [-hw, yb, 0],
-    ];
-    ringCols.length = 0;
-    pts.forEach((p) => ringCols.push(p[2]));
+    let pts;
+    if (C.split) {
+      const at = yb + C.split * (yt - yb);
+      pts = [
+        [hw, yb, 0], [hw, at, 0], [hw, at, 1], [hw, yt, 1],
+        [-hw, yt, 1], [-hw, at, 1], [-hw, at, 0], [-hw, yb, 0],
+      ];
+    } else {
+      const s1 = yb + 0.42 * (yt - yb);
+      const s2 = yb + 0.58 * (yt - yb);
+      pts = [
+        [hw, yb, 0], [hw, s1, 0], [hw, s1, 1], [hw, s2, 1], [hw, s2, 0], [hw, yt, 0],
+        [-hw, yt, 0], [-hw, s2, 0], [-hw, s2, 1], [-hw, s1, 1], [-hw, s1, 0], [-hw, yb, 0],
+      ];
+    }
+    ringPaint = pts.map((p) => p[2]);
     return pts.map(([z, y]) => new Vector3(x, y, z));
   });
-  const stripe = [...ringCols];
-  const fus = new Mesh(
-    loft(rings, { color: (_p, _ri, pi) => (stripe[pi] ? accent : main) }),
-    new MeshStandardMaterial({ vertexColors: true, roughness: 0.92, flatShading: true }),
-  );
+  const fus = new Mesh(loft(rings, { color: (_p, _ri, pi) => paints[ringPaint[pi]] }), vcMat);
   root.add(fus);
 
   // Cabin windows (high wing) or open cockpit (Agro)
@@ -164,31 +171,34 @@ export function createBuschtrottelModel(L) {
   };
   const wingPart = (z0, z1, f0, f1, n) => {
     const ring = kfm2Ring(f0, f1, L);
+    // Underside points (flat bottom of the KFm2) take the bottom colour.
+    const lowY = (L.thickFront / L.chord) * 0.3;
+    const isBottom = ring.map(([, y]) => y <= lowY);
     const rs = [];
     for (let i = 0; i <= n; i++) {
       const z = z0 + ((z1 - z0) * i) / n;
       rs.push(ring.map(([f, y]) => wingPoint(f, y, z)));
     }
-    return loft(rs);
+    return loft(rs, { color: (_p, _ri, pi) => (isBottom[pi] ? wingBottom : wingTop) });
   };
   const rootZ = high ? 0 : L.rootZ - 0.006;
   const nTip = S.tips === 'round' ? 10 : 3;
   const wingR = new Group();
-  wingR.add(new Mesh(wingPart(rootZ, L.ailFrom, 0, 1, 2), wingMat));
-  wingR.add(new Mesh(wingPart(L.ailFrom, HALF, 0, L.hinge, nTip), wingMat));
+  wingR.add(new Mesh(wingPart(rootZ, L.ailFrom, 0, 1, 2), vcMat));
+  wingR.add(new Mesh(wingPart(L.ailFrom, HALF, 0, L.hinge, nTip), vcMat));
   const ailGeo = wingPart(L.ailFrom + 0.002, HALF - 0.001, L.hinge + 0.004, 1, nTip);
   const hA = wingPoint(L.hinge, 0, L.ailFrom);
   const hB = wingPoint(L.hinge, 0, HALF * 0.8);
   ailGeo.translate(-hA.x, -hA.y, -hA.z);
   const ailR = new Group();
   ailR.position.copy(hA);
-  ailR.add(new Mesh(ailGeo, wingMat));
+  ailR.add(new Mesh(ailGeo, ailMat));
   const axisR = new Vector3().subVectors(hB, hA).normalize();
   const wingL = new Group();
-  for (const m of wingR.children) wingL.add(new Mesh(mirrorZ(m.geometry), wingMat));
+  for (const m of wingR.children) wingL.add(new Mesh(mirrorZ(m.geometry), vcMat));
   const ailL = new Group();
   ailL.position.set(hA.x, hA.y, -hA.z);
-  ailL.add(new Mesh(mirrorZ(ailGeo), wingMat));
+  ailL.add(new Mesh(mirrorZ(ailGeo), ailMat));
   const axisL = new Vector3(axisR.x, axisR.y, -axisR.z);
   // Fixed leading-edge slats: a Depron strip ahead of and above the leading
   // edge, leaving a slot for the air to flow through.
@@ -205,9 +215,10 @@ export function createBuschtrottelModel(L) {
       const z = L.slats.from + ((zEnd - L.slats.from) * i) / 4;
       rs.push(ring.map(([f, y]) => wingPoint(f, y, z)));
     }
-    const slatGeo = loft(rs);
-    wingR.add(new Mesh(slatGeo, wingMat));
-    wingL.add(new Mesh(mirrorZ(slatGeo), wingMat));
+    // Points 0-1 are the slat's underside, 2-3 its upper surface.
+    const slatGeo = loft(rs, { color: (_p, _ri, pi) => (pi < 2 ? wingBottom : wingTop) });
+    wingR.add(new Mesh(slatGeo, vcMat));
+    wingL.add(new Mesh(mirrorZ(slatGeo), vcMat));
   }
   root.add(wingR, wingL, ailR, ailL);
   const ailerons = [
@@ -215,7 +226,7 @@ export function createBuschtrottelModel(L) {
     { pivot: ailL, axis: axisL, side: -1 },
   ];
 
-  // --- Struts / bracing wires ----------------------------------------------------
+  // --- Wing struts ---------------------------------------------------------------
   const strutMat = new MeshStandardMaterial({ color: '#3a3c3e', roughness: 0.6 });
   if (high) {
     for (const s of [-1, 1]) {
@@ -227,21 +238,19 @@ export function createBuschtrottelModel(L) {
       }
     }
   } else {
-    // Agro: cabane pylon on top, flying wires below, landing wires above.
-    const pylonTop = new Vector3(0.06, 0.14, 0);
-    root.add(cylinderBetween(new Vector3(0.09, 0.05, 0), pylonTop, 0.003, strutMat));
-    root.add(cylinderBetween(new Vector3(0.02, 0.05, 0), pylonTop, 0.003, strutMat));
-    const pairs = [];
+    // Low wing: V-struts from the fuselage side, about 3/4 of the way up, down
+    // to the top of the wing.
+    const fx = 0.0;
+    const st = L.fuselage.find((r) => r[0] <= fx) || L.fuselage[0];
+    const [, hw, yb, yt] = st;
     for (const s of [-1, 1]) {
+      const base = new Vector3(fx, yb + 0.75 * (yt - yb), s * (hw + 0.002));
       for (const f of [0.15, 0.65]) {
-        const top = wingPoint(f, L.thickFront / L.chord, HALF * 0.62);
-        const bot = wingPoint(f, 0, HALF * 0.62);
+        const top = wingPoint(f, L.thickFront / L.chord + 0.004, HALF * 0.55);
         top.z *= s;
-        bot.z *= s;
-        pairs.push([pylonTop, top], [new Vector3(0.1, -0.06, s * 0.03), bot]);
+        root.add(cylinderBetween(base, top, 0.0025, strutMat));
       }
     }
-    root.add(lines(pairs));
   }
 
   // --- Tail: flat 3 mm Depron plates ------------------------------------------

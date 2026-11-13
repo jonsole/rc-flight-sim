@@ -2,7 +2,7 @@
 // in its three published styles:
 //   ShockCub   - high wing, rounded tail and tips
 //   Highlander - high wing, angular tail and square tips
-//   Agro       - low wing braced with wires, angular tail
+//   Agro       - low wing with V-struts to the upper fuselage, angular tail
 //
 // Published: ~900 mm span, ~730-755 mm long, ~430 g, KFm2 airfoil,
 // 19.8 g/dm² wing loading (≈ 22 dm² wing area), 2814-class motor on 3S.
@@ -254,7 +254,7 @@ export const BUSCHTROTTEL_HIGHLANDER = buildBuschtrottel({
 export const BUSCHTROTTEL_AGRO = buildBuschtrottel({
   id: 'buschtrottel-agro',
   name: 'Buschtrottel Agro',
-  summary: `DIY 6 mm Depron, 900 mm. Low wing braced with wires, angular tail. ${COMMON}`,
+  summary: `DIY 6 mm Depron, 900 mm. Low wing with struts to the fuselage, angular tail. ${COMMON}`,
   mount: 'low',
   tips: 'square',
   tail: 'square',
@@ -262,5 +262,7 @@ export const BUSCHTROTTEL_AGRO = buildBuschtrottel({
   mass: 0.46,
   tailIncidence: 3 * deg,
   rollTrim: 0,
-  colors: { main: '#2f6db5', accent: '#f4f4ef', wing: '#f4f4ef', tail: '#2f6db5' },
+  // Orange and white: top third of the fuselage, tail and wing tops orange;
+  // lower fuselage and wing undersides white; sky-blue ailerons.
+  colors: { main: '#f4f4ef', top: '#f26b1d', split: 2 / 3, wing: '#f26b1d', wingBottom: '#f4f4ef', aileron: '#7cc6ee', tail: '#f26b1d' },
 });
