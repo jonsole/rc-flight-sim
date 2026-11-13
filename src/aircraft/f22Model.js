@@ -27,8 +27,8 @@ function flatSlab(pts) {
 }
 
 /** Rounded-box ring for the fuselage loft: half-width hw, from yb up to yt. */
-function boxRing(x, hw, yb, yt) {
-  const r = Math.min(0.006, hw * 0.6, (yt - yb) * 0.4);
+function boxRing(x, hw, yb, yt, rMax = 0.006) {
+  const r = Math.min(rMax, hw * 0.6, (yt - yb) * 0.4);
   const pts = [];
   const arc = (cz, cy, a0) => {
     for (let i = 0; i <= 2; i++) {
@@ -84,7 +84,8 @@ export function createF22Model(G) {
   // --- Fuselage: a 40 mm box, deep nose through the wing, low box behind -------
   const F = G.fuselage;
   const floor = wingTop - F.wingStep;
-  const box = new Mesh(loft(F.stations.map(([x, b, t], i) => boxRing(x, i === 0 ? 0.012 : F.halfWidth, floor + b, floor + t + (i === 0 ? 0.002 : 0)))), foam(C.box));
+  // Folded foam: full width right to the sharp tip, crisp corners.
+  const box = new Mesh(loft(F.stations.map(([x, b, t], i) => boxRing(x, F.halfWidth, floor + b, floor + t + (i === 0 ? 0.0008 : 0), 0.0015))), foam(C.box));
   root.add(box);
   const topAt = (x) => {
     const st = F.stations;
@@ -94,23 +95,13 @@ export function createF22Model(G) {
     return floor + st[st.length - 1][2];
   };
 
-  // Canopy (parts 03 and 04): a bubble on the front of the box.
-  const canopyMat = new MeshStandardMaterial({ color: C.canopy, roughness: 0.15, metalness: 0.5 });
-  const canopyRings = [];
-  const c0 = G.nose - 0.06;
-  const c1 = 0.1;
-  for (let i = 0; i <= 8; i++) {
-    const t = i / 8;
-    const x = c0 + (c1 - c0) * t;
-    const k = Math.sin(Math.PI * Math.min(1, t * 1.6)) ** 0.6 * (t > 0.6 ? Math.cos(((t - 0.6) / 0.4) * Math.PI / 2) ** 0.5 : 1);
-    const base = topAt(x) - 0.001;
-    const ring = [];
-    for (let j = 0; j <= 8; j++) {
-      const a = (j / 8) * Math.PI;
-      ring.push(new Vector3(x, base + Math.max(0.0005, 0.02 * k) * Math.sin(a), 0.016 * Math.max(0.1, k) * Math.cos(a)));
-    }
-    canopyRings.push(ring);
-  }
+  // Canopy (parts 03 and 04): a full-width hump on top of the nose box.
+  const canopyMat = new MeshStandardMaterial({ color: C.canopy, roughness: 0.15, metalness: 0.5, flatShading: true });
+  const canopyRings = G.canopy.profile.map(([d, h]) => {
+    const x = G.canopy.front - d;
+    const base = topAt(x) - 0.0005;
+    return boxRing(x, F.halfWidth + 0.0005, base, base + h, 0.004);
+  });
   const canopy = new Mesh(loft(canopyRings), canopyMat);
   canopy.userData.part = 'canopy';
   root.add(canopy);
