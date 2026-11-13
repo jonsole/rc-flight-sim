@@ -45,8 +45,10 @@ function layout(style) {
     thickRear: 0.006,              //       one layer behind it
     step: 0.5,
     fuselage: high
-      ? [[0.20, 0.03, -0.04, 0.035], [0.15, 0.037, -0.055, 0.05], [0.07, 0.04, -0.06, 0.075], [-0.17, 0.038, -0.055, 0.075], [-0.30, 0.025, -0.035, 0.045], [-0.50, 0.006, -0.008, 0.03]]
-      : [[0.20, 0.03, -0.04, 0.035], [0.15, 0.037, -0.055, 0.045], [0.07, 0.04, -0.065, 0.05], [-0.17, 0.038, -0.06, 0.05], [-0.30, 0.025, -0.04, 0.04], [-0.50, 0.006, -0.008, 0.03]],
+      // Stations: x, half-width, bottom, top, corner radius. Deep, blunt,
+      // Cub-style nose with a rounded cowl (from photos of the real model).
+      ? [[0.215, 0.034, -0.045, 0.03, 0.018], [0.19, 0.039, -0.057, 0.04, 0.016], [0.14, 0.041, -0.062, 0.05, 0.01], [0.07, 0.041, -0.062, 0.075, 0.004], [-0.17, 0.038, -0.055, 0.075, 0.003], [-0.30, 0.025, -0.035, 0.045, 0.003], [-0.50, 0.006, -0.008, 0.03, 0.002]]
+      : [[0.215, 0.034, -0.045, 0.03, 0.018], [0.19, 0.039, -0.058, 0.04, 0.016], [0.14, 0.041, -0.064, 0.045, 0.01], [0.07, 0.041, -0.065, 0.05, 0.004], [-0.17, 0.038, -0.06, 0.05, 0.003], [-0.30, 0.025, -0.04, 0.04, 0.003], [-0.50, 0.006, -0.008, 0.03, 0.002]],
     // Tailplane on top of the tail, or set into the fuselage side about 10 mm
     // below the top (Agro; the fuselage top there is at y ≈ 0.035).
     tail: { leX: -0.36, chord: 0.13, fixed: 0.07, span: 0.34, y: style.lowTail ? 0.025 : 0.035, incidence: style.tailIncidence },
@@ -210,7 +212,7 @@ export function buildBuschtrottel(style) {
       { name: 'wheel-R', pos: [W.x, W.y - W.radius, W.z], type: 'wheel', k: 250, c: 3.5, rollScale: 0.7, crashSpeed: 5 },
       { name: 'tail-wheel', pos: [TW.x, TW.y - TW.radius, 0], type: 'wheel', k: 500, c: 5, crashSpeed: 4, steer: 25 * deg },
       { name: 'prop-low', pos: [L.prop.x + 0.005, L.prop.y - L.prop.radius, 0], type: 'prop', k: 1000, c: 8, crashSpeed: 0 },
-      hard('nose', [0.2, -0.04, 0], 3),
+      hard('nose', [0.21, -0.045, 0], 3),
       hard('wing-tip-L', [tipX, tipY, -HALF]),
       hard('wing-tip-R', [tipX, tipY, HALF]),
       hard('wing-top', [L.wingLeX - CHORD * 0.3, L.wingY + 0.015, 0], 3),
@@ -276,10 +278,11 @@ export const BUSCHTROTTEL_SHOCKCUB = buildBuschtrottel({
   summary: `DIY 6 mm Depron bush plane, 900 mm. High wing, rounded tail. 8x6 prop. ${COMMON}`,
   prop: PROP_8x6,
   mount: 'high',
+  fullSpanAilerons: true,
   tips: 'round',
   tail: 'round',
   slats: true,
-  throws: { aileron: 26 * deg, elevator: 20 * deg },
+  throws: { aileron: 22 * deg, elevator: 20 * deg }, // full-span ailerons
   mass: 0.45,
   tailIncidence: 3 * deg,
   rollTrim: 0,
@@ -292,10 +295,11 @@ export const BUSCHTROTTEL_HIGHLANDER = buildBuschtrottel({
   summary: `DIY 6 mm Depron bush plane, 900 mm. High wing, angular tail, square tips. 8x6 prop. ${COMMON}`,
   prop: PROP_8x6,
   mount: 'high',
+  fullSpanAilerons: true,
   tips: 'square',
   tail: 'square',
   slats: true,
-  throws: { aileron: 26 * deg, elevator: 20 * deg },
+  throws: { aileron: 22 * deg, elevator: 20 * deg }, // full-span ailerons
   mass: 0.45,
   tailIncidence: 3 * deg,
   rollTrim: 0,

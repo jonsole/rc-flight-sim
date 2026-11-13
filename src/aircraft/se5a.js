@@ -253,7 +253,9 @@ export function buildSE5a(o) {
       pod: [G.upperLeX - s(0.09), G.upperY + s(0.09), 0],
       chase: { back: SPAN * 2.0 + 0.3, up: SPAN * 0.5 + 0.15 },
     },
-    createModel: () => createSE5aModel(ref, k),
+    // The 3D model can show a flatter dihedral than the aero value, which also
+    // stands in for the effect of wing height.
+    createModel: () => createSE5aModel(o.visualDihedral !== undefined ? { ...ref, dihedral: o.visualDihedral } : ref, k),
   };
 }
 
@@ -289,5 +291,6 @@ export const EFLITE_SE5a_900 = buildSE5a({
   },
   trim: { roll: 0.002 }, // aileron trim against motor torque at cruise
   upperWingDihedralEffect: 5 * deg, // top wing well above the CG acts like a high wing
+  visualDihedral: 2.5 * deg, // as it looks on the model
   defaultAssist: 'as3x',
 });

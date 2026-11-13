@@ -50,9 +50,15 @@ function kfm2Ring(f0, f1, L) {
   const tr = L.thickRear / L.chord;
   const st = L.step;
   if (f0 >= st) return [[f0, 0], [f1, 0], [f1, tr], [f0, tr]];
-  const pts = [[0, tf * 0.45], [0.008, tf * 0.1], [0.03, 0], [f1, 0], [f1, f1 > st ? tr : tf]];
+  // Fully rounded leading edge: a half-circle the depth of the front section.
+  const r = tf / 2;
+  const pts = [[r, 0], [f1, 0], [f1, f1 > st ? tr : tf]];
   if (f1 > st) pts.push([st, tr], [st, tf]);
-  pts.push([0.05, tf], [0.012, tf * 0.85]);
+  pts.push([r, tf]);
+  for (const deg of [120, 150, 180, 210, 240]) {
+    const a = (deg * Math.PI) / 180;
+    pts.push([r + r * Math.cos(a), r + r * Math.sin(a)]);
+  }
   return pts;
 }
 
@@ -100,23 +106,41 @@ export function createBuschtrottelModel(L) {
   const paints = C.split
     ? [new Color(C.main), new Color(C.top)] // 0 = lower part, 1 = top part
     : [new Color(C.main), new Color(C.accent)]; // 0 = body, 1 = stripe
-  let ringPaint = [];
-  const rings = L.fuselage.map(([x, hw, yb, yt]) => {
-    let pts;
-    if (C.split) {
-      const at = yb + C.split * (yt - yb);
-      pts = [
-        [hw, yb, 0], [hw, at, 0], [hw, at, 1], [hw, yt, 1],
-        [-hw, yt, 1], [-hw, at, 1], [-hw, at, 0], [-hw, yb, 0],
-      ];
-    } else {
-      const s1 = yb + 0.42 * (yt - yb);
-      const s2 = yb + 0.58 * (yt - yb);
-      pts = [
-        [hw, yb, 0], [hw, s1, 0], [hw, s1, 1], [hw, s2, 1], [hw, s2, 0], [hw, yt, 0],
-        [-hw, yt, 0], [-hw, s2, 0], [-hw, s2, 1], [-hw, s1, 1], [-hw, s1, 0], [-hw, yb, 0],
-      ];
+  // Cross-section: a box with rounded corners (radius r; well rounded at the
+  // cowl, almost square further back). Points run up the right side, over the
+  // top, down the left side and back along the bottom; paint changes sit at
+  // duplicated points on the sides.
+  const arc = (cz, cy, r, a0, a1, n) => {
+    const out = [];
+    for (let i = 1; i <= n; i++) {
+      const a = ((a0 + ((a1 - a0) * i) / n) * Math.PI) / 180;
+      out.push([cz + r * Math.cos(a), cy + r * Math.sin(a)]);
     }
+    return out;
+  };
+  let ringPaint = [];
+  const rings = L.fuselage.map(([x, hw, yb, yt, rIn = 0.002]) => {
+    const r = Math.min(rIn, hw * 0.95, (yt - yb) * 0.45);
+    const lo = yb + r;
+    const hi = yt - r;
+    const clampY = (y) => Math.min(hi, Math.max(lo, y));
+    // Paint bands on the side: [y, paintBelow, paintAbove]
+    const bands = C.split
+      ? [[clampY(yb + C.split * (yt - yb)), 0, 1]]
+      : [[clampY(yb + 0.42 * (yt - yb)), 0, 1], [clampY(yb + 0.58 * (yt - yb)), 1, 0]];
+    const topPaint = C.split ? 1 : 0;
+    const pts = [];
+    // Right side, bottom to top.
+    pts.push([hw, lo, 0]);
+    for (const [y, below, above] of bands) pts.push([hw, y, below], [hw, y, above]);
+    pts.push([hw, hi, topPaint]);
+    for (const [z, y] of arc(hw - r, hi, r, 0, 90, 3)) pts.push([z, y, topPaint]);
+    for (const [z, y] of arc(-hw + r, hi, r, 90, 180, 3)) pts.push([z, y, topPaint]);
+    // Left side, top to bottom.
+    for (const [y, below, above] of [...bands].reverse()) pts.push([-hw, y, above], [-hw, y, below]);
+    pts.push([-hw, lo, 0]);
+    for (const [z, y] of arc(-hw + r, lo, r, 180, 270, 3)) pts.push([z, y, 0]);
+    for (const [z, y] of arc(hw - r, lo, r, 270, 360, 3).slice(0, -1)) pts.push([z, y, 0]);
     ringPaint = pts.map((p) => p[2]);
     return pts.map(([z, y]) => new Vector3(x, y, z));
   });
@@ -130,7 +154,7 @@ export function createBuschtrottelModel(L) {
   if (high) {
     for (const s of [-1, 1]) {
       const w = new Mesh(new PlaneGeometry(0.15, 0.045), glass);
-      w.position.set(-0.03, 0.046, s * 0.0405);
+      w.position.set(-0.03, 0.046, s * 0.0415);
       w.rotation.y = s > 0 ? 0 : Math.PI;
       root.add(w);
     }
