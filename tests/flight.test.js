@@ -419,6 +419,51 @@ describe('FT Mighty Mini F-22 specification', () => {
     // Pusher: the prop is behind the CG, in the slot.
     expect(f22.def.motor.position[0]).toBeLessThan(-0.03);
   });
+
+  const air = (speed, throttle) => {
+    const ac = new Aircraft(f22.def, { ground });
+    ac.resetInAir(new Vector3(0, 150, 0), 0, speed);
+    ac.assistMode = 'off';
+    ac.controls.throttle = throttle;
+    return ac;
+  };
+  /** Peak roll rate in 0.3 s of full aileron, after `pitch` held for 1.2 s. */
+  const rollRate = (speed, pitch) => {
+    const ac = air(speed, 0.3);
+    ac.update(0.5);
+    ac.controls.pitch = pitch;
+    ac.update(1.2);
+    ac.controls.roll = 1;
+    let p = 0;
+    for (let t = 0; t < 0.3; t += 0.01) {
+      ac.update(0.01);
+      p = Math.max(p, ac.omega.x);
+    }
+    return p;
+  };
+
+  it('loses most of its roll authority at the stall (elevons in the dead air)', () => {
+    expect(rollRate(8, 1)).toBeLessThan(rollRate(11, 0) * 0.4);
+  });
+
+  it('falls off on a wing in a held stall, and recovers when the stick is released', () => {
+    const ac = air(9, 0.2);
+    let bank = 0;
+    for (let t = 0; t < 5; t += 0.02) {
+      ac.controls.pitch = Math.min(1, t / 2);
+      ac.update(0.02);
+      bank = Math.max(bank, Math.abs(ac.attitude().roll));
+    }
+    expect(bank).toBeGreaterThan(25 * deg);
+    ac.controls.pitch = 0;
+    for (let t = 0; t < 3; t += 0.02) {
+      ac.controls.roll = Math.max(-1, Math.min(1, -2 * ac.attitude().roll));
+      ac.update(0.02);
+    }
+    expect(ac.wingStall).toBeLessThan(0.02);
+    expect(Math.abs(ac.attitude().roll)).toBeLessThan(10 * deg);
+    expect(ac.crashed).toBe(false);
+  });
 });
 
 describe('aircraft registry', () => {

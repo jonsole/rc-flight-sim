@@ -111,6 +111,8 @@ export function buildF22(style) {
     e: 0.85,
   };
 
+  const plateEarly = { ...plate, alphaStall: plate.alphaStall - style.stallAsymmetry };
+
   // Spanwise strips of the main wing, each with its own area, centroid and
   // chord, swept along the quarter-chord line.
   const bands = [0, 0.045, 0.1, 0.16, 0.21, SPAN / 2];
@@ -131,7 +133,9 @@ export function buildF22(style) {
         chord: [1, 0, 0],
         span: [-side * Math.tan(sweep), side * Math.sin(style.aeroDihedral), 1],
         area: s.area,
-        foil: plate,
+        // No foam-board model is built perfectly true: one wing stalls a
+        // little earlier, so at the stall it falls off to that side.
+        foil: side < 0 ? plateEarly : plate,
         wing: true,
         chordLen: s.chord,
         controls: [],
@@ -155,6 +159,10 @@ export function buildF22(style) {
     foil: elevFoil,
     downwash: true,
     propwash: 0.2, // the inner part sits in the slipstream
+    // Right behind the wing: as it stalls they sit in its dead air and stop
+    // answering the stick.
+    wake: style.elevonWake,
+    maxDeflection: style.throws.max,
     controls: [
       { input: 'pitch', gain: -1, max: style.throws.pitch, tau: 0.9 },
       { input: 'roll', gain: -side, max: style.throws.roll, tau: 0.9 },
@@ -276,7 +284,11 @@ export const FT_MINI_F22 = buildF22({
   summary: 'Foam-board pusher jet, 508 mm. Prop in a slot in the wing, elevons, canted fins. Hand launch. 2204 2300Kv, 6x4.5, 3S 800 mAh, 211 g.',
   prop: PROP_6x45,
   mass: 0.211,
-  throws: { pitch: 16 * deg, roll: 12 * deg },
+  // Elevons 25° each way on the plan: all of it for roll, less for pitch so
+  // half stick doesn't stall it. Mixed, they share the 25° of servo travel.
+  throws: { pitch: 16 * deg, roll: 25 * deg, max: 25 * deg },
+  stallAsymmetry: 2 * deg, // left wing
+  elevonWake: 0.9,
   reflex: 3 * deg,
   downwashGain: 0.5,
   // Effective dihedral for the aerodynamics (the wing is flat): the swept
