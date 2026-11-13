@@ -26,7 +26,7 @@ npm run preview
 ## Hosting on GitHub Pages
 
 `.github/workflows/pages.yml` tests, builds and deploys the site on every push
-to `main`. One-time setup: in the repository go to **Settings → Pages** and set
+to `main` (other branches do not deploy). One-time setup: in the repository go to **Settings → Pages** and set
 **Source** to **GitHub Actions**.
 
 ## Flying with your transmitter
