@@ -115,6 +115,7 @@ export function buildSE5a(o) {
           area: segSpan * CHORD * (i === segments - 1 ? 0.9 : 1),
           foil,
           wing: true,
+          chordLen: CHORD,
           // right stick -> right aileron up (less lift) -> roll right
           controls: zMid >= aileronFrom ? [{ input: 'roll', gain: -side, max: 18 * deg, tau: 0.42 }] : [],
           propwash: i === 0 && name === 'lower' ? 0.4 : 0,

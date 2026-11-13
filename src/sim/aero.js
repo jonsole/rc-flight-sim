@@ -35,7 +35,9 @@ export function coefficients(alpha, p) {
   const clLin = p.cla * aLin;
   const s = Math.sin(a);
   const c = Math.cos(a);
-  const clPlate = 0.95 * 2 * s * c;
+  // Deep-stall lift of a finite wing (flat plate, reduced for aspect ratio):
+  // peaks around 0.75 at 45°, below a normal wing's maximum lift.
+  const clPlate = 0.75 * 2 * s * c;
   const cdPlate = 0.05 + 1.9 * s * s;
 
   // Past the stall a real wing keeps most of its lift for a few degrees and

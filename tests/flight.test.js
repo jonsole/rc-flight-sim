@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { Vector3 } from 'three';
 import { Aircraft } from '../src/sim/aircraft.js';
 import { AIRCRAFT, getAircraft } from '../src/aircraft/index.js';
+import { buildBuschtrottel } from '../src/aircraft/buschtrottel.js';
 import { ground } from '../src/sim/terrain.js';
 import { coefficients, liftSlope } from '../src/sim/aero.js';
 import { applyExpo } from '../src/input/input.js';
@@ -201,8 +202,10 @@ for (const entry of AIRCRAFT) {
       }
 
       it('SAFE levels the wings when the sticks are released', () => {
-        expect(bankedRelease('safe')).toBeLessThan(5 * deg);
-        expect(bankedRelease('off')).toBeGreaterThan(15 * deg);
+        // Some models self-level partly on their own; SAFE must do clearly better.
+        const safe = bankedRelease('safe');
+        expect(safe).toBeLessThan(5 * deg);
+        expect(safe).toBeLessThan(bankedRelease('off') * 0.5);
       });
 
       it('SAFE limits the bank angle at full stick', () => {
@@ -243,6 +246,42 @@ describe('E-flite S.E.5a 900mm specification', () => {
     // CG 72 mm behind the top-wing leading edge (CG is the body origin).
     expect(getAircraft('eflite-se5a-900').geometry.upperLeX).toBeCloseTo(0.072, 3);
   });
+});
+
+describe('Buschtrottel leading-edge slats', () => {
+  const style = {
+    id: 'test', name: 'test', summary: '', mount: 'high', tips: 'round', tail: 'round',
+    mass: 0.45, tailIncidence: 3 * deg, rollTrim: 0, colors: { main: '#fff', accent: '#000', wing: '#fff', tail: '#fff' },
+  };
+
+  it('lower the stall speed', () => {
+    const vs = (slats) => {
+      def = buildBuschtrottel({ ...style, slats }).def;
+      return stallSpeed();
+    };
+    expect(vs(true)).toBeLessThan(vs(false) * 0.92);
+  });
+
+  // Classic stall: wings level, ease the elevator fully back over 7 s and hold.
+  function stallTest(id, throttle) {
+    def = getAircraft(id).def;
+    const ac = airborne(10, throttle);
+    ac.update(2);
+    let maxRoll = 0;
+    for (let t = 0; t < 10; t += 0.02) {
+      ac.controls.pitch = Math.min(0.85, (0.85 * t) / 7);
+      ac.update(0.02);
+      maxRoll = Math.max(maxRoll, Math.abs(ac.attitude().roll));
+    }
+    return maxRoll;
+  }
+
+  for (const id of ['buschtrottel-shockcub', 'buschtrottel-highlander', 'buschtrottel-agro']) {
+    it(`${id} stalls straight ahead without dropping a wing`, () => {
+      expect(stallTest(id, 0)).toBeLessThan(10 * deg);
+      expect(stallTest(id, 0.2)).toBeLessThan(10 * deg);
+    });
+  }
 });
 
 describe('aircraft registry', () => {

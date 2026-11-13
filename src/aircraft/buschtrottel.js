@@ -15,6 +15,7 @@
 //   +x forward, +y up, +z right (right-handed).
 
 import { liftSlope } from '../sim/aero.js';
+import { Group } from 'three';
 import { createBuschtrottelModel } from './buschtrottelModel.js';
 
 const deg = Math.PI / 180;
@@ -72,6 +73,9 @@ export function buildBuschtrottel(style) {
     alpha0: -3 * deg,
     alphaStall: (style.slats ? 20 : 13) * deg,
     stallWidth: style.slats ? 0.035 : 0.018,
+    // Slats keep lift almost constant well past the stall, so a dropping wing
+    // doesn't lose lift and autorotate: it mushes and the nose drops instead.
+    stallDrop: style.slats ? 0.3 : 1.6,
     cd0: style.slats ? 0.036 : 0.03, // stepped foam section, exposed edges (+ slats)
     ar: AR,
     e: 0.75,
@@ -94,6 +98,7 @@ export function buildBuschtrottel(style) {
         area: segSpan * CHORD * (tip ? (style.tips === 'round' ? 0.85 : 0.97) : 1),
         foil: kfm2,
         wing: true,
+        chordLen: CHORD,
         controls: zMid >= L.ailFrom ? [{ input: 'roll', gain: -side, max: 20 * deg, tau: 0.45 }] : [],
         propwash: i === 0 ? 0.35 : 0,
       });
@@ -173,9 +178,11 @@ export function buildBuschtrottel(style) {
       pitchSpeed: 20,    // m/s
       spoolTime: 0.06,
       torqueFactor: 0.002, // net of slipstream swirl, which offsets part of the torque
-      // High wing: downthrust stops the nose rising with power (as on real Cubs).
-      downThrust: (style.mount === 'high' ? 3 : 1) * deg,
-      rightThrust: 0.5 * deg,
+      // Downthrust stops the nose rising with power (as on real Cubs).
+      downThrust: 3 * deg,
+      // No right thrust: it exists to cancel prop swirl/P-factor, which aren't
+      // modelled, so here it would yaw the model right in slow, powered flight.
+      rightThrust: 0,
       maxRpm: 12000,
       position: [L.prop.x, L.prop.y, 0],
       discArea: Math.PI * L.prop.radius ** 2,
@@ -204,6 +211,18 @@ export function buildBuschtrottel(style) {
     ],
   };
 
+  // The layout is drawn with the origin at mid-fuselage height. A low-wing
+  // model carries its CG lower (wing and battery sit low), so shift the whole
+  // airframe up relative to the CG: physics positions, camera mounts and the
+  // 3D model alike.
+  const cgDrop = style.cgDrop || 0;
+  if (cgDrop) {
+    for (const srf of def.surfaces) srf.pos = [srf.pos[0], srf.pos[1] + cgDrop, srf.pos[2]];
+    for (const c of def.contacts) c.pos = [c.pos[0], c.pos[1] + cgDrop, c.pos[2]];
+    def.motor.position = [def.motor.position[0], def.motor.position[1] + cgDrop, 0];
+  }
+  const up = (v) => [v[0], v[1] + cgDrop, v[2]];
+
   const high = style.mount === 'high';
   return {
     id: style.id,
@@ -215,12 +234,22 @@ export function buildBuschtrottel(style) {
     views: {
       span: SPAN,
       // High wing: from the cabin under the wing. Agro: inside its canopy.
-      cockpit: high ? [0.04, 0.058, 0] : [-0.12, 0.085, 0],
+      cockpit: up(high ? [0.04, 0.058, 0] : [-0.12, 0.085, 0]),
       // Wing-top pod (high wing) or a nose-top camera (low wing).
-      pod: high ? [0.05, L.wingY + 0.04, 0] : [0.17, 0.065, 0],
+      pod: up(high ? [0.05, L.wingY + 0.04, 0] : [0.17, 0.065, 0]),
       chase: { back: SPAN * 2.0 + 0.3, up: SPAN * 0.5 + 0.15 },
     },
-    createModel: () => createBuschtrottelModel(L),
+    createModel: () => {
+      const m = createBuschtrottelModel(L);
+      if (cgDrop) {
+        const inner = m.root;
+        const outer = new Group();
+        inner.position.y = cgDrop;
+        outer.add(inner);
+        return { ...m, root: outer };
+      }
+      return m;
+    },
   };
 }
 
@@ -236,7 +265,7 @@ export const BUSCHTROTTEL_SHOCKCUB = buildBuschtrottel({
   slats: true,
   mass: 0.45,
   tailIncidence: 3 * deg,
-  rollTrim: -0.004,
+  rollTrim: 0,
   colors: { main: '#f2c230', accent: '#1d1d1d', wing: '#f2c230', tail: '#f2c230' },
 });
 
@@ -250,7 +279,7 @@ export const BUSCHTROTTEL_HIGHLANDER = buildBuschtrottel({
   slats: true,
   mass: 0.45,
   tailIncidence: 3 * deg,
-  rollTrim: -0.004,
+  rollTrim: 0,
   colors: { main: '#efefea', accent: '#c62828', wing: '#efefea', tail: '#c62828' },
 });
 
@@ -264,7 +293,8 @@ export const BUSCHTROTTEL_AGRO = buildBuschtrottel({
   tail: 'square',
   slats: true,
   mass: 0.46,
-  tailIncidence: 3 * deg,
+  tailIncidence: 2 * deg,
+  cgDrop: 0.03, // CG 3 cm lower in the airframe than the high-wing versions
   rollTrim: 0,
   // Orange and white: top third of the fuselage, tail and wing tops orange;
   // lower fuselage and wing undersides white; sky-blue ailerons.
