@@ -467,8 +467,25 @@ export class Aircraft {
         const muRoll = c.muRoll ?? 0.035;
         const muLat = 0.7;
         const fRoll = -muRoll * fn * Math.tanh(vRoll / 0.2);
-        const fLat = -muLat * fn * Math.tanh(vLat / 0.3);
+        // Tyre side force builds with slip angle (the angle between where the
+        // wheel points and where it is going) and saturates around 10-15°,
+        // rather than gripping fully at the slightest sideways motion. At a
+        // standstill it still resists sideways sliding.
+        const slip = Math.atan2(vLat, Math.abs(vRoll) + 0.3);
+        const fLat = -muLat * fn * Math.tanh(slip / 0.2);
         _f.addScaledVector(_u, fRoll).addScaledVector(_lift, fLat);
+      } else if (c.muLat !== undefined) {
+        // Tail skid: slides forwards but digs into the grass sideways, which
+        // keeps a skid-equipped tail-dragger straight until the tail lifts.
+        // A steerable skid (linked to the rudder) turns like a tail wheel.
+        const skidSteer = c.steer ? this.servo.yaw * c.steer : 0;
+        _u.set(Math.cos(skidSteer), 0, -Math.sin(skidSteer)).applyQuaternion(q);
+        _u.addScaledVector(_n, -_u.dot(_n)).normalize();
+        _lift.crossVectors(_n, _u);
+        const vAlong = _vt.dot(_u);
+        const vSide = _vt.dot(_lift);
+        _f.addScaledVector(_u, -(c.mu ?? 0.4) * fn * Math.tanh(vAlong / 0.2));
+        _f.addScaledVector(_lift, -c.muLat * fn * Math.tanh(vSide / 0.05));
       } else if (vtLen > 1e-5) {
         const mu = c.mu ?? 0.6;
         _f.addScaledVector(_vt, (-mu * fn * Math.tanh(vtLen / 0.2)) / vtLen);

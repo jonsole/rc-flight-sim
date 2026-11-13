@@ -212,6 +212,31 @@ for (const entry of AIRCRAFT) {
         expect(far.ge).toBeLessThan(0.01);
       });
 
+      it('runs straight on a hands-off, full-power takeoff', () => {
+        const ac = new Aircraft(def, { ground });
+        ac.assistMode = 'off';
+        ac.resetOnGround(0, 0, 0);
+        ac.controls.throttle = 1;
+        const h0 = ac.attitude().heading;
+        let swing = 0;
+        for (let t = 0; t < 5 && ac.position.y < 0.5; t += 0.02) {
+          ac.update(0.02);
+          swing = Math.max(swing, Math.abs(ac.attitude().heading - h0));
+        }
+        expect(swing).toBeLessThan(3 * deg);
+      });
+
+      it('can be steered on the ground with rudder', () => {
+        const ac = new Aircraft(def, { ground });
+        ac.assistMode = 'off';
+        ac.resetOnGround(0, 0, 0);
+        ac.controls = { roll: 0, pitch: 0, yaw: 1, throttle: 0.35 };
+        const h0 = ac.attitude().heading;
+        ac.update(1.5); // short enough that the heading can't wrap past 180°
+        expect(ac.onGround).toBe(true);
+        expect(ac.attitude().heading - h0).toBeGreaterThan(15 * deg); // turned right
+      });
+
       it('detects a nose-in crash', () => {
         const ac = airborne(15, 0.5);
         ac.position.y = 3;
