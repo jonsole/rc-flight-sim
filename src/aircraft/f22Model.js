@@ -100,7 +100,7 @@ export function createF22Model(G) {
   const canopyRings = G.canopy.profile.map(([d, h]) => {
     const x = G.canopy.front - d;
     const base = topAt(x) - 0.0005;
-    return boxRing(x, F.halfWidth + 0.0005, base, base + h, 0.004);
+    return boxRing(x, F.halfWidth + 0.0005, base, base + Math.max(h, 0.0003), 0.004);
   });
   const canopy = new Mesh(loft(canopyRings), canopyMat);
   canopy.userData.part = 'canopy';
