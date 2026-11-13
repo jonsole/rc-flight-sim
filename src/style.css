@@ -1,0 +1,61 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: system-ui, "Segoe UI", sans-serif; color: #eee; }
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#osd { position: fixed; inset: 0; pointer-events: none; }
+#analog {
+  position: fixed; inset: 0; pointer-events: none; opacity: 0; mix-blend-mode: screen;
+  background-image: repeating-linear-gradient(0deg, rgba(0,0,0,0.35) 0 1px, transparent 1px 3px), var(--noise);
+  animation: noise 0.25s steps(5) infinite;
+}
+@keyframes noise {
+  0% { background-position: 0 0, 0 0; }
+  20% { background-position: 0 1px, -37px 21px; }
+  40% { background-position: 0 2px, 53px -11px; }
+  60% { background-position: 0 0, -19px -47px; }
+  80% { background-position: 0 1px, 29px 61px; }
+  100% { background-position: 0 2px, 0 0; }
+}
+#menu-btn {
+  position: fixed; bottom: 12px; right: 12px; z-index: 5; width: 40px; height: 40px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.3); background: rgba(20,24,28,0.55); color: #fff; font-size: 20px; cursor: pointer;
+}
+#panel { position: fixed; inset: 0; display: none; z-index: 10; background: rgba(0,0,0,0.35); }
+#panel.open { display: flex; align-items: center; justify-content: center; }
+.panel {
+  width: min(760px, 94vw); max-height: 90vh; display: flex; flex-direction: column;
+  background: rgba(22,26,30,0.96); border: 1px solid #3a4148; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+}
+.panel-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px 6px; }
+.panel-head h2 { margin: 0; font-size: 18px; }
+.tabs { display: flex; gap: 4px; padding: 0 14px; border-bottom: 1px solid #333a40; flex-wrap: wrap; }
+.tab { background: none; border: none; color: #aab; padding: 10px 12px; cursor: pointer; font-size: 14px; border-bottom: 2px solid transparent; }
+.tab.on { color: #fff; border-bottom-color: #e0a030; }
+.body { padding: 14px 18px 18px; overflow-y: auto; }
+.body h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: #e0a030; margin: 18px 0 8px; }
+.row { display: flex; align-items: center; gap: 10px; margin: 8px 0; flex-wrap: wrap; }
+.lbl { min-width: 190px; color: #ccd; font-size: 14px; }
+.val { min-width: 90px; font-variant-numeric: tabular-nums; color: #fff; font-size: 13px; }
+input[type=range] { flex: 1; min-width: 140px; accent-color: #e0a030; }
+select, button { background: #2b3238; color: #eee; border: 1px solid #485058; border-radius: 6px; padding: 6px 10px; font-size: 14px; }
+button { cursor: pointer; }
+button:hover { background: #38414a; }
+button.close { background: #e0a030; color: #1a1a1a; border: none; font-weight: 600; }
+.hint { color: #99a; font-size: 13px; line-height: 1.45; margin: 6px 0; }
+.status { font-size: 13px; padding: 8px 10px; background: #1b2024; border-radius: 6px; color: #9fd29f; word-break: break-all; }
+.chan { display: grid; grid-template-columns: 150px 90px auto auto 1fr; gap: 8px; align-items: center; margin: 6px 0; font-size: 13px; }
+.chan .inv { display: flex; align-items: center; gap: 4px; color: #ccd; }
+.bar { height: 10px; background: #111; border-radius: 5px; overflow: hidden; min-width: 80px; }
+.bar .fill { height: 100%; width: 50%; background: linear-gradient(90deg, #4a8, #e0a030); }
+ul { padding-left: 20px; color: #ccd; font-size: 14px; line-height: 1.5; }
+#splash { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(0,0,0,0.35), rgba(0,0,0,0.7)); }
+#splash .card { background: rgba(22,26,30,0.95); border: 1px solid #3a4148; border-radius: 14px; padding: 26px 30px; width: min(460px, 92vw); }
+#splash h1 { margin: 0 0 4px; font-size: 26px; }
+#splash .sub { margin: 0 0 14px; color: #e0a030; }
+#splash table { width: 100%; font-size: 14px; margin: 12px 0 18px; border-collapse: collapse; }
+#splash td { padding: 3px 0; color: #ccd; }
+#splash td:first-child { width: 80px; color: #fff; font-family: Consolas, monospace; }
+#start { width: 100%; padding: 12px; font-size: 17px; background: #e0a030; color: #1a1a1a; border: none; font-weight: 700; }
+@media (max-width: 600px) {
+  .lbl { min-width: 0; width: 100%; }
+  .chan { grid-template-columns: 1fr 1fr; }
+}

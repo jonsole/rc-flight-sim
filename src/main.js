@@ -1,0 +1,206 @@
+import { WebGLRenderer, ACESFilmicToneMapping, PCFSoftShadowMap, SRGBColorSpace, Vector3 } from 'three';
+import { Aircraft } from './sim/aircraft.js';
+import { SE5a } from './sim/se5a.js';
+import { ground } from './sim/terrain.js';
+import { Wind } from './sim/wind.js';
+import { World, RUNWAY } from './world/world.js';
+import { createSE5aModel } from './models/se5aModel.js';
+import { Input } from './input/input.js';
+import { CameraRig, CAMERA_LABELS } from './view/cameras.js';
+import { OSD } from './ui/osd.js';
+import { Panel } from './ui/panel.js';
+import { loadSettings, saveSettings } from './ui/settings.js';
+import { EngineSound } from './audio/engine.js';
+
+const settings = loadSettings();
+settings.losZoom = Number(settings.losZoom);
+
+// --- Renderer ----------------------------------------------------------------
+const canvas = document.getElementById('view');
+const renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.outputColorSpace = SRGBColorSpace;
+renderer.toneMapping = ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.9;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = PCFSoftShadowMap;
+
+// --- Simulation ----------------------------------------------------------------
+const world = new World();
+const wind = new Wind();
+const aircraft = new Aircraft(SE5a, { ground, wind });
+const model = createSE5aModel();
+world.scene.add(model.root);
+
+const input = new Input();
+const rig = new CameraRig(settings);
+const osd = new OSD(document.getElementById('osd'));
+const sound = new EngineSound();
+const analog = document.getElementById('analog');
+{
+  // Static noise tile for the analog-video effect.
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const img = g.createImageData(128, 128);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = Math.random() * 255;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+    img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  analog.style.setProperty('--noise', `url(${c.toDataURL()})`);
+}
+
+let paused = false;
+
+function applySettings() {
+  wind.speed = settings.windSpeed;
+  wind.directionDeg = settings.windDir;
+  wind.turbulence = settings.turbulence;
+  world.setSun(settings.sunElevation, settings.sunAzimuth);
+  sound.volume = settings.volume;
+  osd.showHud = settings.showHud;
+  if (rig.mode !== settings.cameraMode) rig.setMode(settings.cameraMode);
+}
+
+function resetAircraft() {
+  // Take off into wind along the runway.
+  const windFromEast = Math.sin((settings.windDir * Math.PI) / 180) > 0; // wind from E half
+  const dir = windFromEast ? 1 : -1; // fly towards the wind (+x = east)
+  const heading = dir > 0 ? 0 : Math.PI;
+  const startX = RUNWAY.x - dir * 40;
+  if (settings.startMode === 'air') {
+    aircraft.resetInAir(new Vector3(startX + dir * 40, 30, RUNWAY.z - 10), heading, 14);
+    input.kb.throttle = 0.5;
+  } else {
+    aircraft.resetOnGround(startX, RUNWAY.z, heading);
+  }
+  osd.reset();
+  rig.chaseInit = false;
+  rig.losInit = false;
+}
+
+const panel = new Panel(document.getElementById('panel'), {
+  settings,
+  input,
+  onChange(key, value) {
+    if (key === 'losZoom') settings.losZoom = Number(value);
+    applySettings();
+    saveSettings(settings);
+    if (key === 'startMode') resetAircraft();
+  },
+  onReset: resetAircraft,
+  onClose: () => setMenu(false),
+});
+
+function setMenu(open) {
+  panel.show(open);
+  paused = open;
+  if (!open) sound.start();
+}
+
+input.onAction = (code) => {
+  sound.start();
+  switch (code) {
+    case 'KeyR':
+      resetAircraft();
+      break;
+    case 'KeyC':
+      settings.cameraMode = rig.cycle();
+      saveSettings(settings);
+      if (panel.visible) panel.render();
+      break;
+    case 'KeyP':
+      paused = !paused;
+      break;
+    case 'KeyH':
+      settings.showHud = !settings.showHud;
+      osd.showHud = settings.showHud;
+      saveSettings(settings);
+      break;
+    case 'KeyM':
+      sound.muted = !sound.muted;
+      break;
+    case 'Escape':
+      setMenu(!panel.visible);
+      break;
+    default:
+  }
+};
+
+document.getElementById('menu-btn').addEventListener('click', () => setMenu(!panel.visible));
+document.getElementById('start').addEventListener('click', () => {
+  document.getElementById('splash').remove();
+  sound.start();
+  paused = false;
+});
+window.addEventListener('pointerdown', () => sound.start(), { once: true });
+
+function resize() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  rig.resize(w / h);
+  osd.resize(w, h, Math.min(window.devicePixelRatio, 2));
+}
+window.addEventListener('resize', resize);
+resize();
+
+applySettings();
+rig.setMode(settings.cameraMode);
+resetAircraft();
+paused = true; // until the splash is dismissed
+
+// --- Main loop -------------------------------------------------------------------
+let last = performance.now();
+const windTmp = new Vector3();
+let rssi = 99;
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+
+  const ctl = input.update(dt);
+  panel.tick();
+
+  if (!paused) {
+    Object.assign(aircraft.controls, ctl);
+    wind.update(dt);
+    aircraft.update(dt);
+    osd.update(dt, aircraft);
+  }
+
+  model.root.position.copy(aircraft.position);
+  model.root.quaternion.copy(aircraft.orientation);
+  model.update(aircraft, paused ? 0 : dt);
+
+  const fpv = rig.mode === 'fpv';
+  model.setPilotVisible(!(fpv && settings.fpvMount === 'cockpit'));
+  rig.update(aircraft, dt);
+  world.followShadow(aircraft.position);
+  world.updateWindsock(wind.at(new Vector3(-35, 5, -42), 0, windTmp));
+
+  const eye = rig.pilotEye();
+  const dist = eye.distanceTo(aircraft.position);
+  // Fake RSSI / video quality falls off with range and when low behind terrain.
+  rssi = Math.max(0, Math.min(99, Math.round(99 - dist / 8)));
+  analog.style.opacity = fpv && settings.fpvAnalog ? String(0.06 + Math.max(0, (dist - 250) / 900)) : '0';
+
+  renderer.render(world.scene, rig.camera);
+  osd.draw(rig.mode, aircraft, {
+    home: eye,
+    rssi,
+    paused,
+    inputSource: input.source,
+    cameraLabel: CAMERA_LABELS[rig.mode],
+    vfov: rig.camera.fov,
+    tilt: (settings.fpvTilt * Math.PI) / 180,
+  });
+  sound.update(aircraft, dist, fpv);
+}
+requestAnimationFrame(frame);
+
+// Expose for debugging in the console.
+window.sim = { aircraft, world, rig, input, settings };

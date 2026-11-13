@@ -1,0 +1,24 @@
+{
+  "name": "rc-flight-sim",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser-based RC aeroplane simulator with line-of-sight and FPV views. First model: SE5a biplane.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jonsole/rc-flight-sim.git"
+  },
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  }
+}
