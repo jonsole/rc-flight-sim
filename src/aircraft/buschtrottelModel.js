@@ -224,7 +224,7 @@ export function createBuschtrottelModel(L) {
   const rootZ = high ? 0 : L.rootZ - 0.006;
   const nTip = S.tips === 'round' ? 10 : 3;
   const wingR = new Group();
-  wingR.add(new Mesh(wingPart(rootZ, L.ailFrom, 0, 1, 2), vcMat));
+  if (L.ailFrom - rootZ > 0.003) wingR.add(new Mesh(wingPart(rootZ, L.ailFrom, 0, 1, 2), vcMat));
   wingR.add(new Mesh(wingPart(L.ailFrom, HALF, 0, L.hinge, nTip), vcMat));
   const ailGeo = wingPart(L.ailFrom + 0.002, HALF - 0.001, L.hinge + 0.004, 1, nTip);
   const hA = wingPoint(L.hinge, 0, L.ailFrom);

@@ -37,7 +37,9 @@ function layout(style) {
     rootZ: high ? 0 : 0.04,        // low wing joins the fuselage side
     slats: style.slats ? { from: high ? 0.05 : 0.045, to: 0.42 } : null, // spanwise extent (m)
     hinge: 0.75,                   // aileron hinge, fraction of chord
-    ailFrom: 0.15,                 // aileron inboard end (m from centreline)
+    // Aileron inboard end (m from centreline): full span from the fuselage
+    // side, or outboard ailerons only.
+    ailFrom: style.fullSpanAilerons ? 0.041 : 0.15,
     thickFront: 0.012,             // KFm2: two 6 mm layers ahead of the step
     thickRear: 0.006,              //       one layer behind it
     step: 0.5,
@@ -254,8 +256,9 @@ export const BUSCHTROTTEL_HIGHLANDER = buildBuschtrottel({
 export const BUSCHTROTTEL_AGRO = buildBuschtrottel({
   id: 'buschtrottel-agro',
   name: 'Buschtrottel Agro',
-  summary: `DIY 6 mm Depron, 900 mm. Low wing with struts to the fuselage, framed glass cab, angular tail. ${COMMON}`,
+  summary: `DIY 6 mm Depron, 900 mm. Low wing with struts, full-span ailerons, framed glass cab, angular tail. ${COMMON}`,
   mount: 'low',
+  fullSpanAilerons: true,
   tips: 'square',
   tail: 'square',
   slats: true,
