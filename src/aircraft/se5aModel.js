@@ -382,12 +382,10 @@ export function createSE5aModel(G, scale) {
     const lm = wingPoint(lower, 0.3, half * 0.42, 0.02);
     const ur = wingPoint(upper, 0.3, 0.1, -0.01);
     const lo = wingPoint(lower, 0.3, half * 0.78, 0.02);
+    // Push mirrored copies: the end points are shared between wires, so they
+    // must not be flipped in place (that put the left wing's wires on the right).
     for (const [a, b] of [[lr, um], [lm, uo], [ur, lm], [um, lo]]) {
-      a.z *= s;
-      b.z *= s;
-      wirePts.push(a, b);
-      a.z *= s;
-      b.z *= s;
+      wirePts.push(a.clone().setZ(a.z * s), b.clone().setZ(b.z * s));
     }
     // Cabane struts
     for (const xf of [0.15, 0.7]) {

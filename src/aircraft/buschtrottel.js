@@ -59,6 +59,7 @@ function layout(style) {
 const SHAPE_AREA = { round: 0.85, square: 0.97 };
 
 export function buildBuschtrottel(style) {
+  style = { throws: { aileron: 26 * deg, elevator: 20 * deg }, ...style };
   const L = layout(style);
   const SPAN = L.span;
   const CHORD = L.chord;
@@ -99,7 +100,7 @@ export function buildBuschtrottel(style) {
         foil: kfm2,
         wing: true,
         chordLen: CHORD,
-        controls: zMid >= L.ailFrom ? [{ input: 'roll', gain: -side, max: 20 * deg, tau: 0.45 }] : [],
+        controls: zMid >= L.ailFrom ? [{ input: 'roll', gain: -side, max: style.throws.aileron, tau: 0.45 }] : [],
         propwash: i === 0 ? 0.35 : 0,
       });
     }
@@ -118,8 +119,9 @@ export function buildBuschtrottel(style) {
     foil: tailFoil,
     downwash: true,
     propwash: 0.8,
-    // Sport throw (~14°): loops easily without stalling at full stick.
-    controls: [{ input: 'pitch', gain: -1, max: 14 * deg, tau: 0.55 }],
+    // Enough to reach the wing's lift limit crisply at cruise, but half stick
+    // stays clear of the stall and full stick doesn't drop a wing.
+    controls: [{ input: 'pitch', gain: -1, max: style.throws.elevator, tau: 0.55 }],
   }));
 
   const f = L.fin;
@@ -267,6 +269,7 @@ export const BUSCHTROTTEL_SHOCKCUB = buildBuschtrottel({
   tips: 'round',
   tail: 'round',
   slats: true,
+  throws: { aileron: 26 * deg, elevator: 20 * deg },
   mass: 0.45,
   tailIncidence: 3 * deg,
   rollTrim: 0,
@@ -281,6 +284,7 @@ export const BUSCHTROTTEL_HIGHLANDER = buildBuschtrottel({
   tips: 'square',
   tail: 'square',
   slats: true,
+  throws: { aileron: 26 * deg, elevator: 20 * deg },
   mass: 0.45,
   tailIncidence: 3 * deg,
   rollTrim: 0,
@@ -293,6 +297,8 @@ export const BUSCHTROTTEL_AGRO = buildBuschtrottel({
   summary: `DIY 6 mm Depron, 900 mm. Low wing with struts, full-span ailerons, framed glass cab, angular tail. ${COMMON}`,
   mount: 'low',
   fullSpanAilerons: true,
+  // Full-span ailerons are already powerful.
+  throws: { aileron: 22 * deg, elevator: 18 * deg },
   tips: 'square',
   tail: 'square',
   slats: true,

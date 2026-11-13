@@ -19,7 +19,8 @@ const DEFAULT_CONFIG = {
   },
   buttons: { reset: null, camera: null, assist: null },
   expo: { roll: 0.35, pitch: 0.3, yaw: 0.2 },
-  rates: { roll: 0.8, pitch: 0.85, yaw: 1.0 },
+  rates: { roll: 1.0, pitch: 1.0, yaw: 1.0 },
+  version: 2,
   deadband: 0.02,
 };
 
@@ -61,7 +62,16 @@ export class Input {
   #load() {
     try {
       const s = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      if (s) return deepMerge(structuredClone(DEFAULT_CONFIG), s);
+      if (s) {
+        // v1 defaulted to 80%/85% roll/pitch rates, which felt sluggish. Move
+        // anyone still on those untouched defaults to 100%; keep custom values.
+        if (!s.version && s.rates && s.rates.roll === 0.8 && s.rates.pitch === 0.85) {
+          s.rates.roll = 1;
+          s.rates.pitch = 1;
+        }
+        s.version = DEFAULT_CONFIG.version;
+        return deepMerge(structuredClone(DEFAULT_CONFIG), s);
+      }
     } catch {
       /* ignore */
     }
