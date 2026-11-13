@@ -1,6 +1,7 @@
 import { WebGLRenderer, ACESFilmicToneMapping, PCFSoftShadowMap, SRGBColorSpace, Vector3 } from 'three';
 import { Aircraft } from './sim/aircraft.js';
 import { ground } from './sim/terrain.js';
+import { Obstacles } from './sim/obstacles.js';
 import { Wind } from './sim/wind.js';
 import { World, RUNWAY } from './world/world.js';
 import { AIRCRAFT, getAircraft } from './aircraft/index.js';
@@ -40,7 +41,8 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = PCFSoftShadowMap;
 
 // --- Simulation ----------------------------------------------------------------
-const world = new World();
+const obstacles = new Obstacles();
+const world = new World(obstacles);
 if (TOUCH_DEVICE) world.sun.shadow.mapSize.set(1024, 1024);
 const wind = new Wind();
 const input = new Input();
@@ -64,7 +66,7 @@ function loadAircraft(id) {
       }
     });
   }
-  aircraft = new Aircraft(entry.def, { ground, wind });
+  aircraft = new Aircraft(entry.def, { ground, wind, obstacles });
   aircraft.assistMode = settings.assist;
   model = entry.createModel();
   world.scene.add(model.root);

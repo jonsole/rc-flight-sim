@@ -4,6 +4,7 @@ import { Aircraft } from '../src/sim/aircraft.js';
 import { AIRCRAFT, getAircraft } from '../src/aircraft/index.js';
 import { buildBuschtrottel } from '../src/aircraft/buschtrottel.js';
 import { ground } from '../src/sim/terrain.js';
+import { Obstacles } from '../src/sim/obstacles.js';
 import { coefficients, liftSlope } from '../src/sim/aero.js';
 import { applyExpo } from '../src/input/input.js';
 
@@ -211,6 +212,31 @@ for (const entry of AIRCRAFT) {
         expect(far.ge).toBeLessThan(0.01);
       });
 
+      it('runs straight on a hands-off, full-power takeoff', () => {
+        const ac = new Aircraft(def, { ground });
+        ac.assistMode = 'off';
+        ac.resetOnGround(0, 0, 0);
+        ac.controls.throttle = 1;
+        const h0 = ac.attitude().heading;
+        let swing = 0;
+        for (let t = 0; t < 5 && ac.position.y < 0.5; t += 0.02) {
+          ac.update(0.02);
+          swing = Math.max(swing, Math.abs(ac.attitude().heading - h0));
+        }
+        expect(swing).toBeLessThan(3 * deg);
+      });
+
+      it('can be steered on the ground with rudder', () => {
+        const ac = new Aircraft(def, { ground });
+        ac.assistMode = 'off';
+        ac.resetOnGround(0, 0, 0);
+        ac.controls = { roll: 0, pitch: 0, yaw: 1, throttle: 0.35 };
+        const h0 = ac.attitude().heading;
+        ac.update(1.5); // short enough that the heading can't wrap past 180°
+        expect(ac.onGround).toBe(true);
+        expect(ac.attitude().heading - h0).toBeGreaterThan(15 * deg); // turned right
+      });
+
       it('detects a nose-in crash', () => {
         const ac = airborne(15, 0.5);
         ac.position.y = 3;
@@ -342,5 +368,117 @@ describe('input shaping', () => {
     expect(applyExpo(1, 0.5)).toBeCloseTo(1);
     expect(applyExpo(-1, 0.5)).toBeCloseTo(-1);
     expect(applyExpo(0.3, 0.5)).toBeLessThan(0.3);
+  });
+});
+
+describe('collisions with obstacles', () => {
+  const obstacles = new Obstacles();
+  const def = getAircraft('buschtrottel-shockcub').def;
+  // A broadleaf tree reasonably close to the field.
+  const tree = obstacles.trees.find((t) => !t.conifer && Math.hypot(t.x, t.z) < 300);
+
+  /** Fly level along +x at `speed`, aimed so the nose reaches (x, y, z) after ~1 s. */
+  function flyAt(target, speed, seconds = 3) {
+    const ac = new Aircraft(def, { ground, obstacles });
+    ac.assistMode = 'off';
+    ac.resetInAir(new Vector3(target.x - speed * 1.2, target.y, target.z), 0, speed);
+    ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 0.6 };
+    ac.update(seconds);
+    return ac;
+  }
+
+  it('crashes into a tree trunk', () => {
+    const ac = flyAt({ x: tree.x, y: tree.y + 1.2, z: tree.z }, 9);
+    expect(ac.crashed).toBe(true);
+    expect(ac.crashReason).toMatch(/tree trunk/);
+    expect(ac.position.x).toBeLessThan(tree.x + 1); // stopped, not passed through
+  });
+
+  it('crashes into the club hut', () => {
+    const ac = flyAt({ x: -29, y: 1.5, z: 26 }, 10);
+    expect(ac.crashed).toBe(true);
+    expect(ac.crashReason).toMatch(/club hut/);
+  });
+
+  it('crashes into foliage at speed', () => {
+    const ac = flyAt({ x: tree.x - tree.crownW, y: tree.y + tree.h * 0.62, z: tree.z }, 10);
+    expect(ac.crashed).toBe(true);
+    expect(ac.crashReason).toMatch(/tree/);
+  });
+
+  it('is caught by the branches when it drifts in slowly', () => {
+    const ac = new Aircraft(def, { ground, obstacles });
+    ac.assistMode = 'off';
+    const cy = tree.y + tree.h * 0.62;
+    ac.resetInAir(new Vector3(tree.x - tree.crownW - 0.3, cy, tree.z), 0, 2.5);
+    ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 0 };
+    let caught = false;
+    for (let t = 0; t < 2; t += 0.02) {
+      ac.update(0.02);
+      caught ||= ac.inFoliage;
+    }
+    expect(caught).toBe(true);
+    expect(ac.crashed).toBe(false);
+    expect(ac.velocity.length()).toBeLessThan(2); // held back by the foliage
+  });
+
+  it('leaves the runway and the circuit clear', () => {
+    const ac = new Aircraft(def, { ground, obstacles });
+    ac.assistMode = 'off';
+    ac.resetOnGround(40, -22, Math.PI);
+    ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 1 };
+    for (let t = 0; t < 8; t += 0.05) {
+      ac.controls.roll = Math.max(-1, Math.min(1, -2 * ac.attitude().roll));
+      ac.controls.pitch = Math.max(-0.3, Math.min(0.3, -1.5 * (ac.attitude().pitch - 0.2)));
+      ac.update(0.05);
+    }
+    expect(ac.crashed).toBe(false);
+  });
+});
+
+describe('terrain', () => {
+  it('physics ground height matches the rendered terrain triangles exactly', async () => {
+    const { PlaneGeometry, Vector3: V } = await import('three');
+    const { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS } = await import('../src/sim/terrain.js');
+    // Build the render mesh exactly as the world does.
+    const geo = new PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, TERRAIN_SEGMENTS, TERRAIN_SEGMENTS);
+    geo.rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) pos.setY(i, gridHeight(i % (TERRAIN_SEGMENTS + 1), Math.floor(i / (TERRAIN_SEGMENTS + 1))));
+    const idx = geo.index.array;
+    const cell = TERRAIN_SIZE / TERRAIN_SEGMENTS;
+    const a = new V();
+    const b = new V();
+    const c = new V();
+    let rnd = 7;
+    const rand = () => ((rnd = (rnd * 16807) % 2147483647) / 2147483647);
+    let worst = 0;
+    let tested = 0;
+    for (let k = 0; k < 400; k++) {
+      // Points out in the hills (the flat field is trivially zero everywhere).
+      const ang = rand() * Math.PI * 2;
+      const r = 500 + rand() * 1500;
+      const x = Math.cos(ang) * r;
+      const z = Math.sin(ang) * r;
+      const ix = Math.floor((x + TERRAIN_SIZE / 2) / cell);
+      const iz = Math.floor((z + TERRAIN_SIZE / 2) / cell);
+      const t0 = (iz * TERRAIN_SEGMENTS + ix) * 6; // two triangles per cell
+      for (const t of [t0, t0 + 3]) {
+        a.fromBufferAttribute(pos, idx[t]);
+        b.fromBufferAttribute(pos, idx[t + 1]);
+        c.fromBufferAttribute(pos, idx[t + 2]);
+        // Barycentric coordinates in the xz plane.
+        const d = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
+        const w1 = ((b.z - c.z) * (x - c.x) + (c.x - b.x) * (z - c.z)) / d;
+        const w2 = ((c.z - a.z) * (x - c.x) + (a.x - c.x) * (z - c.z)) / d;
+        const w3 = 1 - w1 - w2;
+        if (w1 < -1e-6 || w2 < -1e-6 || w3 < -1e-6) continue;
+        const meshY = w1 * a.y + w2 * b.y + w3 * c.y;
+        worst = Math.max(worst, Math.abs(meshY - heightAt(x, z)));
+        tested++;
+      }
+    }
+    expect(tested).toBeGreaterThan(390);
+    expect(worst).toBeLessThan(1e-3); // metres
   });
 });

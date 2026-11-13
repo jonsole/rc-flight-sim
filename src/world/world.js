@@ -5,7 +5,7 @@ import {
   Object3D, BoxGeometry, ConeGeometry, Group, Vector3, MathUtils, DoubleSide, Float32BufferAttribute,
 } from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
-import { heightAt } from '../sim/terrain.js';
+import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS } from '../sim/terrain.js';
 
 export const RUNWAY = { x: 0, z: -22, length: 180, width: 18 };
 export const PILOT_POS = new Vector3(0, 0, 0);
@@ -57,7 +57,9 @@ function runwayTexture() {
 }
 
 export class World {
-  constructor() {
+  /** @param {import('../sim/obstacles.js').Obstacles} obstacles */
+  constructor(obstacles) {
+    this.obstacles = obstacles;
     this.scene = new Scene();
     this.scene.background = new Color('#9cc3e6');
     this.scene.fog = new Fog('#b9d1e6', 400, 3200);
@@ -119,8 +121,9 @@ export class World {
   }
 
   #terrain() {
-    const size = 7000;
-    const seg = 280;
+    // Same grid the physics uses (src/sim/terrain.js), so they always agree.
+    const size = TERRAIN_SIZE;
+    const seg = TERRAIN_SEGMENTS;
     const geo = new PlaneGeometry(size, size, seg, seg);
     geo.rotateX(-Math.PI / 2);
     const p = geo.attributes.position;
@@ -133,7 +136,8 @@ export class World {
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i);
       const z = p.getZ(i);
-      const h = heightAt(x, z);
+      // PlaneGeometry vertex i is grid point (i % (seg+1), floor(i / (seg+1))).
+      const h = gridHeight(i % (seg + 1), Math.floor(i / (seg + 1)));
       p.setY(i, h);
       const n = Math.sin(x * 0.011) * Math.cos(z * 0.013) * 0.5 + 0.5;
       tmp.copy(c1).lerp(c2, n * 0.8);
@@ -188,7 +192,7 @@ export class World {
   }
 
   #trees() {
-    const count = 1800;
+    const count = this.obstacles.trees.length;
     const trunkGeo = new CylinderGeometry(0.25, 0.4, 1, 6);
     trunkGeo.translate(0, 0.5, 0);
     const crownGeo = new IcosahedronGeometry(1, 1);
@@ -201,53 +205,31 @@ export class World {
     const conifers = new InstancedMesh(coniferGeo, crownMat, count);
     const o = new Object3D();
     const col = new Color();
-    let rnd = 12345;
-    const rand = () => ((rnd = (rnd * 16807) % 2147483647) / 2147483647);
     let nc = 0;
     let nf = 0;
-    for (let i = 0; i < count; i++) {
-      let x;
-      let z;
-      // Tree lines around the field plus scattered woods.
-      if (i < 500) {
-        const a = rand() * Math.PI * 2;
-        const r = 170 + rand() * 60;
-        x = Math.cos(a) * r * 1.3;
-        z = Math.sin(a) * r - 40;
-        if (z > 20 && Math.abs(x) < 60) z += 80; // keep the view behind the pilot more open
-      } else {
-        // clustered woods
-        const cx = Math.floor(rand() * 14);
-        const ca = cx * 0.45 + 0.3;
-        const cr = 300 + (cx % 5) * 160;
-        x = Math.cos(ca * 2.1) * cr + (rand() - 0.5) * 140;
-        z = Math.sin(ca * 2.1) * cr + (rand() - 0.5) * 140;
-      }
-      const y = heightAt(x, z);
-      const h = 9 + rand() * 12;
-      const conifer = rand() < 0.3;
-      o.rotation.set(0, rand() * Math.PI * 2, 0);
+    // Same layout the physics collides with (src/sim/obstacles.js).
+    this.obstacles.trees.forEach((t, i) => {
+      const { x, y, z, h } = t;
+      o.rotation.set(0, t.rot, 0);
       o.position.set(x, y - 0.2, z);
       o.scale.set(1, h * 0.45, 1);
       o.updateMatrix();
       trunks.setMatrixAt(i, o.matrix);
-      if (conifer) {
+      col.setHSL(t.hue, t.sat, t.light);
+      if (t.conifer) {
         o.position.set(x, y + h * 0.15, z);
         o.scale.set(h * 0.22, h * 0.9, h * 0.22);
         o.updateMatrix();
         conifers.setMatrixAt(nf, o.matrix);
-        col.setHSL(0.3 + rand() * 0.04, 0.35, 0.16 + rand() * 0.06);
         conifers.setColorAt(nf++, col);
       } else {
         o.position.set(x, y + h * 0.62, z);
-        const w = h * (0.28 + rand() * 0.12);
-        o.scale.set(w, h * 0.38, w);
+        o.scale.set(t.crownW, h * 0.38, t.crownW);
         o.updateMatrix();
         crowns.setMatrixAt(nc, o.matrix);
-        col.setHSL(0.22 + rand() * 0.07, 0.4 + rand() * 0.15, 0.2 + rand() * 0.1);
         crowns.setColorAt(nc++, col);
       }
-    }
+    });
     crowns.count = nc;
     conifers.count = nf;
     for (const m of [trunks, crowns, conifers]) {
