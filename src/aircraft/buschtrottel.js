@@ -321,5 +321,5 @@ export const BUSCHTROTTEL_AGRO = buildBuschtrottel({
   rollTrim: 0,
   // Orange and white: top third of the fuselage, tail and wing tops orange;
   // lower fuselage and wing undersides white; sky-blue ailerons.
-  colors: { main: '#f4f4ef', top: '#f26b1d', split: 2 / 3, wing: '#f26b1d', wingBottom: '#f4f4ef', aileron: '#7cc6ee', tail: '#f26b1d' },
+  colors: { main: '#f4f4ef', top: '#f26b1d', split: 2 / 3, wing: '#f26b1d', wingBottom: '#f4f4ef', aileron: '#7cc6ee', slatTop: '#7cc6ee', slatBottom: '#f4f4ef', tail: '#f26b1d' },
 });

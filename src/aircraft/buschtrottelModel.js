@@ -85,6 +85,8 @@ export function createBuschtrottelModel(L) {
   const vcMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.92, flatShading: true });
   const wingTop = new Color(C.wing);
   const wingBottom = new Color(C.wingBottom || C.wing);
+  const slatTop = new Color(C.slatTop || C.wing);
+  const slatBottom = new Color(C.slatBottom || C.wingBottom || C.wing);
   const metal = new MeshStandardMaterial({ color: '#9a9c9e', roughness: 0.4, metalness: 0.6 });
   // Side windows read as dark glass from outside; the windscreen stays clear
   // enough to fly FPV through.
@@ -245,7 +247,7 @@ export function createBuschtrottelModel(L) {
       rs.push(ring.map(([f, y]) => wingPoint(f, y, z)));
     }
     // Points 0-1 are the slat's underside, 2-3 its upper surface.
-    const slatGeo = loft(rs, { color: (_p, _ri, pi) => (pi < 2 ? wingBottom : wingTop) });
+    const slatGeo = loft(rs, { color: (_p, _ri, pi) => (pi < 2 ? slatBottom : slatTop) });
     wingR.add(new Mesh(slatGeo, vcMat));
     wingL.add(new Mesh(mirrorZ(slatGeo), vcMat));
   }
