@@ -15,7 +15,7 @@ export function liftSlope(aspectRatio) {
 /**
  * Lift and drag coefficients at angle of attack `alpha` (radians, any value).
  * @param {number} alpha
- * @param {object} p  { cla, alpha0, alphaStall, cd0, ar, e, stallWidth? }
+ * @param {object} p  { cla, alpha0, alphaStall, cd0, ar, e, stallWidth?, stallDrop? }
  * @returns {{cl:number, cd:number, stalled:number}} stalled: 0..1 blend factor
  */
 export function coefficients(alpha, p) {
@@ -38,7 +38,18 @@ export function coefficients(alpha, p) {
   const clPlate = 0.95 * 2 * s * c;
   const cdPlate = 0.05 + 1.9 * s * s;
 
-  const cl = (1 - sigma) * clLin + sigma * clPlate;
+  // Past the stall a real wing keeps most of its lift for a few degrees and
+  // loses it progressively (a rounded peak), rather than dropping straight to
+  // flat-plate values. `stallDrop` is the fraction of peak lift lost per radian
+  // beyond the stall angle (≈3%/degree by default; less for slatted wings).
+  let clPost = clPlate;
+  if (Math.abs(a) < Math.PI / 2) {
+    const clPeak = p.cla * p.alphaStall;
+    const past = Math.max(0, Math.abs(aLin) - p.alphaStall);
+    const retained = clPeak * Math.max(0, 1 - (p.stallDrop ?? 1.6) * past);
+    clPost = Math.sign(aLin) * Math.max(Math.abs(clPlate), retained);
+  }
+  const cl = (1 - sigma) * clLin + sigma * clPost;
   const cdInduced = (clLin * clLin) / (Math.PI * p.e * p.ar);
   const cd = (1 - sigma) * (p.cd0 + cdInduced) + sigma * cdPlate;
   return { cl, cd, stalled: sigma };

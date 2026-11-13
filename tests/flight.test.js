@@ -113,6 +113,32 @@ for (const entry of AIRCRAFT) {
         expect(rate({ yaw: 1 }).y).toBeLessThan(-0.2); // nose right (−ω_y)
       });
 
+      // Elevator commands below are after the default expo (0.3) and rate (0.85):
+      // half stick ≈ 0.33, full stick = 0.85.
+      function pullFromCruise(cmd, seconds = 2) {
+        const ac = airborne(stallSpeed() * 1.7, 0.5);
+        ac.update(1);
+        let stalled = 0;
+        let rollRate = 0;
+        for (let t = 0; t < seconds; t += 0.02) {
+          ac.controls.pitch = cmd;
+          ac.update(0.02);
+          const w = ac.surfaces.filter((s) => s.wing);
+          stalled = Math.max(stalled, w.reduce((sum, s) => sum + s.stalled, 0) / w.length);
+          rollRate = Math.max(rollRate, Math.abs(ac.omega.x));
+        }
+        return { stalled, rollRate };
+      }
+
+      it('does not stall in a moderate pull at cruise speed (half stick)', () => {
+        // First second only: hold it longer and it loops, slowing over the top.
+        expect(pullFromCruise(0.33, 1).stalled).toBeLessThan(0.15);
+      });
+
+      it('does not drop a wing when the stick is yanked fully back', () => {
+        expect(pullFromCruise(0.85).rollRate).toBeLessThan(2.2); // rad/s, ~125°/s
+      });
+
       it('sits on its main wheels and tail skid / tail wheel', () => {
         const ac = new Aircraft(def, { ground });
         ac.resetOnGround(0, 0, 0);

@@ -113,7 +113,8 @@ export function buildBuschtrottel(style) {
     foil: tailFoil,
     downwash: true,
     propwash: 0.8,
-    controls: [{ input: 'pitch', gain: -1, max: 25 * deg, tau: 0.55 }],
+    // Sport throw (~14°): loops easily without stalling at full stick.
+    controls: [{ input: 'pitch', gain: -1, max: 14 * deg, tau: 0.55 }],
   }));
 
   const f = L.fin;
