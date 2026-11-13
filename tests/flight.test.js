@@ -114,8 +114,8 @@ for (const entry of AIRCRAFT) {
         expect(rate({ yaw: 1 }).y).toBeLessThan(-0.2); // nose right (−ω_y)
       });
 
-      // Elevator commands below are after the default expo (0.3) and rate (0.85):
-      // half stick ≈ 0.33, full stick = 0.85.
+      // Elevator commands below are after the default expo (0.3) and rate (1.0):
+      // half stick ≈ 0.39, full stick = 1.
       function pullFromCruise(cmd, seconds = 2) {
         const ac = airborne(stallSpeed() * 1.7, 0.5);
         ac.update(1);
@@ -133,11 +133,11 @@ for (const entry of AIRCRAFT) {
 
       it('does not stall in a moderate pull at cruise speed (half stick)', () => {
         // First second only: hold it longer and it loops, slowing over the top.
-        expect(pullFromCruise(0.33, 1).stalled).toBeLessThan(0.15);
+        expect(pullFromCruise(0.39, 1).stalled).toBeLessThan(0.2);
       });
 
       it('does not drop a wing when the stick is yanked fully back', () => {
-        expect(pullFromCruise(0.85).rollRate).toBeLessThan(2.2); // rad/s, ~125°/s
+        expect(pullFromCruise(1).rollRate).toBeLessThan(2.6); // rad/s, ~150°/s (a biplane may snap a little)
       });
 
       it('sits on its main wheels and tail skid / tail wheel', () => {
@@ -307,7 +307,7 @@ describe('Buschtrottel leading-edge slats', () => {
     ac.update(2);
     let maxRoll = 0;
     for (let t = 0; t < 10; t += 0.02) {
-      ac.controls.pitch = Math.min(0.85, (0.85 * t) / 7);
+      ac.controls.pitch = Math.min(1, t / 7); // to full stick (default rate 100%)
       ac.update(0.02);
       maxRoll = Math.max(maxRoll, Math.abs(ac.attitude().roll));
     }

@@ -273,7 +273,7 @@ export const EFLITE_SE5a_900 = buildSE5a({
   inertia: [0.026, 0.044, 0.02],
   propRadius: 0.127,
   foil: { cd0: 0.02, alphaStall: 14 * deg, stallWidth: 0.03 }, // foam wing: softish stall
-  elevatorThrow: 12 * deg,
+  elevatorThrow: 16 * deg,
   // 3513-1100Kv on 4S with a 10x5: ~12,500 rpm loaded, ≈1.25:1 thrust/weight.
   motor: { staticThrust: 16, pitchSpeed: 26, spoolTime: 0.08, torqueFactor: 0.0055, maxRpm: 12500 },
   battery: { cells: 4, capacity: 2200, maxCurrent: 38, internalResistance: 0.015 * 4 },

@@ -11,7 +11,8 @@ A browser-based radio-control aeroplane simulator with **line-of-sight** and
 | **Buschtrottel Agro** | Low wing with V-struts to the upper fuselage, full-span ailerons, angular Air Tractor-style glass cab, angular tail; orange and white. |
 
 The Buschtrottels are set up as built here: AT2308 1450Kv, 8x4 prop (assumed),
-3S 1350 mAh, ~450 g, KFm2 wing, tail-dragger with a rudder-linked tail wheel.
+3S 1350 mAh, ~450 g, KFm2 wing, 100 mm foam wheels on springy wire legs,
+and a rudder-linked tail wheel.
 Plan figures: ~900 mm span, ~22 dm² wing (19.8 g/dm² published loading).
 
 It runs in any modern browser (Chrome or Edge recommended on Windows). There is
