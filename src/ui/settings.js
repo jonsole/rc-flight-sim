@@ -26,6 +26,9 @@ export const DEFAULT_SETTINGS = {
   // Misc
   volume: 0.6,
   showHud: true,
+  // Touch screens
+  touchControls: 'auto', // 'auto' | 'on' | 'off'
+  stickMode: '2',        // '2' = throttle left, '1' = throttle right
 };
 
 export function loadSettings() {

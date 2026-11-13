@@ -5,6 +5,7 @@ import { Wind } from './sim/wind.js';
 import { World, RUNWAY } from './world/world.js';
 import { AIRCRAFT, getAircraft } from './aircraft/index.js';
 import { Input } from './input/input.js';
+import { TouchControls, isTouchDevice } from './input/touch.js';
 import { CameraRig, CAMERA_LABELS } from './view/cameras.js';
 import { OSD } from './ui/osd.js';
 import { Panel } from './ui/panel.js';
@@ -28,7 +29,10 @@ settings.losZoom = Number(settings.losZoom);
 // --- Renderer ----------------------------------------------------------------
 const canvas = document.getElementById('view');
 const renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// Phones and tablets: cap the resolution a little lower to keep the frame rate up.
+const TOUCH_DEVICE = isTouchDevice();
+const MAX_DPR = TOUCH_DEVICE ? 1.5 : 2;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_DPR));
 renderer.outputColorSpace = SRGBColorSpace;
 renderer.toneMapping = ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.9;
@@ -37,6 +41,7 @@ renderer.shadowMap.type = PCFSoftShadowMap;
 
 // --- Simulation ----------------------------------------------------------------
 const world = new World();
+if (TOUCH_DEVICE) world.sun.shadow.mapSize.set(1024, 1024);
 const wind = new Wind();
 const input = new Input();
 const rig = new CameraRig(settings);
@@ -95,6 +100,9 @@ function applySettings() {
   world.setSun(settings.sunElevation, settings.sunAzimuth);
   sound.volume = settings.volume;
   osd.showHud = settings.showHud;
+  const showTouch = settings.touchControls === 'on' || (settings.touchControls === 'auto' && TOUCH_DEVICE);
+  touch.setVisible(showTouch);
+  touch.setMode(Number(settings.stickMode));
   if (rig.mode !== settings.cameraMode) rig.setMode(settings.cameraMode);
 }
 
@@ -139,6 +147,13 @@ const panel = new Panel(document.getElementById('panel'), {
   onReset: resetAircraft,
   onClose: () => setMenu(false),
 });
+
+// On-screen sticks and buttons (shown on touch screens; see Transmitter tab).
+const touch = new TouchControls({
+  onAction: (code) => input.onAction(code),
+  onMenu: () => setMenu(!panel.visible),
+});
+input.touch = touch;
 
 function setMenu(open) {
   panel.show(open);
@@ -209,7 +224,7 @@ function resize() {
   const h = window.innerHeight;
   renderer.setSize(w, h, false);
   rig.resize(w / h);
-  osd.resize(w, h, Math.min(window.devicePixelRatio, 2));
+  osd.resize(w, h, Math.min(window.devicePixelRatio, MAX_DPR));
 }
 window.addEventListener('resize', resize);
 resize();
@@ -261,6 +276,7 @@ function frame(now) {
     rssi,
     paused,
     inputSource: input.source,
+    touch: touch.visible,
     cameraLabel: CAMERA_LABELS[rig.mode],
     assist: { off: 'MANUAL', as3x: 'AS3X', safe: 'SAFE' }[settings.assist],
     assistFlash: (assistFlash = Math.max(0, assistFlash - dt)) > 0,

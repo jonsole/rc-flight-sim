@@ -63,6 +63,15 @@ be assigned to *reset* and *change camera*. Settings are saved in the browser.
 Keyboard fallback: arrows = aileron/elevator, A/D = rudder, W/S = throttle,
 R = reset, C = camera, G = flight assist, P = pause, H = HUD, M = mute, Esc = menu.
 
+## Phones and tablets
+
+On a touch screen the sim shows two on-screen sticks (Mode 2 by default:
+throttle and rudder on the left, elevator and ailerons on the right; the
+throttle stays where you leave it, the others spring back) and buttons for
+camera, reset, flight assist and the menu. Turn the phone sideways. Stick mode
+and showing or hiding the sticks are under **Menu → Transmitter**; a connected
+transmitter or gamepad still takes priority.
+
 ## Views
 
 | View | What it is |

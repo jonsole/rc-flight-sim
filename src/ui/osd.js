@@ -56,6 +56,8 @@ export class OSD {
     const s = Math.min(1.4, Math.max(0.8, h / 720));
     const fs = 18 * s;
     const pad = 28 * s;
+    // Touch screens: keep clear of the button bar on top and the sticks below.
+    const top = pad + (info.touch ? 40 : 0);
     const att = ac.attitude();
 
     // Artificial horizon, scaled to match the real horizon for this FOV.
@@ -95,11 +97,11 @@ export class OSD {
     const v = ac.battery.voltage;
     const cells = ac.def.battery.cells;
     const low = v / cells < 3.5;
-    this.#text(`${v.toFixed(1)}V${low && Math.floor(performance.now() / 400) % 2 ? ' LOW' : ''}`, pad, pad, 'left', fs);
-    this.#text(`${Math.round(ac.battery.used)}mAh  ${ac.battery.current.toFixed(1)}A`, pad, pad + fs * 1.3, 'left', fs * 0.85);
+    this.#text(`${v.toFixed(1)}V${low && Math.floor(performance.now() / 400) % 2 ? ' LOW' : ''}`, pad, top, 'left', fs);
+    this.#text(`${Math.round(ac.battery.used)}mAh  ${ac.battery.current.toFixed(1)}A`, pad, top + fs * 1.3, 'left', fs * 0.85);
     const t = this.flightTime;
-    this.#text(`${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`, w - pad, pad, 'right', fs);
-    this.#text(`RSSI ${info.rssi}`, w - pad, pad + fs * 1.3, 'right', fs * 0.85);
+    this.#text(`${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.floor(t % 60)).padStart(2, '0')}`, w - pad, top, 'right', fs);
+    this.#text(`RSSI ${info.rssi}`, w - pad, top + fs * 1.3, 'right', fs * 0.85);
 
     // Speed / altitude
     this.#text(`${Math.round(ac.airspeed * 3.6)} km/h`, pad, h / 2, 'left', fs);
@@ -131,10 +133,11 @@ export class OSD {
     ctx.restore();
     this.#text(`H ${Math.round(dist)}m`, w / 2, h - pad, 'center', fs * 0.9);
 
-    this.#text(`THR ${Math.round(ac.controls.throttle * 100)}%`, pad, h - pad, 'left', fs);
+    const thrY = info.touch ? h / 2 - fs * 1.4 : h - pad; // above the speed, clear of the left stick
+    this.#text(`THR ${Math.round(ac.controls.throttle * 100)}%`, pad, thrY, 'left', info.touch ? fs * 0.85 : fs);
     const hdg = ((90 + (att.heading * 180) / Math.PI) % 360 + 360) % 360; // compass, north = -z
-    this.#text(`${String(Math.round(hdg) % 360).padStart(3, '0')}°`, w / 2, pad, 'center', fs);
-    this.#text(info.assist, pad, pad + fs * 2.5, 'left', fs * 0.85);
+    this.#text(`${String(Math.round(hdg) % 360).padStart(3, '0')}°`, w / 2, top, 'center', fs);
+    this.#text(info.assist, pad, top + fs * 2.5, 'left', fs * 0.85);
     if (info.assistFlash) this.#text(`ASSIST: ${info.assist}`, w / 2, h / 2 + 70 * s, 'center', fs * 1.2);
     if (ac.crashed) this.#text(`CRASH: ${ac.crashReason.toUpperCase()}`, w / 2, h / 2 - 60 * s, 'center', fs * 1.3);
     else if (info.paused) this.#text('PAUSED', w / 2, h / 2 - 60 * s, 'center', fs * 1.3);
@@ -144,19 +147,20 @@ export class OSD {
     const { h } = this;
     const fs = 14;
     const x = 16;
-    let y = h - 16 - fs * 4.2;
+    // Bottom-left normally; top-left when the touch sticks occupy the bottom.
+    let y = info.touch ? 64 : h - 16 - fs * 4.2;
     const lines = [
       `SPD ${Math.round(ac.airspeed * 3.6)} km/h`,
       `ALT ${ac.position.y.toFixed(1)} m`,
       `THR ${Math.round(ac.controls.throttle * 100)}%   BAT ${ac.battery.voltage.toFixed(1)}V`,
-      `${info.inputSource === 'transmitter' ? 'TX' : 'KEYS'}   ${info.assist}   ${info.cameraLabel}`,
+      `${{ transmitter: 'TX', touch: 'TOUCH', keyboard: 'KEYS' }[info.inputSource]}   ${info.assist}   ${info.cameraLabel}`,
     ];
     for (const l of lines) {
       this.#text(l, x, y, 'left', fs);
       y += fs * 1.35;
     }
     if (info.assistFlash) this.#text(`Flight assist: ${info.assist}`, this.w / 2, 120, 'center', 20);
-    if (ac.crashed) this.#text(`Crashed: ${ac.crashReason} - press R to reset`, this.w / 2, 80, 'center', 22);
+    if (ac.crashed) this.#text(`Crashed: ${ac.crashReason} - ${info.touch ? 'tap RESET' : 'press R to reset'}`, this.w / 2, info.touch ? 150 : 80, 'center', info.touch ? 18 : 22);
     else if (info.paused) this.#text('PAUSED', this.w / 2, 80, 'center', 22);
   }
 }

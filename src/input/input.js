@@ -36,6 +36,8 @@ export class Input {
     this.config = this.#load();
     this.keys = new Set();
     this.kb = { roll: 0, pitch: 0, yaw: 0, throttle: 0 };
+    /** On-screen sticks (set by main.js on touch devices). */
+    this.touch = null;
     this.output = { roll: 0, pitch: 0, yaw: 0, throttle: 0 };
     this.raw = { roll: 0, pitch: 0, yaw: 0, throttle: 0 };
     this.source = 'keyboard';
@@ -145,11 +147,14 @@ export class Input {
       this.useGamepad = false;
     }
 
-    // Transmitter when present; keyboard overrides any stick it is moving.
-    this.source = padVals && !kbActive ? 'transmitter' : 'keyboard';
+    // A connected transmitter wins, then the on-screen sticks; the keyboard
+    // overrides any stick it is moving.
+    const touchVals = !padVals && this.touch?.visible ? this.touch.read() : null;
+    const sticks = padVals || touchVals;
+    this.source = sticks && !kbActive ? (padVals ? 'transmitter' : 'touch') : 'keyboard';
     for (const ch of CHANNELS) {
-      const kbUsed = ch === 'throttle' ? !padVals : Math.abs(this.kb[ch]) > 1e-3;
-      this.raw[ch] = padVals && !kbUsed ? padVals[ch] : this.kb[ch];
+      const kbUsed = ch === 'throttle' ? !sticks : Math.abs(this.kb[ch]) > 1e-3;
+      this.raw[ch] = sticks && !kbUsed ? sticks[ch] : this.kb[ch];
     }
 
     for (const ch of ['roll', 'pitch', 'yaw']) {

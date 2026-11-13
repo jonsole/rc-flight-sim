@@ -160,6 +160,8 @@ export class Panel {
 
     return [
       el('p', { class: 'hint' }, 'Connect your transmitter by USB (EdgeTX/OpenTX: choose "USB Joystick (HID)"), or use a USB sim dongle. Move a stick so the browser notices it.'),
+      this.#select('On-screen sticks', 'touchControls', { auto: 'Auto (touch screens)', on: 'Always show', off: 'Off' }),
+      this.#select('Stick mode', 'stickMode', { 2: 'Mode 2 (throttle left)', 1: 'Mode 1 (throttle right)' }),
       el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Device'), padSel),
       el('div', { class: 'status', id: 'pad-status' }, inp.gamepadName || 'No transmitter detected — keyboard active'),
       el('h3', {}, 'Channel mapping'),

@@ -2,7 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>RC Flight Sim</title>
     <link rel="stylesheet" href="./src/style.css" />
   </head>
@@ -18,8 +20,9 @@
         <p class="sub">Choose your aircraft</p>
         <select id="splash-aircraft"></select>
         <p id="splash-summary" class="summary"></p>
-        <p>Plug in your transmitter (USB joystick mode) or fly with the keyboard.</p>
-        <table>
+        <p class="keys-only">Plug in your transmitter (USB joystick mode) or fly with the keyboard.</p>
+        <p class="touch-only">Fly with the on-screen sticks (Mode 2: throttle and rudder left, elevator and ailerons right). Turn your phone sideways for the best view.</p>
+        <table class="keys-only">
           <tr><td>Arrows</td><td>Aileron / elevator</td></tr>
           <tr><td>A / D</td><td>Rudder</td></tr>
           <tr><td>W / S</td><td>Throttle up / down</td></tr>
