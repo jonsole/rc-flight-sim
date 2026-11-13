@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { Vector3 } from 'three';
+import { Vector3, Quaternion } from 'three';
 import { Aircraft } from '../src/sim/aircraft.js';
 import { AIRCRAFT, getAircraft } from '../src/aircraft/index.js';
 import { buildBuschtrottel } from '../src/aircraft/buschtrottel.js';
@@ -171,6 +171,44 @@ for (const entry of AIRCRAFT) {
         expect(ac.crashed).toBe(false);
         expect(liftoff).not.toBeNull();
         expect(liftoff).toBeLessThan(80);
+      });
+
+      it('has a dihedral effect: sideslip rolls it away from the slip', () => {
+        const ac = airborne(10, 0);
+        ac.throttleActual = 0;
+        const beta = 5 * deg;
+        ac.velocity.set(10 * Math.cos(beta), 0, 10 * Math.sin(beta)); // slipping right
+        ac.step(1e-6);
+        const q = 0.5 * 1.225 * 100;
+        const clBeta = ac.lastForces.moment.x / (q * def.wingArea * ac.wingSpan) / beta;
+        expect(clBeta).toBeLessThan(-0.08); // rolls left, raising the right wing
+      });
+
+      it('rolls back towards level when a bank is released (hands off)', () => {
+        const ac = airborne(stallSpeed() * 1.7, 0.45);
+        ac.update(3);
+        ac.orientation.multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), 30 * deg));
+        ac.update(10);
+        expect(Math.abs(ac.attitude().roll)).toBeLessThan(15 * deg);
+      });
+
+      it('gets ground effect: more lift and less drag just above the ground', () => {
+        const forcesAt = (heightInSpans) => {
+          const ac = airborne(9, 0);
+          ac.throttleActual = 0;
+          ac.orientation.setFromAxisAngle(new Vector3(0, 0, 1), 5 * deg);
+          ac.velocity.set(9, 0, 0);
+          const lowestWing = Math.min(...ac.surfaces.filter((s) => s.wing).map((s) => s.pos.y));
+          ac.position.set(0, heightInSpans * ac.wingSpan - lowestWing, 0);
+          ac.step(1e-6);
+          return { lift: ac.lastForces.aero.y, drag: -ac.lastForces.aero.x, ge: ac.groundEffect };
+        };
+        const near = forcesAt(0.1);
+        const far = forcesAt(3);
+        expect(near.lift).toBeGreaterThan(far.lift * 1.03);
+        expect(near.drag).toBeLessThan(far.drag * 0.9);
+        expect(near.ge).toBeGreaterThan(0.1); // biplanes get less: the upper wing is higher
+        expect(far.ge).toBeLessThan(0.01);
       });
 
       it('detects a nose-in crash', () => {

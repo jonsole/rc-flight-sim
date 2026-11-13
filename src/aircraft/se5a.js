@@ -69,6 +69,7 @@ function scaleLayout(r, k) {
  * @param {object} o.gear           { wheelK, wheelC, skidK, skidC, hardK, hardC, wheelCrash, skidCrash }
  * @param {object} [o.trim]         { roll, pitch, yaw } stick units
  * @param {string} [o.defaultAssist] 'off' | 'as3x' | 'safe'
+ * @param {number} [o.upperWingDihedralEffect] extra effective dihedral of the upper wing (rad)
  */
 export function buildSE5a(o) {
   const k = o.span / REF_SPAN;
@@ -84,6 +85,7 @@ export function buildSE5a(o) {
   const DIHEDRAL = G.dihedral;
   const INCIDENCE = G.incidence;
   const WING_AR = SPAN / CHORD;
+  const upperBonus = o.upperWingDihedralEffect ?? 0;
 
   const airfoil = (ar, extra = {}) => ({
     cla: liftSlope(ar) * 0.92, // biplane interference
@@ -110,7 +112,9 @@ export function buildSE5a(o) {
           pos: [qcX, y + Math.tan(DIHEDRAL) * zMid, side * zMid],
           chord: [Math.cos(INCIDENCE), Math.sin(INCIDENCE), 0],
           // Spanwise vector always points to +z; for the left wing that's inboard.
-          span: [0, side * Math.sin(DIHEDRAL), Math.cos(DIHEDRAL)],
+          // Aerodynamic dihedral: geometric, plus the "high wing" effect of the
+          // upper wing sitting well above the CG (adds roll stability).
+          span: [0, side * Math.sin(DIHEDRAL + (name === 'upper' ? upperBonus : 0)), Math.cos(DIHEDRAL + (name === 'upper' ? upperBonus : 0))],
           // Rounded tips: the tip segment has a little less area.
           area: segSpan * CHORD * (i === segments - 1 ? 0.9 : 1),
           foil,
@@ -197,6 +201,7 @@ export function buildSE5a(o) {
     ],
     wingAspectRatio: WING_AR,
     wingArea: 2 * SPAN * CHORD,
+    wingSpan: SPAN,
     downwashGain: 0.9, // scales classical 2·CL/(π·AR) downwash at the tail
     motor: {
       ...o.motor,
@@ -273,6 +278,7 @@ export const EFLITE_SE5a_900 = buildSE5a({
   motor: { staticThrust: 16, pitchSpeed: 26, spoolTime: 0.08, torqueFactor: 0.0055, maxRpm: 12500 },
   battery: { cells: 4, capacity: 2200, maxCurrent: 38, internalResistance: 0.015 * 4 },
   gear: { wheelK: 2000, wheelC: 20, skidK: 900, skidC: 9, hardK: 2500, hardC: 20, wheelCrash: 6, skidCrash: 5 },
-  trim: { roll: 0.007 }, // aileron trim against motor torque at cruise
+  trim: { roll: 0.002 }, // aileron trim against motor torque at cruise
+  upperWingDihedralEffect: 5 * deg, // top wing well above the CG acts like a high wing
   defaultAssist: 'as3x',
 });

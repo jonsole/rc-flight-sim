@@ -93,7 +93,9 @@ panel sees its own local airflow (body rotation, prop wash and wing downwash),
 with lift and drag curves that stall and become flat-plate past the stall.
 Stability, damping, adverse yaw, dihedral effect, wing drop at the stall and
 the tail-dragger ground handling come out of that rather than being scripted.
-Also modelled: electric motor thrust fall-off with airspeed, torque reaction,
+Also modelled: ground effect (within about a wingspan of the ground: less
+induced drag, more lift, less downwash at the tail), electric motor thrust
+fall-off with airspeed, torque reaction,
 a LiPo battery with voltage sag, wind with a boundary-layer gradient and gusts,
 spring/damper landing gear with wheel and skid friction, and crash detection.
 

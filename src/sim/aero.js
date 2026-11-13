@@ -54,5 +54,6 @@ export function coefficients(alpha, p) {
   const cl = (1 - sigma) * clLin + sigma * clPost;
   const cdInduced = (clLin * clLin) / (Math.PI * p.e * p.ar);
   const cd = (1 - sigma) * (p.cd0 + cdInduced) + sigma * cdPlate;
-  return { cl, cd, stalled: sigma };
+  // cdInduced: the induced-drag part of cd (ground effect scales it).
+  return { cl, cd, stalled: sigma, cdInduced: (1 - sigma) * cdInduced };
 }

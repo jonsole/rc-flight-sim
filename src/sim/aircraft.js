@@ -6,7 +6,7 @@
 // rather than being scripted.
 
 import { Vector3, Quaternion } from 'three';
-import { coefficients } from './aero.js';
+import { coefficients, liftSlope } from './aero.js';
 
 const RHO = 1.225;
 const G = 9.81;
@@ -50,6 +50,11 @@ export class Aircraft {
       const normal = new Vector3().crossVectors(span, chord).normalize();
       return { ...s, pos: vec(s.pos), chord, span, normal, alpha: 0, cl: 0, stalled: 0, deflection: 0 };
     });
+    // Wingspan for ground effect: given by the definition, else estimated from
+    // the outermost wing panel.
+    const wingZ = this.surfaces.filter((s) => s.wing).map((s) => Math.abs(s.pos.z));
+    this.wingSpan = def.wingSpan || (wingZ.length ? 2.3 * Math.max(...wingZ) : 1);
+    this.groundEffect = 0; // telemetry: 0 = none .. 1 = full
     this.contacts = def.contacts.map((c) => ({ ...c, pos: vec(c.pos), load: 0, onGround: false }));
     this.motorPos = vec(def.motor.position);
 
@@ -182,8 +187,26 @@ export class Aircraft {
     _m.x -= Math.max(0, thrust) * def.motor.torqueFactor;
 
     // --- Aerodynamic surfaces --------------------------------------------
-    // Downwash at the tail from the previous wing CL.
-    const downwash = (def.downwashGain * 2 * this.wingCL) / (Math.PI * def.wingAspectRatio);
+    // Ground effect: within about a wingspan of the ground the wing's
+    // downwash and tip vortices are blocked. McCormick's factor
+    // phi = (16h/b)^2 / (1 + (16h/b)^2) scales induced drag and the downwash
+    // at the tail, and the wing behaves as if its aspect ratio were AR/phi
+    // (steeper lift curve). h = each panel's height above the terrain.
+    let phiSum = 0;
+    let phiN = 0;
+    for (const s of this.surfaces) {
+      if (!s.wing) continue;
+      _cp.copy(s.pos).applyQuaternion(q).add(this.position);
+      const h = Math.max(0.01, _cp.y - this.env.ground.heightAt(_cp.x, _cp.z));
+      const x = (16 * h) / this.wingSpan;
+      s.ge = (x * x) / (1 + x * x);
+      phiSum += s.ge;
+      phiN++;
+    }
+    const phiWing = phiN ? phiSum / phiN : 1;
+    this.groundEffect = 1 - phiWing;
+    // Downwash at the tail from the previous wing CL (reduced near the ground).
+    const downwash = (phiWing * def.downwashGain * 2 * this.wingCL) / (Math.PI * def.wingAspectRatio);
     let wingLift = 0;
     let wingArea = 0;
     const c = this.#assist(this.servo);
@@ -205,15 +228,21 @@ export class Aircraft {
       }
       s.deflection = defl;
       const co = coefficients(alpha, s.foil);
+      let cl = co.cl;
+      // Control deflection adds a little profile drag.
+      let cd = co.cd + 0.04 * defl * defl;
+      if (s.wing && s.ge < 0.999) {
+        const ar = s.foil.ar;
+        cl *= liftSlope(ar / s.ge) / liftSlope(ar);
+        cd -= co.cdInduced * (1 - s.ge);
+      }
       s.alpha = alpha;
-      s.cl = co.cl;
+      s.cl = cl;
       s.stalled = co.stalled;
       const qa = 0.5 * RHO * speed2 * s.area;
-      // Control deflection adds a little profile drag.
-      const cd = co.cd + 0.04 * defl * defl;
       _lift.crossVectors(s.span, _up).normalize();
       const invSpeed = 1 / Math.sqrt(speed2);
-      _tmp.copy(_lift).multiplyScalar(co.cl * qa).addScaledVector(_up, -cd * qa * invSpeed);
+      _tmp.copy(_lift).multiplyScalar(cl * qa).addScaledVector(_up, -cd * qa * invSpeed);
       _f.add(_tmp);
       // As a surface stalls its centre of pressure moves aft, from the quarter
       // chord towards mid-chord: the nose-down pitch break at the stall.
@@ -224,7 +253,7 @@ export class Aircraft {
         _m.add(_r.crossVectors(s.pos, _tmp));
       }
       if (s.wing) {
-        wingLift += co.cl * s.area;
+        wingLift += cl * s.area;
         wingArea += s.area;
       }
     }

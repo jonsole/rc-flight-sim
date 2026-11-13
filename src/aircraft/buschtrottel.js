@@ -171,6 +171,7 @@ export function buildBuschtrottel(style) {
     surfaces: [...wing, ...tail, fin, ...body],
     wingAspectRatio: AR,
     wingArea: SPAN * CHORD,
+    wingSpan: SPAN,
     downwashGain: 0.9,
     motor: {
       // AT2308 1450Kv on 3S with an 8x4: ~12,000 rpm loaded.
