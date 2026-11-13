@@ -360,12 +360,12 @@ export const BUSCHTROTTEL_SHOCKCUB = buildBuschtrottel({
   tailIncidence: 3 * deg,
   rollTrim: 0,
   // From photos of the real one: yellow, no stripe, black nose back to the
-  // cabin, grey painted windscreen and side windows, dark blue ailerons and
-  // tail, black slats, dark grey tip plates, blue wheel hubs.
+  // cabin, grey painted windscreen and side windows, dark blue ailerons (and
+  // the wing between them) and tail, black slats, dark grey tip plates, blue wheel hubs.
   colors: {
     main: '#f2c230', accent: '#1d1d1d', stripe: false, nose: '#1d1d1d', noseX: 0.06,
-    window: '#9a9ea3', wing: '#f2c230', aileron: '#1c2f6e', tail: '#1c2f6e',
-    slatTop: '#262626', slatBottom: '#262626', tip: '#3b3e42', hub: '#2a3f8f',
+    window: '#9a9ea3', wing: '#f2c230', aileron: '#1c2f6e', centreTE: '#1c2f6e', tail: '#1c2f6e',
+    slatTop: '#111111', slatBottom: '#111111', tip: '#3b3e42', hub: '#2a3f8f',
   },
 });
 

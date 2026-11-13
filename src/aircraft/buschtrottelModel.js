@@ -259,7 +259,7 @@ export function createBuschtrottelModel(L) {
       z,
     );
   };
-  const wingPart = (z0, z1, f0, f1, n) => {
+  const wingPart = (z0, z1, f0, f1, n, top = wingTop, bottom = wingBottom) => {
     const ring = kfm2Ring(f0, f1, L);
     // Underside points (flat bottom of the KFm2) take the bottom colour.
     const lowY = (L.thickFront / L.chord) * 0.3;
@@ -269,12 +269,21 @@ export function createBuschtrottelModel(L) {
       const z = z0 + ((z1 - z0) * i) / n;
       rs.push(ring.map(([f, y]) => wingPoint(f, y, z)));
     }
-    return loft(rs, { color: (_p, _ri, pi) => (isBottom[pi] ? wingBottom : wingTop) });
+    return loft(rs, { color: (_p, _ri, pi) => (isBottom[pi] ? bottom : top) });
   };
   const rootZ = high ? 0 : L.rootZ - 0.006;
   const nTip = 3;
   const wingR = new Group();
-  if (L.ailFrom - rootZ > 0.003) wingR.add(new Mesh(wingPart(rootZ, L.ailFrom, 0, 1, 2), vcMat));
+  if (L.ailFrom - rootZ > 0.003) {
+    if (C.centreTE) {
+      // Centre section between the ailerons: trailing part painted to match.
+      const te = new Color(C.centreTE);
+      wingR.add(new Mesh(wingPart(rootZ, L.ailFrom, 0, L.hinge, 2), vcMat));
+      wingR.add(new Mesh(wingPart(rootZ, L.ailFrom, L.hinge, 1, 2, te, te), vcMat));
+    } else {
+      wingR.add(new Mesh(wingPart(rootZ, L.ailFrom, 0, 1, 2), vcMat));
+    }
+  }
   wingR.add(new Mesh(wingPart(L.ailFrom, HALF, 0, L.hinge, nTip), vcMat));
   const ailGeo = wingPart(L.ailFrom + 0.002, HALF - 0.001, L.hinge + 0.004, 1, nTip);
   const hA = wingPoint(L.hinge, 0, L.ailFrom);
