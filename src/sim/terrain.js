@@ -122,13 +122,20 @@ function bumpNoise(x, z) {
   return smoothNoise(x / 0.7 + 1000, z / 0.7 + 1000) * 0.65 + smoothNoise(x / 0.25 + 500, z / 0.25 + 500) * 0.35 - 0.5;
 }
 
+/** Bump height (m) at a point; scale > 1 for small wheels, which feel more. */
+export function bumpAt(x, z, scale = 1) {
+  return surfaceAt(x, z).bump * 2 * bumpNoise(x, z) * scale;
+}
+
 export function bumpyHeightAt(x, z) {
-  return heightAt(x, z) + surfaceAt(x, z).bump * 2 * bumpNoise(x, z);
+  return heightAt(x, z) + bumpAt(x, z);
 }
 
 /** Terrain as the gear feels it (bumpy), and its surface type. */
 export const physicsGround = {
   heightAt: bumpyHeightAt,
+  baseHeightAt: heightAt,
+  bumpAt,
   normalAt(x, z, out) {
     const e = 0.05; // small enough to feel individual bumps
     const hx = bumpyHeightAt(x + e, z) - bumpyHeightAt(x - e, z);

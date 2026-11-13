@@ -77,6 +77,7 @@ export function buildSE5a(o) {
   const s2 = (v) => v * k * k;
 
   const ref = referenceLayout(o.cgFromUpperLe / k);
+  if (o.gear.wheelX !== undefined) ref.wheel.x = o.gear.wheelX / k; // axle position (m ahead of the CG)
   ref.prop.radius = o.propRadius / k;
   const G = scaleLayout(ref, k);
 
@@ -221,8 +222,8 @@ export function buildSE5a(o) {
     },
     // Ground contact points (body frame). type: wheel | skid | hard | prop
     contacts: [
-      { name: 'wheel-L', pos: [G.wheel.x, G.wheel.y - G.wheel.radius, -G.wheel.z], type: 'wheel', k: gr.wheelK, c: gr.wheelC, crashSpeed: gr.wheelCrash },
-      { name: 'wheel-R', pos: [G.wheel.x, G.wheel.y - G.wheel.radius, G.wheel.z], type: 'wheel', k: gr.wheelK, c: gr.wheelC, crashSpeed: gr.wheelCrash },
+      { name: 'wheel-L', pos: [G.wheel.x, G.wheel.y - G.wheel.radius, -G.wheel.z], type: 'wheel', k: gr.wheelK, c: gr.wheelC, rollScale: gr.rollScale ?? 1, bumpScale: gr.bumpScale, crashSpeed: gr.wheelCrash },
+      { name: 'wheel-R', pos: [G.wheel.x, G.wheel.y - G.wheel.radius, G.wheel.z], type: 'wheel', k: gr.wheelK, c: gr.wheelC, rollScale: gr.rollScale ?? 1, bumpScale: gr.bumpScale, crashSpeed: gr.wheelCrash },
       // The skid slides forwards (mu) but digs into the grass sideways (muLat),
       // and is linked to the rudder (steer), as on most RC scale models.
       { name: 'skid', pos: [G.skid.x, G.skid.y, 0], type: 'skid', k: gr.skidK, c: gr.skidC, mu: 0.35, muLat: 0.9, steer: gr.skidSteer ?? 0, crashSpeed: gr.skidCrash },
@@ -279,7 +280,13 @@ export const EFLITE_SE5a_900 = buildSE5a({
   // 3513-1100Kv on 4S with a 10x5: ~12,500 rpm loaded, ≈1.25:1 thrust/weight.
   motor: { staticThrust: 16, pitchSpeed: 26, spoolTime: 0.08, torqueFactor: 0.0055, maxRpm: 12500 },
   battery: { cells: 4, capacity: 2200, maxCurrent: 38, internalResistance: 0.015 * 4 },
-  gear: { wheelK: 2000, wheelC: 20, skidK: 900, skidC: 9, hardK: 2500, hardC: 20, wheelCrash: 6, skidCrash: 5, skidSteer: 20 * deg },
+  // Small hard wheels close in front of the CG (axle ~65 mm ahead, about under
+  // the top wing's leading edge): they drag and catch on grass, so without up
+  // elevator the tail lifts and it noses over, like the real model.
+  gear: {
+    wheelK: 2000, wheelC: 20, skidK: 900, skidC: 9, hardK: 2500, hardC: 20, wheelCrash: 6, skidCrash: 5, skidSteer: 20 * deg,
+    wheelX: 0.065, rollScale: 1.8, bumpScale: 2,
+  },
   trim: { roll: 0.002 }, // aileron trim against motor torque at cruise
   upperWingDihedralEffect: 5 * deg, // top wing well above the CG acts like a high wing
   defaultAssist: 'as3x',

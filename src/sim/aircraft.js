@@ -417,7 +417,10 @@ export class Aircraft {
       const px = this.position.x + _r.x;
       const py = this.position.y + _r.y;
       const pz = this.position.z + _r.z;
-      const h = ground.heightAt(px, pz);
+      // Small wheels drop into dips and hit bumps harder (bumpScale > 1).
+      const h = ground.bumpAt && c.bumpScale
+        ? ground.baseHeightAt(px, pz) + ground.bumpAt(px, pz, c.bumpScale)
+        : ground.heightAt(px, pz);
       const depth = h - py;
       c.onGround = depth > 0;
       c.depth = Math.max(0, depth); // spring compression, for the 3D model
