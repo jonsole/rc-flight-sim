@@ -91,9 +91,9 @@ export function createF22Model(G) {
     [G.nose - 0.08, 0.018, -0.013, 0.017],
     [G.nose - 0.13, 0.021, -0.014, 0.023],
     [0.17, 0.021, fy, 0.028],
-    [0.11, 0.021, fy, 0.033],
-    [0.03, 0.021, fy, 0.038],
-    [G.prop.x + 0.03, 0.02, fy, G.prop.y + 0.013], // power pod: motor mid-box
+    [0.11, 0.021, fy, 0.031],
+    [0.03, 0.021, fy, 0.028],
+    [G.prop.x + 0.03, 0.02, fy, 0.026],
   ];
   const box = new Mesh(loft(stations.map((s) => boxRing(...s))), foam(C.box));
   root.add(box);

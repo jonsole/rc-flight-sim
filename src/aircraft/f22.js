@@ -214,7 +214,9 @@ export function buildF22(style) {
   const elevTip = O.elevon.reduce((a, b) => (b[0] < a[0] ? b : a));
   const hard = (name, pos, crashSpeed = 4) => ({ name, pos, type: 'hard', k: 800, c: 6, crashSpeed });
   const propX = (O.slot.front + O.slot.back) / 2;
-  const propY = style.prop.y;
+  // The prop spins in the slot centred on the wing sheet: half the disc
+  // above it, half below.
+  const propY = wingY;
   const radius = style.prop.diameterIn * 0.0254 / 2;
   const belly = style.belly;
 
@@ -297,7 +299,7 @@ export function buildF22(style) {
 // five-blade quad prop, loaded to ~22,000 rpm: about 510 g static thrust at
 // ~16 A (estimated from typical 5" prop data). Pitch speed = pitch × loaded
 // rpm, so it is faster flat out than the plan's 2300Kv and 6x4.5.
-const PROP_5x45x5 = { diameterIn: 5, pitchIn: 4.5, blades: 5, rpm: 22000, staticThrust: 5.0, pitchSpeed: 42, current: 16, y: 0.03 };
+const PROP_5x45x5 = { diameterIn: 5, pitchIn: 4.5, blades: 5, rpm: 22000, staticThrust: 5.0, pitchSpeed: 42, current: 16 };
 
 export const FT_MINI_F22 = buildF22({
   id: 'ft-mini-f22',
