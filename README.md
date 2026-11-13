@@ -21,7 +21,8 @@ The Mini F-22 (`src/aircraft/f22.js`) is traced off the FT plan sheets: 508 mm
 span, 667 mm long, 14.2 dm², 211 g all up, 3S 800 mAh. This one has a 2204
 2600Kv with a 5x4.5 five-blade prop (the plan's 2300Kv and 6x4.5 is slower). The flat wing makes lift only from its angle
 of attack, so the elevons are trimmed with the plan's 8° of reflex, and the CG
-is at the plan's 305 mm from the nose. Elevons: 25° for roll, 16° for pitch.
+is at the plan's 305 mm from the nose. Elevons: 25° each way. Hands-off it
+flies level at a bit over half throttle (~50 km/h); it climbs with more.
 At the stall the elevons sit in the wing's dead air and lose most of their
 bite, and it falls off on the left wing. Thrust and inertia are estimates.
 There is no landing gear: with *Start position: On the runway* the pilot holds

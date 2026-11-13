@@ -125,6 +125,13 @@ export function buildF22(style) {
     const chord = pp.area / (bands[i + 1] - bands[i]);
     strips.push({ ...pp, chord, qc: pp.x + 0.25 * chord });
   }
+  // Each strip's lift acts just ahead of its centroid, not at its quarter
+  // chord: on a slender delta the load sits further back, putting the
+  // aerodynamic centre near the planform's centroid (about 2/3 of the root
+  // chord back).
+  for (const s of strips) {
+    s.ac = s.x + 0.05 * s.chord;
+  }
   const sweep = Math.atan2(strips[1].qc - strips[strips.length - 1].qc, strips[strips.length - 1].z - strips[1].z);
 
   const wing = [];
@@ -132,7 +139,7 @@ export function buildF22(style) {
     strips.forEach((s, i) => {
       wing.push({
         name: `wing-${side > 0 ? 'R' : 'L'}${i}`,
-        pos: [s.qc, wingY, side * s.z],
+        pos: [s.ac, wingY, side * s.z],
         chord: [1, 0, 0],
         span: [-side * Math.tan(sweep), side * Math.sin(style.aeroDihedral), 1],
         area: s.area,
@@ -152,7 +159,10 @@ export function buildF22(style) {
   const elevAr = (2 * Math.max(...O.elevon.map((p) => p[1]))) ** 2 / (2 * elevP.area);
   const elevChord = elevP.area / Math.max(...O.elevon.map((p) => p[1]));
   // Low aspect ratio (~2): it stalls late.
-  const elevFoil = { cla: liftSlope(elevAr), alpha0: 0, alphaStall: 28 * deg, stallWidth: 0.03, cd0: 0.025, ar: elevAr, e: 0.75 };
+  // Hinged straight onto the trailing edge, they act partly as the back of
+  // the low-aspect-ratio planform rather than as a separate tail: a lift
+  // slope between the two.
+  const elevFoil = { cla: liftSlope((AR + elevAr) / 2), alpha0: 0, alphaStall: 28 * deg, stallWidth: 0.03, cd0: 0.025, ar: elevAr, e: 0.75 };
   const inc = -style.reflex;
   const elevons = [-1, 1].map((side) => ({
     name: `stab-${side > 0 ? 'R' : 'L'}`,
@@ -242,8 +252,8 @@ export function buildF22(style) {
       maxPitch: 30 * deg,
       levelGain: { roll: 1.2, pitch: 1.4 },
     },
-    // About 2.4:1 thrust to weight: it cruises on a third of the throttle.
-    cruiseThrottle: 0.35,
+    // Flies level hands-off at a bit over half throttle (~50 km/h).
+    cruiseThrottle: 0.55,
     // Thrown from shoulder height once the motor is up to speed.
     handLaunch: { height: 1.5, speed: 7.5, pitch: 12 * deg, throttle: 0.6 },
     contacts: [
@@ -287,7 +297,7 @@ export function buildF22(style) {
 // five-blade quad prop, loaded to ~22,000 rpm: about 510 g static thrust at
 // ~16 A (estimated from typical 5" prop data). Pitch speed = pitch × loaded
 // rpm, so it is faster flat out than the plan's 2300Kv and 6x4.5.
-const PROP_5x45x5 = { diameterIn: 5, pitchIn: 4.5, blades: 5, rpm: 22000, staticThrust: 5.0, pitchSpeed: 42, current: 16, y: 0.014 };
+const PROP_5x45x5 = { diameterIn: 5, pitchIn: 4.5, blades: 5, rpm: 22000, staticThrust: 5.0, pitchSpeed: 42, current: 16, y: 0.03 };
 
 export const FT_MINI_F22 = buildF22({
   id: 'ft-mini-f22',
@@ -295,9 +305,9 @@ export const FT_MINI_F22 = buildF22({
   summary: 'Foam-board pusher jet, 508 mm. Prop in a slot in the wing, elevons, canted fins. Hand launch. 2204 2600Kv, 5x4.5 five-blade, 3S 800 mAh, 211 g.',
   prop: PROP_5x45x5,
   mass: 0.211,
-  // Elevons 25° each way on the plan: all of it for roll, less for pitch so
-  // half stick doesn't stall it. Mixed, they share the 25° of servo travel.
-  throws: { pitch: 16 * deg, roll: 25 * deg, max: 25 * deg },
+  // Elevons 25° each way on the plan, for roll and pitch. Mixed, they share
+  // the 25° of servo travel.
+  throws: { pitch: 25 * deg, roll: 25 * deg, max: 25 * deg },
   stallAsymmetry: 3 * deg, // left wing
   elevonWake: 0.95,
   reflex: 8 * deg, // elevons trimmed trailing edge up: the plan's reflex gauge
