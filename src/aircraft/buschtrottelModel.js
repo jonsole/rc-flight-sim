@@ -5,7 +5,7 @@
 import {
   Group, Mesh, MeshStandardMaterial, Vector3, Color, CylinderGeometry,
   SphereGeometry, TorusGeometry, CircleGeometry, ConeGeometry, PlaneGeometry, DoubleSide,
-  CanvasTexture, Shape, ExtrudeGeometry,
+  CanvasTexture, Shape, ExtrudeGeometry, ShapeGeometry, FrontSide,
   SRGBColorSpace, Quaternion,
 } from 'three';
 import { loft, mirrorZ } from './geom.js';
@@ -94,7 +94,8 @@ export function createBuschtrottelModel(L) {
   const root = new Group();
   root.name = 'Buschtrottel';
   // Colour scheme. Optional keys: top + split (two-tone fuselage), wingBottom,
-  // aileron; otherwise the fuselage has a side stripe and the wing is one colour.
+  // aileron, stripe: false; otherwise the fuselage has a side stripe and the
+  // wing is one colour.
   const C = S.colors;
   const tailMat = foam(C.tail);
   const ailMat = foam(C.aileron || C.wing);
@@ -129,7 +130,19 @@ export function createBuschtrottelModel(L) {
     return out;
   };
   let ringPaint = [];
-  const rings = L.fuselage.map(([x, hw, yb, yt, rIn = 0.002]) => {
+  // Painted nose (C.nose): duplicate the station at C.noseX so the colour
+  // change is a crisp line.
+  let stations = L.fuselage;
+  let noseRings = 0;
+  if (C.nose) {
+    const i = stations.findIndex((st) => st[0] < C.noseX);
+    const [a, b] = [stations[i - 1], stations[i]];
+    const t = (a[0] - C.noseX) / (a[0] - b[0]);
+    const mid = a.map((v, k) => v + (b[k] - v) * t);
+    stations = [...stations.slice(0, i), mid, mid, ...stations.slice(i)];
+    noseRings = i + 1;
+  }
+  const rings = stations.map(([x, hw, yb, yt, rIn = 0.002]) => {
     const r = Math.min(rIn, hw * 0.95, (yt - yb) * 0.45);
     const lo = yb + r;
     const hi = yt - r;
@@ -137,7 +150,9 @@ export function createBuschtrottelModel(L) {
     // Paint bands on the side: [y, paintBelow, paintAbove]
     const bands = C.split
       ? [[clampY(yb + C.split * (yt - yb)), 0, 1]]
-      : [[clampY(yb + 0.42 * (yt - yb)), 0, 1], [clampY(yb + 0.58 * (yt - yb)), 1, 0]];
+      : C.stripe === false
+        ? []
+        : [[clampY(yb + 0.42 * (yt - yb)), 0, 1], [clampY(yb + 0.58 * (yt - yb)), 1, 0]];
     const topPaint = C.split ? 1 : 0;
     const pts = [];
     // Right side, bottom to top.
@@ -154,7 +169,8 @@ export function createBuschtrottelModel(L) {
     ringPaint = pts.map((p) => p[2]);
     return pts.map(([z, y]) => new Vector3(x, y, z));
   });
-  const fus = new Mesh(loft(rings, { color: (_p, _ri, pi) => paints[ringPaint[pi]] }), vcMat);
+  const noseColor = C.nose && new Color(C.nose);
+  const fus = new Mesh(loft(rings, { color: (_p, ri, pi) => (ri < noseRings ? noseColor : paints[ringPaint[pi]]) }), vcMat);
   root.add(fus);
 
   // Cabin windows (high wing) or open cockpit (Agro)
@@ -164,17 +180,25 @@ export function createBuschtrottelModel(L) {
   if (high) {
     // Cabin side windows under the wing, and the 45° windscreen between the
     // hood (x 0.105, y 0.04) and the wing (x 0.05, y 0.091).
+    // C.window: windows painted on (opaque from outside, but single-sided so
+    // the cockpit camera still sees out).
+    const painted = C.window && new MeshStandardMaterial({ color: C.window, roughness: 0.9, side: FrontSide });
+    // Painted: a quadrilateral behind the windscreen; otherwise a dark glass panel.
+    const sideGeo = painted
+      ? new ShapeGeometry(new Shape([[0.05, 0.091], [-0.015, 0.093], [0.004, 0.056], [0.072, 0.061]].map(([x, y]) => ({ x, y }))))
+      : new PlaneGeometry(0.11, 0.04).translate(-0.005, 0.064, 0);
     for (const s of [-1, 1]) {
-      const w = new Mesh(new PlaneGeometry(0.11, 0.04), glass);
-      w.position.set(-0.005, 0.064, s * 0.0428);
-      w.rotation.y = s > 0 ? 0 : Math.PI;
+      const w = new Mesh(s > 0 ? sideGeo : mirrorZ(sideGeo), painted || glass);
+      w.position.z = s * 0.0428;
       root.add(w);
     }
     const a = new Vector3(0.105, 0.0405, 0);
     const b = new Vector3(0.05, 0.0915, 0);
-    const ws = new Mesh(new PlaneGeometry(a.distanceTo(b), 0.072), screenGlass);
+    const ws = new Mesh(new PlaneGeometry(a.distanceTo(b), 0.072), painted || screenGlass);
     ws.position.copy(a).lerp(b, 0.5).add(new Vector3(0.0015, 0.0015, 0));
     ws.rotation.set(Math.PI / 2, Math.atan2(b.y - a.y, a.x - b.x), 0, 'ZYX');
+    // Face outwards (forwards and up).
+    if (new Vector3(0, 0, 1).applyQuaternion(ws.quaternion).dot(new Vector3(1, 1, 0)) < 0) ws.rotateY(Math.PI);
     root.add(ws);
     head.position.set(0.0, 0.06, 0);
   } else {
@@ -235,7 +259,7 @@ export function createBuschtrottelModel(L) {
       z,
     );
   };
-  const wingPart = (z0, z1, f0, f1, n) => {
+  const wingPart = (z0, z1, f0, f1, n, top = wingTop, bottom = wingBottom) => {
     const ring = kfm2Ring(f0, f1, L);
     // Underside points (flat bottom of the KFm2) take the bottom colour.
     const lowY = (L.thickFront / L.chord) * 0.3;
@@ -245,12 +269,21 @@ export function createBuschtrottelModel(L) {
       const z = z0 + ((z1 - z0) * i) / n;
       rs.push(ring.map(([f, y]) => wingPoint(f, y, z)));
     }
-    return loft(rs, { color: (_p, _ri, pi) => (isBottom[pi] ? wingBottom : wingTop) });
+    return loft(rs, { color: (_p, _ri, pi) => (isBottom[pi] ? bottom : top) });
   };
   const rootZ = high ? 0 : L.rootZ - 0.006;
   const nTip = 3;
   const wingR = new Group();
-  if (L.ailFrom - rootZ > 0.003) wingR.add(new Mesh(wingPart(rootZ, L.ailFrom, 0, 1, 2), vcMat));
+  if (L.ailFrom - rootZ > 0.003) {
+    if (C.centreTE) {
+      // Centre section between the ailerons: trailing part painted to match.
+      const te = new Color(C.centreTE);
+      wingR.add(new Mesh(wingPart(rootZ, L.ailFrom, 0, L.hinge, 2), vcMat));
+      wingR.add(new Mesh(wingPart(rootZ, L.ailFrom, L.hinge, 1, 2, te, te), vcMat));
+    } else {
+      wingR.add(new Mesh(wingPart(rootZ, L.ailFrom, 0, 1, 2), vcMat));
+    }
+  }
   wingR.add(new Mesh(wingPart(L.ailFrom, HALF, 0, L.hinge, nTip), vcMat));
   const ailGeo = wingPart(L.ailFrom + 0.002, HALF - 0.001, L.hinge + 0.004, 1, nTip);
   const hA = wingPoint(L.hinge, 0, L.ailFrom);
@@ -391,7 +424,7 @@ export function createBuschtrottelModel(L) {
     wheel.position.set(W.x, W.y, s * W.z);
     const tube = W.radius * 0.36;
     const tyre = new Mesh(new TorusGeometry(W.radius - tube, tube, 10, 28), tyreMat);
-    const hub = new Mesh(new CylinderGeometry(W.radius * 0.45, W.radius * 0.45, tube * 1.6, 16), metal);
+    const hub = new Mesh(new CylinderGeometry(W.radius * 0.45, W.radius * 0.45, tube * 1.6, 16), C.hub ? foam(C.hub) : metal);
     hub.rotation.x = Math.PI / 2;
     const spoke = new Mesh(new CylinderGeometry(0.003, 0.003, (W.radius - tube) * 2, 6), tyreMat);
     wheel.add(tyre, hub, spoke);
