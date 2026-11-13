@@ -205,9 +205,9 @@ export function buildBuschtrottel(style) {
     contacts: [
       // Springy wire legs: soft (~7 mm static sag), lightly damped, so the
       // model settles on the gear and bounces a little on a firm landing.
-      // Big foam wheels roll easily over grass.
-      { name: 'wheel-L', pos: [W.x, W.y - W.radius, -W.z], type: 'wheel', k: 250, c: 3.5, muRoll: 0.025, crashSpeed: 5 },
-      { name: 'wheel-R', pos: [W.x, W.y - W.radius, W.z], type: 'wheel', k: 250, c: 3.5, muRoll: 0.025, crashSpeed: 5 },
+      // Big foam wheels roll more easily over grass (rollScale).
+      { name: 'wheel-L', pos: [W.x, W.y - W.radius, -W.z], type: 'wheel', k: 250, c: 3.5, rollScale: 0.7, crashSpeed: 5 },
+      { name: 'wheel-R', pos: [W.x, W.y - W.radius, W.z], type: 'wheel', k: 250, c: 3.5, rollScale: 0.7, crashSpeed: 5 },
       { name: 'tail-wheel', pos: [TW.x, TW.y - TW.radius, 0], type: 'wheel', k: 500, c: 5, crashSpeed: 4, steer: 25 * deg },
       { name: 'prop-low', pos: [L.prop.x + 0.005, L.prop.y - L.prop.radius, 0], type: 'prop', k: 1000, c: 8, crashSpeed: 0 },
       hard('nose', [0.2, -0.04, 0], 3),

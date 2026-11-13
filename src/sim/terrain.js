@@ -93,4 +93,49 @@ export function normalAt(x, z, out) {
   return out;
 }
 
-export const ground = { heightAt, normalAt };
+// --- Ground surfaces ----------------------------------------------------------
+// What the wheels roll on. Rolling resistance is a coefficient of the wheel
+// load; `stiction` is how much more it takes to break a parked model away;
+// `drag` scales sliding friction (skids, belly slides) in longer grass;
+// `bump` is the amplitude (m) of the uneven ground the gear rolls over.
+export const RUNWAY = { x: 0, z: -22, length: 180, width: 18 };
+export const PILOT_PAD = { x: 0, z: 0.5, length: 6, width: 4 };
+
+export const SURFACES = {
+  runway: { name: 'mown runway', roll: 0.06, stiction: 2, drag: 1.0, bump: 0.006 },
+  pad: { name: 'gravel pad', roll: 0.08, stiction: 2, drag: 1.0, bump: 0.003 },
+  grass: { name: 'field grass', roll: 0.16, stiction: 2, drag: 1.3, bump: 0.02 },
+  rough: { name: 'rough grass', roll: 0.22, stiction: 2, drag: 1.5, bump: 0.035 },
+};
+
+const inRect = (r, x, z) => Math.abs(x - r.x) <= r.length / 2 && Math.abs(z - r.z) <= r.width / 2;
+
+export function surfaceAt(x, z) {
+  if (inRect(RUNWAY, x, z)) return SURFACES.runway;
+  if (inRect(PILOT_PAD, x, z)) return SURFACES.pad;
+  return Math.hypot(x, z + 40) < FIELD_RADIUS ? SURFACES.grass : SURFACES.rough;
+}
+
+// Small bumps (~0.7 m across) on top of the terrain. Too small to see on the
+// 25 m render grid, but the wheels feel them.
+function bumpNoise(x, z) {
+  return smoothNoise(x / 0.7 + 1000, z / 0.7 + 1000) * 0.65 + smoothNoise(x / 0.25 + 500, z / 0.25 + 500) * 0.35 - 0.5;
+}
+
+export function bumpyHeightAt(x, z) {
+  return heightAt(x, z) + surfaceAt(x, z).bump * 2 * bumpNoise(x, z);
+}
+
+/** Terrain as the gear feels it (bumpy), and its surface type. */
+export const physicsGround = {
+  heightAt: bumpyHeightAt,
+  normalAt(x, z, out) {
+    const e = 0.05; // small enough to feel individual bumps
+    const hx = bumpyHeightAt(x + e, z) - bumpyHeightAt(x - e, z);
+    const hz = bumpyHeightAt(x, z + e) - bumpyHeightAt(x, z - e);
+    return out.set(-hx, 2 * e, -hz).normalize();
+  },
+  surfaceAt,
+};
+
+export const ground = { heightAt, normalAt, surfaceAt };

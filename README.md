@@ -95,7 +95,9 @@ panel sees its own local airflow (body rotation, prop wash and wing downwash),
 with lift and drag curves that stall and become flat-plate past the stall.
 Stability, damping, adverse yaw, dihedral effect, wing drop at the stall and
 the tail-dragger ground handling come out of that rather than being scripted.
-Also modelled: collisions with trees, the club hut, the windsock pole, the
+Also modelled: ground surfaces (mown runway, field grass, rough ground and the
+gravel pad, each with its own rolling resistance, stiction and bumps),
+collisions with trees, the club hut, the windsock pole, the
 fence and the table (solid objects push back and crash the model on a hard
 hit; foliage is soft and catches a slow model in the branches),
 ground effect (within about a wingspan of the ground: less
