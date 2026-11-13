@@ -8,6 +8,7 @@ import { AIRCRAFT, getAircraft } from './aircraft/index.js';
 import { Input } from './input/input.js';
 import { TouchControls, isTouchDevice } from './input/touch.js';
 import { CameraRig, CAMERA_LABELS } from './view/cameras.js';
+import { Debris } from './view/debris.js';
 import { OSD } from './ui/osd.js';
 import { Panel } from './ui/panel.js';
 import { loadSettings, saveSettings } from './ui/settings.js';
@@ -53,9 +54,11 @@ let aircraft = null; // flight model
 let model = null; // 3D model
 
 /** Swap in another aircraft: new flight model, 3D model and camera mounts. */
-function loadAircraft(id) {
-  entry = getAircraft(id);
-  settings.aircraft = entry.id;
+const debris = new Debris(world.scene, ground);
+
+/** (Re)build the 3D model, clearing any parts that broke off. */
+function replaceModel() {
+  debris.clear();
   if (model) {
     world.scene.remove(model.root);
     model.root.traverse((o) => {
@@ -66,10 +69,16 @@ function loadAircraft(id) {
       }
     });
   }
-  aircraft = new Aircraft(entry.def, { ground, wind, obstacles });
-  aircraft.assistMode = settings.assist;
   model = entry.createModel();
   world.scene.add(model.root);
+}
+
+function loadAircraft(id) {
+  entry = getAircraft(id);
+  settings.aircraft = entry.id;
+  aircraft = new Aircraft(entry.def, { ground, wind, obstacles });
+  aircraft.assistMode = settings.assist;
+  replaceModel();
   rig.setAircraft(entry);
 }
 loadAircraft(settings.aircraft);
@@ -110,6 +119,8 @@ function applySettings() {
 }
 
 function resetAircraft() {
+  // Put the model back together if anything broke off.
+  if (aircraft.broken.size || debris.items.length) replaceModel();
   // Take off into wind along the runway.
   const windFromEast = Math.sin((settings.windDir * Math.PI) / 180) > 0; // wind from E half
   const dir = windFromEast ? 1 : -1; // fly towards the wind (+x = east)
@@ -262,6 +273,12 @@ function frame(now) {
     Object.assign(aircraft.controls, ctl);
     wind.update(dt);
     aircraft.update(dt);
+    // Parts that broke off in a crash fly away as debris.
+    while (aircraft.breakEvents.length) {
+      const ev = aircraft.breakEvents.shift();
+      debris.spawn(model.parts?.[ev.part], aircraft, ev.speed);
+    }
+    debris.update(dt);
     osd.update(dt, aircraft);
   }
 

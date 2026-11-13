@@ -193,11 +193,15 @@ export function createBuschtrottelModel(L) {
     };
     const cabRings = xs.map((_, i) => [corner(i, 1, false), corner(i, 1, true), corner(i, -1, true), corner(i, -1, false)]);
     const canopy = new Mesh(loft(cabRings), new MeshStandardMaterial({ color: '#141414', roughness: 0.75, flatShading: true }));
+    canopy.userData.part = 'canopy';
     root.add(canopy);
     const top = cabRings[2][1].clone().lerp(cabRings[2][2], 0.5);
     const aerial = [top.clone().add(new Vector3(0.005, 0, 0)), top.clone().add(new Vector3(-0.012, 0.06, 0)), top.clone().add(new Vector3(-0.04, 0.1, 0))];
-    root.add(cylinderBetween(aerial[0], aerial[1], 0.0008, new MeshStandardMaterial({ color: '#111' })));
-    root.add(cylinderBetween(aerial[1], aerial[2], 0.0008, new MeshStandardMaterial({ color: '#111' })));
+    for (const [a, b] of [[aerial[0], aerial[1]], [aerial[1], aerial[2]]]) {
+      const wire = cylinderBetween(a, b, 0.0008, new MeshStandardMaterial({ color: '#111' }));
+      wire.userData.part = 'canopy';
+      root.add(wire);
+    }
     head.position.set(-0.13, 0.07, 0);
   }
   root.add(pilot);
@@ -275,6 +279,8 @@ export function createBuschtrottelModel(L) {
     wingR.add(new Mesh(slatGeo, vcMat));
     wingL.add(new Mesh(mirrorZ(slatGeo), vcMat));
   }
+  wingR.userData.part = ailR.userData.part = 'wingR';
+  wingL.userData.part = ailL.userData.part = 'wingL';
   root.add(wingR, wingL, ailR, ailL);
   const ailerons = [
     { pivot: ailR, axis: axisR, side: 1 },
@@ -289,7 +295,9 @@ export function createBuschtrottelModel(L) {
       for (const f of [0.15, 0.65]) {
         const top = wingPoint(f, -0.01, HALF * 0.55);
         top.z *= s;
-        root.add(cylinderBetween(base, top, 0.0025, strutMat));
+        const strut = cylinderBetween(base, top, 0.0025, strutMat);
+        strut.userData.part = s > 0 ? 'wingR' : 'wingL';
+        root.add(strut);
       }
     }
   } else {
@@ -303,7 +311,9 @@ export function createBuschtrottelModel(L) {
       for (const f of [0.15, 0.65]) {
         const top = wingPoint(f, L.thickFront / L.chord + 0.004, HALF * 0.55);
         top.z *= s;
-        root.add(cylinderBetween(base, top, 0.0025, strutMat));
+        const strut = cylinderBetween(base, top, 0.0025, strutMat);
+        strut.userData.part = s > 0 ? 'wingR' : 'wingL';
+        root.add(strut);
       }
     }
   }
@@ -332,7 +342,11 @@ export function createBuschtrottelModel(L) {
     const [le, te] = stabEdges(v);
     return [le, Math.max(te, hingeX)];
   }, tailMap, 0.003);
-  root.add(new Mesh(stabR, tailMat), new Mesh(mirrorZ(stabR), tailMat));
+  for (const g of [stabR, mirrorZ(stabR)]) {
+    const m = new Mesh(g, tailMat);
+    m.userData.part = 'tail';
+    root.add(m);
+  }
   const elev = new Group();
   const eh = tailMap(hingeX, 0, 0);
   elev.position.copy(eh);
@@ -343,6 +357,7 @@ export function createBuschtrottelModel(L) {
   }, tailMap, 0.003);
   elevR.translate(-eh.x, -eh.y, -eh.z);
   elev.add(new Mesh(elevR, tailMat), new Mesh(mirrorZ(elevR), tailMat));
+  elev.userData.part = 'tail';
   root.add(elev);
 
   const F = L.fin;
@@ -361,7 +376,9 @@ export function createBuschtrottelModel(L) {
     const [le, te] = finEdges(h);
     return [le, Math.max(te, F.hingeX)];
   }, finMap, 0.003);
-  root.add(new Mesh(finGeo, tailMat));
+  const finMesh = new Mesh(finGeo, tailMat);
+  finMesh.userData.part = 'tail';
+  root.add(finMesh);
   const rudder = new Group();
   rudder.position.set(F.hingeX, 0, 0);
   const rudGeo = plate(hsFin, (h) => {
@@ -371,6 +388,7 @@ export function createBuschtrottelModel(L) {
   }, finMap, 0.003);
   rudGeo.translate(-F.hingeX, 0, 0);
   rudder.add(new Mesh(rudGeo, tailMat));
+  rudder.userData.part = 'tail';
   root.add(rudder);
 
   // --- Landing gear: wire legs, bush wheels, rudder-linked tail wheel -----------
@@ -385,6 +403,7 @@ export function createBuschtrottelModel(L) {
     const rear = new Vector3(0.03, fusBottomAtGear, s * 0.03);
     const legF = cylinderBetween(front, new Vector3(W.x, W.y, s * W.z), 0.0016, metal);
     const legR = cylinderBetween(rear, new Vector3(W.x, W.y, s * W.z), 0.0016, metal);
+    legF.userData.part = legR.userData.part = s > 0 ? 'wheelR' : 'wheelL';
     root.add(legF, legR);
     // 100 mm foam wheel: fat tyre, small hub.
     const wheel = new Group();
@@ -395,6 +414,7 @@ export function createBuschtrottelModel(L) {
     hub.rotation.x = Math.PI / 2;
     const spoke = new Mesh(new CylinderGeometry(0.003, 0.003, (W.radius - tube) * 2, 6), tyreMat);
     wheel.add(tyre, hub, spoke);
+    wheel.userData.part = s > 0 ? 'wheelR' : 'wheelL';
     root.add(wheel);
     mainGear.push({ side: s, front, rear, legF, legR, wheel, axle: new Vector3() });
   }
@@ -404,6 +424,7 @@ export function createBuschtrottelModel(L) {
   const tw = new Mesh(new TorusGeometry(TW.radius * 0.65, TW.radius * 0.35, 6, 12), new MeshStandardMaterial({ color: '#2a2a2a' }));
   tw.position.set(0, TW.y, 0);
   tailWheel.add(tw, cylinderBetween(new Vector3(0.012, -0.005, 0), new Vector3(0, TW.y, 0), 0.0012, metal));
+  tailWheel.userData.part = 'tail';
   root.add(tailWheel);
 
   // --- Motor, spinner, propeller ----------------------------------------------
@@ -446,14 +467,23 @@ export function createBuschtrottelModel(L) {
   disc.rotation.y = Math.PI / 2;
   disc.visible = false;
   prop.add(spinner, blades, disc);
+  prop.userData.part = 'prop';
   root.add(prop);
 
   shadowAll(root);
   let propAngle = 0;
   const tmpQ = new Quaternion();
 
+  // Breakable parts (see src/view/debris.js), collected from the tags above.
+  const parts = {};
+  for (const o of root.children) {
+    const p = o.userData.part;
+    if (p) (parts[p] ||= []).push(o);
+  }
+
   return {
     root,
+    parts,
     setPilotVisible(v) {
       pilot.visible = v;
     },
@@ -473,6 +503,7 @@ export function createBuschtrottelModel(L) {
       // wire legs, and roll the wheels along the ground.
       const fwdSpeed = aircraft.velocity.clone().applyQuaternion(aircraft.orientation.clone().invert()).x;
       for (const g of mainGear) {
+        if (g.wheel.userData.broken) continue; // fallen off
         const c = aircraft.contacts.find((k) => k.name === (g.side > 0 ? 'wheel-R' : 'wheel-L'));
         const lift = Math.min(c?.depth ?? 0, 0.05);
         g.axle.set(W.x, W.y + lift, g.side * W.z);

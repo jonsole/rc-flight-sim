@@ -28,6 +28,21 @@ const _tmp = new Vector3();
 const _cp = new Vector3();
 const _fw = new Vector3();
 
+/**
+ * Which breakable part a contact / collision point belongs to: prop, wingL,
+ * wingR, tail, wheelL, wheelR or canopy (null for the fuselage itself).
+ */
+export function partOf(name) {
+  if (name === 'prop-low' || name === 'nose') return 'prop';
+  if (name === 'wheel-L') return 'wheelL';
+  if (name === 'wheel-R') return 'wheelR';
+  if (/fin-top|tail-end|skid|tail-wheel/.test(name)) return 'tail';
+  if (/cabin-top|upper-centre|wing-top/.test(name)) return 'canopy';
+  if (/tip-L|-L\d-le$/.test(name)) return 'wingL';
+  if (/tip-R|-R\d-le$/.test(name)) return 'wingR';
+  return null;
+}
+
 function vec(a) {
   return new Vector3(a[0], a[1], a[2]);
 }
@@ -56,7 +71,13 @@ export class Aircraft {
     const wingZ = this.surfaces.filter((s) => s.wing).map((s) => Math.abs(s.pos.z));
     this.wingSpan = def.wingSpan || (wingZ.length ? 2.3 * Math.max(...wingZ) : 1);
     this.groundEffect = 0; // telemetry: 0 = none .. 1 = full
-    this.contacts = def.contacts.map((c) => ({ ...c, pos: vec(c.pos), load: 0, onGround: false }));
+    this.contacts = def.contacts.map((c) => ({ ...c, pos: vec(c.pos), load: 0, onGround: false, part: partOf(c.name) }));
+    // Parts that can break off: lifting surfaces know which part they're on.
+    for (const s of this.surfaces) {
+      s.part = s.wing ? (s.pos.z < 0 ? 'wingL' : 'wingR') : /^stab|^fin/.test(s.name) ? 'tail' : null;
+    }
+    this.broken = new Set();
+    this.breakEvents = []; // drained by the renderer to spawn debris
     this.motorPos = vec(def.motor.position);
 
     // Points checked against obstacles (trees, buildings...): every ground
@@ -66,7 +87,7 @@ export class Aircraft {
     for (const s of this.surfaces) {
       if (!s.wing) continue;
       const le = s.pos.clone().addScaledVector(s.chord, 0.25 * (s.chordLen || 0));
-      this.collisionPoints.push({ name: `${s.name}-le`, pos: le, type: 'hard', crashSpeed: 3.5 });
+      this.collisionPoints.push({ name: `${s.name}-le`, pos: le, type: 'hard', crashSpeed: 3.5, part: s.part });
     }
     this.reach = Math.max(...this.collisionPoints.map((c) => c.pos.length())) + 0.5;
     this._near = [];
@@ -137,6 +158,8 @@ export class Aircraft {
     this.crashed = false;
     this.crashReason = '';
     this.propBroken = false;
+    this.broken.clear();
+    this.breakEvents.length = 0;
     this.battery.used = 0;
     this.time = 0;
   }
@@ -145,6 +168,22 @@ export class Aircraft {
     if (this.crashed) return;
     this.crashed = true;
     this.crashReason = reason;
+  }
+
+  /**
+   * A hard hit at a contact point: break the part it belongs to (and the prop
+   * too on a very hard one). Each part breaks once; a broken wing or tail
+   * stops producing lift, a broken wheel no longer holds the model up.
+   */
+  breakAt(contact, impactSpeed) {
+    const parts = [contact.part];
+    if (impactSpeed > 2.5 * (contact.crashSpeed || 3)) parts.push('prop');
+    for (const p of parts) {
+      if (!p || this.broken.has(p)) continue;
+      this.broken.add(p);
+      if (p === 'prop') this.propBroken = true;
+      this.breakEvents.push({ part: p, speed: impactSpeed });
+    }
   }
 
   /** Advance the simulation by `dt` seconds using fixed sub-steps. */
@@ -225,6 +264,7 @@ export class Aircraft {
     let wingArea = 0;
     const c = this.#assist(this.servo);
     for (const s of this.surfaces) {
+      if (s.part && this.broken.has(s.part)) continue; // broken off
       // Panel velocity through the air = V + ω × r
       _u.crossVectors(this.omega, s.pos).add(_v);
       if (s.propwash) _u.x += this.propWash * s.propwash;
@@ -372,6 +412,7 @@ export class Aircraft {
     const cSolid = 40 * this.mass;
     const cFoliage = 3 * this.mass; // N per (m/s) per point inside the foliage
     for (const c of this.collisionPoints) {
+      if (c.part && c.part !== 'prop' && this.broken.has(c.part)) continue; // broken off
       _r.copy(c.pos).applyQuaternion(q);
       const px = this.position.x + _r.x;
       const py = this.position.y + _r.y;
@@ -392,8 +433,10 @@ export class Aircraft {
           if (c.type === 'prop' && this.rpm > 500) {
             this.propBroken = true;
             this.crash(`Prop hit ${s.name}`);
+            this.breakAt(c, Math.max(-vn, 1));
           } else if (-vn > (c.crashSpeed ?? 3)) {
             this.crash(`Hit ${s.name}`);
+            this.breakAt(c, -vn);
           }
           const fn = Math.max(0, kSolid * Math.min(hit.depth, 0.1) - cSolid * vn);
           _f.copy(_n).multiplyScalar(fn);
@@ -413,6 +456,11 @@ export class Aircraft {
     const ground = this.env.ground;
     let any = false;
     for (const c of this.contacts) {
+      if (c.part && c.part !== 'prop' && this.broken.has(c.part)) {
+        c.load = 0;
+        c.onGround = false;
+        continue;
+      }
       _r.copy(c.pos).applyQuaternion(q); // world-frame lever arm
       const px = this.position.x + _r.x;
       const py = this.position.y + _r.y;
@@ -439,10 +487,14 @@ export class Aircraft {
       if (c.type === 'prop') {
         if (this.throttleActual > 0.05 || this.rpm > 500) {
           this.propBroken = true;
-          if (this.velocity.length() > 2 || this.throttleActual > 0.3) this.crash('Prop strike');
+          if (this.velocity.length() > 2 || this.throttleActual > 0.3) {
+            this.crash('Prop strike');
+            this.breakAt(c, -vn);
+          }
         }
       } else if (-vn > c.crashSpeed) {
         this.crash(c.type === 'wheel' ? 'Undercarriage collapsed' : `Hit the ground (${c.name})`);
+        this.breakAt(c, -vn);
       }
 
       const kSpring = c.k ?? 4000;

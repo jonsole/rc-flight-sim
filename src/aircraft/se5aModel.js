@@ -327,6 +327,7 @@ export function createSE5aModel(G, scale) {
 
   for (const [w, rootZ, top] of [[upper, 0.0, true], [lower, G.lowerRootZ, false]]) {
     const { right, pivot } = buildWing(w, rootZ, top);
+    right.userData.part = 'wingR';
     root.add(right);
     ailerons.push({ pivot, side: 1, base: pivot.quaternion.clone() });
     // Mirror for the left side
@@ -353,14 +354,16 @@ export function createSE5aModel(G, scale) {
     const ax = pivot.userData.axis;
     pivotL.userData.axis = new Vector3(ax.x, ax.y, -ax.z);
     left.add(pivotL);
+    left.userData.part = 'wingL';
     root.add(left);
     ailerons.push({ pivot: pivotL, side: -1, base: pivotL.quaternion.clone() });
   }
 
   // --- Struts and wires ----------------------------------------------------
   const strutMat = std('#4a3a26', { roughness: 0.7 });
-  const wirePts = [];
+  const wireSides = { 1: [], [-1]: [] };
   for (const s of [-1, 1]) {
+    const wirePts = wireSides[s];
     for (const zf of [0.42, 0.78]) {
       const z = half * zf;
       const fl = wingPoint(lower, 0.12, z, 0.06);
@@ -372,6 +375,7 @@ export function createSE5aModel(G, scale) {
         b.z *= s;
         const m = strut(a, b, strutMat);
         m.castShadow = true;
+        m.userData.part = s > 0 ? 'wingR' : 'wingL';
         root.add(m);
       }
     }
@@ -395,32 +399,48 @@ export function createSE5aModel(G, scale) {
       root.add(strut(bot, top, strutMat, 0.007, 0.004));
     }
   }
-  root.add(wires(wirePts));
+  for (const s of [-1, 1]) {
+    const w = wires(wireSides[s]);
+    w.userData.part = s > 0 ? 'wingR' : 'wingL';
+    root.add(w);
+  }
 
   // --- Undercarriage ----------------------------------------------------------
   const W = G.wheel;
   for (const s of [-1, 1]) {
     const axle = new Vector3(W.x, W.y, s * (W.z - 0.025));
-    root.add(strut(new Vector3(0.24, -0.09, s * 0.07), axle, strutMat, 0.008, 0.004));
-    root.add(strut(new Vector3(0.05, -0.095, s * 0.07), axle, strutMat, 0.008, 0.004));
+    const wheelPart = s > 0 ? 'wheelR' : 'wheelL';
+    for (const from of [new Vector3(0.24, -0.09, s * 0.07), new Vector3(0.05, -0.095, s * 0.07)]) {
+      const leg = strut(from, axle, strutMat, 0.008, 0.004);
+      leg.userData.part = wheelPart;
+      root.add(leg);
+    }
     const tyre = new Mesh(new TorusGeometry(W.radius * 0.8, W.radius * 0.2, 10, 24), std('#2b2b2b', { roughness: 0.9 }));
     tyre.position.set(W.x, W.y, s * W.z);
     tyre.castShadow = true;
+    tyre.userData.part = wheelPart;
     root.add(tyre);
     const hub = new Mesh(new CylinderGeometry(W.radius * 0.8, W.radius * 0.8, 0.02, 20), std(LINEN));
     hub.rotation.x = Math.PI / 2;
     hub.position.copy(tyre.position);
+    hub.userData.part = wheelPart;
     root.add(hub);
   }
   root.add(cylinderBetween(new Vector3(W.x, W.y, -W.z), new Vector3(W.x, W.y, W.z), 0.005, metal));
-  root.add(strut(new Vector3(-0.68, -0.02, 0), new Vector3(G.skid.x, G.skid.y, 0), structure, 0.008, 0.005));
+  const skidStrut = strut(new Vector3(-0.68, -0.02, 0), new Vector3(G.skid.x, G.skid.y, 0), structure, 0.008, 0.005);
+  skidStrut.userData.part = 'tail';
+  root.add(skidStrut);
 
   // --- Tail -----------------------------------------------------------------
   const T = G.tail;
   const tailW = { leX: T.leX, y: T.y, chord: T.chord, span: T.span, dihedral: 0, incidence: T.incidence };
   const elevHinge = 0.58;
   const stabR = wingLoft(tailW, 0.0, T.span / 2, 0, elevHinge, 8, PC10, LINEN);
-  root.add(new Mesh(stabR, fabric), new Mesh(mirrorZ(stabR), fabric));
+  for (const g of [stabR, mirrorZ(stabR)]) {
+    const m = new Mesh(g, fabric);
+    m.userData.part = 'tail';
+    root.add(m);
+  }
   const elevPivot = new Group();
   const eh = wingPoint(tailW, elevHinge, 0, 0.0);
   elevPivot.position.copy(eh);
@@ -428,6 +448,7 @@ export function createSE5aModel(G, scale) {
   elevR.translate(-eh.x, -eh.y, -eh.z);
   elevPivot.add(new Mesh(elevR, fabric), new Mesh(mirrorZ(elevR), fabric));
   elevPivot.children.forEach((m) => (m.castShadow = true));
+  elevPivot.userData.part = 'tail';
   root.add(elevPivot);
 
   // Fin (small) and large striped rudder
@@ -442,6 +463,7 @@ export function createSE5aModel(G, scale) {
   }
   const fin = new Mesh(loft(finRings, { color: () => PC10 }), fabric);
   fin.castShadow = true;
+  fin.userData.part = 'tail';
   root.add(fin);
 
   const rudderPivot = new Group();
@@ -465,6 +487,7 @@ export function createSE5aModel(G, scale) {
   const rudder = new Mesh(rGeo, new MeshStandardMaterial({ map: stripeTexture(), roughness: 0.85 }));
   rudder.castShadow = true;
   rudderPivot.add(rudder);
+  rudderPivot.userData.part = 'tail';
   root.add(rudderPivot);
 
   // Fuselage roundels
@@ -505,13 +528,22 @@ export function createSE5aModel(G, scale) {
   disc.rotation.y = Math.PI / 2;
   disc.visible = false;
   prop.add(disc);
+  prop.userData.part = 'prop';
   root.add(prop);
+
+  // Breakable parts (see src/view/debris.js), collected from the tags above.
+  const parts = {};
+  for (const o of root.children) {
+    const p = o.userData.part;
+    if (p) (parts[p] ||= []).push(o);
+  }
 
   let propAngle = 0;
   const tmpQ = new Quaternion();
 
   return {
     root: outer,
+    parts,
     pilot,
     setPilotVisible(v) {
       pilot.visible = v;

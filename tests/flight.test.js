@@ -250,6 +250,32 @@ for (const entry of AIRCRAFT) {
         expect(ac.crashed).toBe(true);
       });
 
+      it('breaks the prop on a nose-in crash', () => {
+        const ac = airborne(15, 0.5);
+        ac.position.y = 3;
+        ac.orientation.setFromAxisAngle(new Vector3(0, 0, 1), -60 * deg);
+        ac.velocity.set(10, -10, 0);
+        ac.update(1);
+        expect(ac.broken.has('prop')).toBe(true);
+        expect(ac.propBroken).toBe(true);
+        expect(ac.breakEvents.some((e) => e.part === 'prop')).toBe(true);
+      });
+
+      it('loses lift from a wing that broke off', () => {
+        const ac = airborne(stallSpeed() * 1.6, 0.5);
+        ac.breakAt({ part: 'wingL' }, 5);
+        ac.update(0.5);
+        expect(ac.attitude().roll).toBeLessThan(-20 * deg); // rolls towards the missing wing
+      });
+
+      it('is put back together on reset', () => {
+        const ac = airborne(15, 0.5);
+        ac.breakAt({ part: 'wingR' }, 5);
+        ac.resetOnGround(0, 0, 0);
+        expect(ac.broken.size).toBe(0);
+        expect(ac.breakEvents.length).toBe(0);
+      });
+
       it('drains the battery under power', () => {
         const ac = airborne(stallSpeed() * 1.6, 1);
         const v0 = ac.battery.voltage;
