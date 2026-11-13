@@ -15,7 +15,7 @@ export function liftSlope(aspectRatio) {
 /**
  * Lift and drag coefficients at angle of attack `alpha` (radians, any value).
  * @param {number} alpha
- * @param {object} p  { cla, alpha0, alphaStall, cd0, ar, e }
+ * @param {object} p  { cla, alpha0, alphaStall, cd0, ar, e, stallWidth? }
  * @returns {{cl:number, cd:number, stalled:number}} stalled: 0..1 blend factor
  */
 export function coefficients(alpha, p) {
@@ -26,7 +26,9 @@ export function coefficients(alpha, p) {
 
   const aLin = a - p.alpha0;
   // Stall blend: 0 = attached flow, 1 = fully separated (flat plate).
-  const width = 0.018; // ~1° transition: a fairly abrupt stall
+  // Stall transition width: ~1° (abrupt) by default; slotted/slatted wings
+  // stall later and more gently.
+  const width = p.stallWidth ?? 0.018;
   const over = Math.abs(aLin) - p.alphaStall - 1.5 * width;
   const sigma = 1 / (1 + Math.exp(-over / width));
 

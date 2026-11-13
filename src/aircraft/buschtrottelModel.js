@@ -190,6 +190,25 @@ export function createBuschtrottelModel(L) {
   ailL.position.set(hA.x, hA.y, -hA.z);
   ailL.add(new Mesh(mirrorZ(ailGeo), wingMat));
   const axisL = new Vector3(axisR.x, axisR.y, -axisR.z);
+  // Fixed leading-edge slats: a Depron strip ahead of and above the leading
+  // edge, leaving a slot for the air to flow through.
+  if (L.slats) {
+    const t = 0.006 / L.chord;
+    const a = [-0.14, 0.0];
+    const b = [-0.02, 0.072];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const n = [(-(b[1] - a[1]) / len) * t, ((b[0] - a[0]) / len) * t];
+    const ring = [a, b, [b[0] + n[0], b[1] + n[1]], [a[0] + n[0], a[1] + n[1]]];
+    const zEnd = Math.min(L.slats.to, S.tips === 'round' ? HALF * 0.84 : HALF - 0.005);
+    const rs = [];
+    for (let i = 0; i <= 4; i++) {
+      const z = L.slats.from + ((zEnd - L.slats.from) * i) / 4;
+      rs.push(ring.map(([f, y]) => wingPoint(f, y, z)));
+    }
+    const slatGeo = loft(rs);
+    wingR.add(new Mesh(slatGeo, wingMat));
+    wingL.add(new Mesh(mirrorZ(slatGeo), wingMat));
+  }
   root.add(wingR, wingL, ailR, ailL);
   const ailerons = [
     { pivot: ailR, axis: axisR, side: 1 },

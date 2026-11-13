@@ -6,7 +6,8 @@
 //
 // Published: ~900 mm span, ~730-755 mm long, ~430 g, KFm2 airfoil,
 // 19.8 g/dm² wing loading (≈ 22 dm² wing area), 2814-class motor on 3S.
-// This build: T-Motor AT2308 1450Kv on 3S 1350 mAh. Assumed: 8x4 prop, 450 g
+// This build: T-Motor AT2308 1450Kv on 3S 1350 mAh, fixed leading-edge slats,
+// no gyro. Assumed: 8x4 prop, 450 g
 // ready to fly, tail-dragger with a rudder-linked tail wheel. Chord, tail
 // sizes, CG and inertia are estimates from the published figures.
 //
@@ -34,6 +35,7 @@ function layout(style) {
     // Cub-type), a low wing gives less.
     aeroDihedral: (high ? 12 : 6) * deg,
     rootZ: high ? 0 : 0.04,        // low wing joins the fuselage side
+    slats: style.slats ? { from: high ? 0.05 : 0.045, to: 0.42 } : null, // spanwise extent (m)
     hinge: 0.75,                   // aileron hinge, fraction of chord
     ailFrom: 0.15,                 // aileron inboard end (m from centreline)
     thickFront: 0.012,             // KFm2: two 6 mm layers ahead of the step
@@ -60,11 +62,15 @@ export function buildBuschtrottel(style) {
   const HALF = SPAN / 2;
   const AR = SPAN / CHORD;
 
+  // Fixed leading-edge slats keep the flow attached to a much higher angle of
+  // attack: the stall comes ~7° later and more gently, and maximum lift rises
+  // by roughly half, for a little extra drag.
   const kfm2 = {
     cla: liftSlope(AR) * 0.95,
     alpha0: -3 * deg,
-    alphaStall: 13 * deg,
-    cd0: 0.03, // stepped foam section, exposed edges
+    alphaStall: (style.slats ? 20 : 13) * deg,
+    stallWidth: style.slats ? 0.035 : 0.018,
+    cd0: style.slats ? 0.036 : 0.03, // stepped foam section, exposed edges (+ slats)
     ar: AR,
     e: 0.75,
   };
@@ -215,7 +221,7 @@ export function buildBuschtrottel(style) {
   };
 }
 
-const COMMON = 'AT2308 1450Kv, 8x4, 3S 1350 mAh, ~450 g.';
+const COMMON = 'Fixed LE slats. AT2308 1450Kv, 8x4, 3S 1350 mAh, ~450 g.';
 
 export const BUSCHTROTTEL_SHOCKCUB = buildBuschtrottel({
   id: 'buschtrottel-shockcub',
@@ -224,6 +230,7 @@ export const BUSCHTROTTEL_SHOCKCUB = buildBuschtrottel({
   mount: 'high',
   tips: 'round',
   tail: 'round',
+  slats: true,
   mass: 0.45,
   tailIncidence: 3 * deg,
   rollTrim: -0.004,
@@ -237,6 +244,7 @@ export const BUSCHTROTTEL_HIGHLANDER = buildBuschtrottel({
   mount: 'high',
   tips: 'square',
   tail: 'square',
+  slats: true,
   mass: 0.45,
   tailIncidence: 3 * deg,
   rollTrim: -0.004,
@@ -250,6 +258,7 @@ export const BUSCHTROTTEL_AGRO = buildBuschtrottel({
   mount: 'low',
   tips: 'square',
   tail: 'square',
+  slats: true,
   mass: 0.46,
   tailIncidence: 3 * deg,
   rollTrim: 0,
