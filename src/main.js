@@ -10,6 +10,7 @@ import { TouchControls, isTouchDevice } from './input/touch.js';
 import { CameraRig, CAMERA_LABELS } from './view/cameras.js';
 import { Debris } from './view/debris.js';
 import { Peers } from './view/peers.js';
+import { addNavLights } from './view/navlights.js';
 import { Multiplayer } from './net/multiplayer.js';
 import { DEFAULT_MP_SERVER } from './net/config.js';
 import { Chat } from './ui/chat.js';
@@ -80,8 +81,10 @@ function replaceModel() {
     });
   }
   model = entry.createModel();
+  navLights = addNavLights(model);
   world.scene.add(model.root);
 }
+let navLights = null;
 
 function loadAircraft(id) {
   entry = getAircraft(id);
@@ -407,6 +410,7 @@ function frame(now) {
   model.root.position.copy(aircraft.position);
   model.root.quaternion.copy(aircraft.orientation);
   model.update(aircraft, paused ? 0 : dt);
+  navLights.update(world.night, now / 1000, rig.camera, window.innerHeight, aircraft.broken);
 
   const fpv = rig.mode === 'fpv';
   model.setPilotVisible(!(fpv && settings.fpvMount === 'cockpit'));
@@ -414,6 +418,7 @@ function frame(now) {
   // Other players (after the camera has moved, so their labels line up).
   rig.camera.updateMatrixWorld();
   const solid = mp.connected && !paused && !aircraft.crashed && now / 1000 > mpGraceUntil;
+  peers.night = world.night;
   const hit = peers.update(mp.peers, dt, rig.camera, { aircraft, id: entry.id, solid });
   if (hit) {
     // Mid-air (or on the ground): the part that hit breaks off, and the other

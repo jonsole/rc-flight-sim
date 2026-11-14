@@ -9,6 +9,7 @@ import { Vector3, Quaternion, Sprite, SpriteMaterial, CanvasTexture, SRGBColorSp
 import { Aircraft } from '../sim/aircraft.js';
 import { getAircraft } from '../aircraft/index.js';
 import { buildShape, sweptHit } from '../net/collide.js';
+import { addNavLights } from './navlights.js';
 
 function dispose(obj) {
   obj.traverse((o) => {
@@ -92,6 +93,7 @@ export class Peers {
     const proxy = new Aircraft(entry.def, { ground: this.ground });
     const model = entry.createModel();
     model.setPilotVisible(true);
+    const nav = addNavLights(model);
     this.scene.add(model.root);
     const tag = labelSprite();
     this.scene.add(tag);
@@ -110,6 +112,7 @@ export class Peers {
       name: peer.name,
       proxy,
       model,
+      nav,
       tag,
       label,
       arrow,
@@ -182,6 +185,7 @@ export class Peers {
       const broken = (s.broken || []).join(',');
       if (broken !== v.broken) {
         v.broken = broken;
+        ac.broken = new Set(s.broken || []);
         for (const [part, objs] of Object.entries(v.model.parts || {})) {
           const gone = s.broken?.includes(part);
           for (const o of objs) o.visible = !gone;
@@ -190,6 +194,7 @@ export class Peers {
       v.model.root.position.copy(ac.position);
       v.model.root.quaternion.copy(ac.orientation);
       v.model.update(ac, dt);
+      v.nav.update(this.night || 0, now, camera, h, ac.broken);
 
       // Mid-air collision with me (against the aeroplane as drawn).
       if (me?.solid && !hit) {
