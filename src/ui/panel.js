@@ -187,6 +187,7 @@ export class Panel {
       this.#range('Turbulence', 'turbulence', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.#range('Time of day', 'timeOfDay', 0, 24, 0.25, formatHours),
       this.#check('Use my clock', 'useClock'),
+      this.#range('Cloud cover', 'cloudCover', 0, 1, 0.05, (v) => (v < 0.05 ? 'Clear' : v > 0.85 ? 'Overcast' : `${Math.round(v * 100)}%`)),
       el('p', { class: 'hint' }, 'You stand at the flight line facing north; the runway runs east–west in front of you.'),
     ];
   }

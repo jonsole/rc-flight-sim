@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS = {
   windDir: 270,
   turbulence: 0.3,
   timeOfDay: 14,         // hours, local solar time
+  cloudCover: 0.35,      // 0 clear .. 1 overcast
   useClock: false,       // follow the computer's clock instead
   // Misc
   volume: 0.6,

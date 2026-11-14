@@ -8,6 +8,7 @@ import {
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY } from '../sim/terrain.js';
 import { sunPosition, moonPosition } from './sun.js';
+import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 
 const smooth = (e0, e1, x) => {
   const t = MathUtils.clamp((x - e0) / (e1 - e0), 0, 1);
@@ -207,6 +208,8 @@ export class World {
     this.exposure = 0.9; // suggested renderer exposure
 
     this.#sky();
+    this.clouds = new CloudLayer();
+    this.scene.add(this.clouds.mesh);
     this.#lights();
     this.#terrain();
     this.#runway();
@@ -305,9 +308,24 @@ export class World {
     this.moon.position.copy(this.moonDir).multiplyScalar(8500);
     // Brighten the picture a little at night, as eyes adapt.
     this.exposure = 0.9 + 0.5 * night;
+    // Clouds: lit by the light of the moment; their shadows follow the sun.
+    cloudUniforms.cloudSunDir.value.copy(this.lightDir);
+    cloudUniforms.cloudShadowStrength.value = 0.75 * daylight + 0.2 * night;
+    this.clouds.setLight(this.sun.color, this.sun.intensity, this.scene.fog.color, night);
     // Tree shadows: soft in low sun, faint by moonlight.
     if (this.treeShadows) this.treeShadows.material.opacity = 0.5 * daylight + 0.12 * moonUp * night;
     this.#updateTreeShadows();
+  }
+
+  /** Cloud cover, 0 (clear) to 1 (overcast). */
+  setClouds(cover) {
+    cloudUniforms.cloudCover.value = cover;
+    this.clouds.mesh.visible = cover > 0.01;
+  }
+
+  /** Let the clouds drift with the wind (world velocity, m/s). */
+  updateClouds(dt, wind) {
+    this.clouds.update(dt, wind);
   }
 
   /** Lay each tree's crown shadow on the ground, away from the sun. */
@@ -376,7 +394,7 @@ export class World {
     geo.computeVertexNormals();
     const tex = grassTexture();
     tex.repeat.set(size / 6, size / 6);
-    const mat = new MeshStandardMaterial({ map: tex, vertexColors: true, roughness: 1 });
+    const mat = addCloudShadows(new MeshStandardMaterial({ map: tex, vertexColors: true, roughness: 1 }));
     const ground = new Mesh(geo, mat);
     ground.receiveShadow = true;
     this.scene.add(ground);
@@ -385,7 +403,7 @@ export class World {
   #runway() {
     const g = new PlaneGeometry(RUNWAY.length, RUNWAY.width);
     g.rotateX(-Math.PI / 2);
-    const rw = new Mesh(g, new MeshStandardMaterial({ map: runwayTexture(), roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 }));
+    const rw = new Mesh(g, addCloudShadows(new MeshStandardMaterial({ map: runwayTexture(), roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 })));
     // Just above the physics ground (y = 0); polygonOffset prevents z-fighting.
     rw.position.set(RUNWAY.x, 0.002, RUNWAY.z);
     rw.receiveShadow = true;
@@ -421,8 +439,8 @@ export class World {
     const crownGeo = new IcosahedronGeometry(1, 1);
     const coniferGeo = new ConeGeometry(1, 1, 8);
     coniferGeo.translate(0, 0.5, 0);
-    const trunkMat = new MeshStandardMaterial({ color: '#4b3a2a', roughness: 1 });
-    const crownMat = new MeshStandardMaterial({ color: '#ffffff', roughness: 0.95, flatShading: true });
+    const trunkMat = addCloudShadows(new MeshStandardMaterial({ color: '#4b3a2a', roughness: 1 }));
+    const crownMat = addCloudShadows(new MeshStandardMaterial({ color: '#ffffff', roughness: 0.95, flatShading: true }));
     const trunks = new InstancedMesh(trunkGeo, trunkMat, count);
     const crowns = new InstancedMesh(crownGeo, crownMat, count);
     const conifers = new InstancedMesh(coniferGeo, crownMat, count);

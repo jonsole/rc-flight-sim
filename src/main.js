@@ -132,6 +132,7 @@ function applySettings() {
   wind.directionDeg = settings.windDir;
   wind.turbulence = settings.turbulence;
   applyTime();
+  world.setClouds(Number(settings.cloudCover));
   sound.volume = settings.volume;
   osd.showHud = settings.showHud;
   const showTouch = settings.touchControls === 'on' || (settings.touchControls === 'auto' && (TOUCH_DEVICE || touchSeen));
@@ -430,6 +431,7 @@ function frame(now) {
   }
   world.followShadow(aircraft.position);
   world.updateWindsock(wind.at(new Vector3(-35, 5, -42), 0, windTmp));
+  if (!paused) world.updateClouds(dt, windTmp);
 
   const eye = rig.pilotEye();
   const dist = eye.distanceTo(aircraft.position);
