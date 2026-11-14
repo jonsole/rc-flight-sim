@@ -5,7 +5,7 @@
 import {
   Group, Mesh, BoxGeometry, CylinderGeometry, ConeGeometry, PlaneGeometry, MeshLambertMaterial, MeshStandardMaterial,
   CanvasTexture, RepeatWrapping, SRGBColorSpace, InstancedMesh, Object3D, Color, DoubleSide, BufferGeometry,
-  Float32BufferAttribute,
+  Float32BufferAttribute, Shape, ShapeGeometry, ExtrudeGeometry, Vector2, Vector3, Matrix4,
 } from 'three';
 import { heightAt } from '../sim/terrain.js';
 import { broadleafCrown } from './trees.js';
@@ -152,21 +152,65 @@ export function shippingContainer(c) {
 /** A simple hatchback in a body colour. */
 export function car(c) {
   const g = new Group();
-  const paint = new MeshStandardMaterial({ color: c.color, roughness: 0.35, metalness: 0.4 });
-  const glass = new MeshStandardMaterial({ color: '#1d262e', roughness: 0.1, metalness: 0.5 });
+  const paint = new MeshStandardMaterial({ color: c.color, roughness: 0.4, metalness: 0.25 });
+  const glass = new MeshStandardMaterial({ color: '#1b242c', roughness: 0.08, metalness: 0.4, side: DoubleSide });
   const black = lambert({ color: '#151515' });
   const lightMat = lambert({ color: '#f4f2e6', emissive: '#222' });
-  // Along z: nose at -z (towards the field).
-  g.add(box(1.78, 0.62, 4.1, paint, 0, 0.62, 0));
-  const cabin = box(1.6, 0.55, 2.2, paint, 0, 1.2, 0.35);
-  g.add(cabin);
-  g.add(box(1.62, 0.42, 2.0, glass, 0, 1.2, 0.35)); // windows band
-  const wind = box(1.5, 0.05, 0.75, glass, 0, 1.12, -0.95);
-  wind.rotation.x = 0.75;
-  g.add(wind);
-  for (const x of [-0.6, 0.6]) g.add(box(0.35, 0.12, 0.04, lightMat, x, 0.72, -2.06));
-  for (const [x, z] of [[-0.85, -1.3], [0.85, -1.3], [-0.85, 1.35], [0.85, 1.35]]) {
-    const w = new Mesh(new CylinderGeometry(0.32, 0.32, 0.22, 14), black);
+  // Side profile (z along the car, nose at -z; y up): bonnet, sloping
+  // windscreen, roof, rear hatch. Extruded across the car's width.
+  const W = 1.76;
+  const prof = [
+    [-2.05, 0.3], [2.05, 0.3], [2.05, 0.95], [1.95, 1.05], // tail
+    [1.6, 1.42], [-0.45, 1.46], // rear hatch, roof
+    [-1.15, 1.0], [-2.0, 0.9], [-2.07, 0.75], // windscreen, bonnet, nose
+  ];
+  const shape = new Shape(prof.map(([z, y]) => new Vector2(z, y)));
+  const bodyGeo = new ExtrudeGeometry(shape, { depth: W, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.04, bevelSegments: 2, curveSegments: 1 });
+  // Shape is in (x=z, y); extrusion along +z: turn it so the length runs
+  // along z and the width along x.
+  bodyGeo.translate(0, 0, -W / 2);
+  bodyGeo.rotateY(-Math.PI / 2);
+  const body = new Mesh(bodyGeo, paint);
+  body.castShadow = true;
+  body.receiveShadow = true;
+  g.add(body);
+  // Glass laid on the body's own surfaces, a fraction proud of the paint.
+  const quad = (a, b, width) => {
+    // A pane between two profile points (z, y), across `width`, lying on
+    // the slope between them and facing outwards (up and away).
+    const [za, ya] = a;
+    const [zb, yb] = b;
+    const len = Math.hypot(zb - za, yb - ya);
+    const d = new Vector3(0, (yb - ya) / len, (zb - za) / len);
+    const pane = new Mesh(new PlaneGeometry(width, len - 0.12), glass);
+    const basis = new Matrix4().makeBasis(new Vector3(-1, 0, 0), d, new Vector3(0, d.z, -d.y));
+    pane.quaternion.setFromRotationMatrix(basis);
+    pane.position.set(0, (ya + yb) / 2, (za + zb) / 2);
+    pane.translateZ(0.05); // just proud of the paint (and its bevel)
+    return pane;
+  };
+  g.add(quad([-1.15, 1.0], [-0.45, 1.46], W - 0.22)); // windscreen
+  g.add(quad([1.6, 1.42], [1.95, 1.05], W - 0.3)); // rear window
+  // Side windows: the glasshouse outline, inset, on both flanks.
+  const side = new Shape([
+    [-1.0, 1.02], [1.5, 1.02], [1.5, 1.32], [-0.45, 1.38],
+  ].map(([z, y]) => new Vector2(z, y)));
+  const sideGeo = new ShapeGeometry(side);
+  for (const sx of [-1, 1]) {
+    const m = new Mesh(sideGeo, glass);
+    m.rotation.y = -Math.PI / 2; // shape's x runs along the car (+z) on both flanks
+    m.position.x = sx * (W / 2 + 0.045);
+    g.add(m);
+  }
+  // Pillar between the side windows.
+  for (const sx of [-1, 1]) g.add(box(0.02, 0.36, 0.1, paint, sx * (W / 2 + 0.05), 1.2, 0.35));
+  // Lights, bumpers, wheels.
+  for (const x of [-0.6, 0.6]) g.add(box(0.36, 0.12, 0.05, lightMat, x, 0.78, -2.1));
+  for (const x of [-0.6, 0.6]) g.add(box(0.3, 0.1, 0.05, lambert({ color: '#8a1414' }), x, 0.92, 2.1));
+  g.add(box(W + 0.04, 0.16, 0.12, black, 0, 0.38, -2.07));
+  g.add(box(W + 0.04, 0.16, 0.12, black, 0, 0.38, 2.07));
+  for (const [x, z] of [[-0.86, -1.3], [0.86, -1.3], [-0.86, 1.3], [0.86, 1.3]]) {
+    const w = new Mesh(new CylinderGeometry(0.32, 0.32, 0.22, 16), black);
     w.rotation.z = Math.PI / 2;
     w.position.set(x, 0.32, z);
     w.castShadow = true;
