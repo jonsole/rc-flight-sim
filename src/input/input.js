@@ -102,9 +102,13 @@ export class Input {
     return navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
   }
 
-  /** Normalised value (-1..1) for a mapped axis using calibration. */
+  /**
+   * Normalised value (-1..1) for a mapped channel using calibration. A
+   * channel can be an axis or an analog button: phone browsers turn some
+   * joystick axes into trigger "buttons" (value 0..1).
+   */
   axisValue(pad, a) {
-    let v = pad.axes[a.index] ?? 0;
+    let v = rawInput(pad, a.kind, a.index);
     const lo = a.min;
     const hi = a.max;
     const c = a.center ?? (lo + hi) / 2;
@@ -175,6 +179,15 @@ export class Input {
     this.output.throttle = clamp(this.raw.throttle, 0, 1);
     return this.output;
   }
+}
+
+/** Raw value of an axis, or an analog button scaled to -1..1. */
+export function rawInput(pad, kind, index) {
+  if (kind === 'button') {
+    const b = pad.buttons[index];
+    return b ? b.value * 2 - 1 : 0;
+  }
+  return pad.axes[index] ?? 0;
 }
 
 function deepMerge(base, over) {
