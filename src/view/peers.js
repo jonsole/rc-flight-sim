@@ -60,7 +60,8 @@ export class Peers {
     model.setPilotVisible(true);
     const tag = nameTag(peer.name);
     this.scene.add(model.root, tag);
-    return { aircraft: peer.aircraft, name: peer.name, proxy, model, tag, broken: '' };
+    const tagHeight = 0.25 + 0.4 * (entry.def.wingSpan || 1); // just above it, whatever its size
+    return { aircraft: peer.aircraft, name: peer.name, proxy, model, tag, tagHeight, broken: '' };
   }
 
   #remove(id) {
@@ -117,7 +118,7 @@ export class Peers {
       v.model.root.position.copy(ac.position);
       v.model.root.quaternion.copy(ac.orientation);
       v.model.update(ac, dt);
-      v.tag.position.copy(ac.position).y += 0.9;
+      v.tag.position.copy(ac.position).y += v.tagHeight;
     }
   }
 
