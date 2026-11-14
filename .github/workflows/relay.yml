@@ -1,14 +1,14 @@
 name: Deploy multiplayer relay
 
 # Deploys server/ (Cloudflare Worker + Durable Objects) when it changes on
-# main, or on demand. Needs two repository secrets:
+# main or the development branch (there is one relay for both), or on demand. Needs two repository secrets:
 #   CLOUDFLARE_API_TOKEN   token from the "Edit Cloudflare Workers" template
 #   CLOUDFLARE_ACCOUNT_ID  the account ID shown in the Cloudflare dashboard
 
 on:
   push:
-    branches: [main]
-    paths: ['server/**', '.github/workflows/relay.yml']
+    branches: [main, ccr-232fa4e5-67vp61]
+    paths: ['server/**']
   workflow_dispatch:
 
 permissions:
@@ -38,7 +38,3 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           WRANGLER_SEND_METRICS: 'false'
         run: npx wrangler deploy
-      - name: Check it answers
-        run: |
-          url=$(grep -o 'https://[a-z0-9.-]*workers.dev' -r server/.wrangler 2>/dev/null | head -1 || true)
-          echo "Relay: ${url:-see the deploy step output}"
