@@ -1,9 +1,11 @@
 // Draws the other players' aeroplanes: their own model, moved to the smoothed
 // pose from the network, with control surfaces, prop and damage. Each has a
-// small name label; players out of view get a label pinned to the edge of
-// the screen with an arrow pointing their way. Also checks for mid-air
+// small name label drawn in the scene (so your own aeroplane, trees and hills
+// hide it when they are in front), kept a fixed size on screen. Players out
+// of view get a marker on the left or right edge of the screen, on the side
+// they are on, with an arrow pointing their way. Also checks for mid-air
 // collisions with this player's aeroplane.
-import { Vector3, Quaternion } from 'three';
+import { Vector3, Quaternion, Sprite, SpriteMaterial, CanvasTexture, SRGBColorSpace } from 'three';
 import { Aircraft } from '../sim/aircraft.js';
 import { getAircraft } from '../aircraft/index.js';
 import { buildShape, sweptHit } from '../net/collide.js';
@@ -31,6 +33,43 @@ export function shapeFor(id) {
 
 const _v = new Vector3();
 const _c = new Vector3();
+const LABEL_PX = 17; // label height on screen
+const RES = 3; // canvas pixels per screen pixel, for crisp text
+
+/** Name label as a sprite; redraw(text) updates it. */
+function labelSprite() {
+  const canvas = document.createElement('canvas');
+  const tex = new CanvasTexture(canvas);
+  tex.colorSpace = SRGBColorSpace;
+  const sprite = new Sprite(new SpriteMaterial({ map: tex, sizeAttenuation: false, transparent: true, depthWrite: false }));
+  sprite.center.set(0.5, 0); // anchored at its bottom edge, above the aeroplane
+  sprite.renderOrder = 5;
+  let current = '';
+  sprite.userData.redraw = (text) => {
+    if (text === current) return;
+    current = text;
+    const h = LABEL_PX * RES;
+    const g = canvas.getContext('2d');
+    const font = `600 ${Math.round(11 * RES)}px system-ui, sans-serif`;
+    g.font = font;
+    const w = Math.ceil(g.measureText(text).width + 12 * RES);
+    canvas.width = w;
+    canvas.height = h;
+    g.font = font;
+    g.fillStyle = 'rgba(15,18,22,0.6)';
+    g.beginPath();
+    g.roundRect(0, 0, w, h, 4 * RES);
+    g.fill();
+    g.fillStyle = '#fff';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(text, w / 2, h / 2 + RES);
+    tex.dispose(); // canvas size changed: re-upload
+    tex.needsUpdate = true;
+    sprite.userData.aspect = w / h;
+  };
+  return sprite;
+}
 
 export class Peers {
   /**
@@ -54,6 +93,8 @@ export class Peers {
     const model = entry.createModel();
     model.setPilotVisible(true);
     this.scene.add(model.root);
+    const tag = labelSprite();
+    this.scene.add(tag);
     const label = document.createElement('div');
     label.className = 'mp-label';
     // A narrow arrow pointing up, rotated towards the player. (A plain
@@ -69,6 +110,7 @@ export class Peers {
       name: peer.name,
       proxy,
       model,
+      tag,
       label,
       arrow,
       text,
@@ -83,8 +125,9 @@ export class Peers {
   #remove(id) {
     const v = this.views.get(id);
     if (!v) return;
-    this.scene.remove(v.model.root);
+    this.scene.remove(v.model.root, v.tag);
     dispose(v.model.root);
+    dispose(v.tag);
     v.label.remove();
     this.views.delete(id);
   }
@@ -118,6 +161,7 @@ export class Peers {
       // Hide players we have not heard from for a while.
       const visible = ok && peer.buf.age(now) < 3;
       v.model.root.visible = visible;
+      v.tag.visible = visible;
       v.label.style.display = visible ? '' : 'none';
       if (!visible) {
         v.sweep = {};
@@ -155,41 +199,50 @@ export class Peers {
         v.sweep = {};
       }
 
-      // Label: above the aeroplane when in view, else pinned to the screen edge.
+      // Label: in the scene above the aeroplane when in view; otherwise a
+      // marker on the edge of the screen on the side the aeroplane is.
       const dist = me ? me.aircraft.position.distanceTo(ac.position) : 0;
-      v.text.textContent = dist > 30 ? `${peer.name} ${Math.round(dist)} m` : peer.name;
-      _v.copy(ac.position);
-      _v.y += v.tagHeight;
-      _c.copy(_v).applyMatrix4(camera.matrixWorldInverse);
-      const behind = _c.z > 0;
-      _v.project(camera);
-      let x = _v.x;
-      let y = _v.y;
-      const inView = !behind && Math.abs(x) <= 1 && Math.abs(y) <= 1;
-      if (!inView) {
-        if (behind) {
-          x = -x;
-          y = -y;
-          if (Math.abs(x) < 1e-3 && Math.abs(y) < 1e-3) y = -1;
-        }
-        const m = Math.max(Math.abs(x) / 0.94, Math.abs(y) / 0.9, 1e-6);
-        x /= m;
-        y /= m;
-        // Arrow points from the screen centre towards the player.
-        v.arrow.style.transform = `rotate(${Math.atan2(x * w, y * h)}rad)`;
+      const text = dist > 30 ? `${peer.name} ${dist > 200 ? Math.round(dist / 10) * 10 : Math.round(dist)} m` : peer.name;
+      v.tag.position.copy(ac.position);
+      v.tag.position.y += v.tagHeight;
+      _v.copy(v.tag.position).project(camera);
+      _c.copy(v.tag.position).applyMatrix4(camera.matrixWorldInverse); // x right, y up, -z ahead
+      const inView = _c.z < 0 && Math.abs(_v.x) <= 1 && Math.abs(_v.y) <= 1;
+      v.tag.visible = inView;
+      v.label.style.display = inView ? 'none' : '';
+      if (inView) {
+        v.tag.userData.redraw(text);
+        // Constant size in pixels whatever the zoom: without size attenuation
+        // a sprite's screen height is scale * projection[1][1] * height / 2.
+        const sy = (2 * LABEL_PX) / (h * camera.projectionMatrix.elements[5]);
+        v.tag.scale.set(sy * (v.tag.userData.aspect || 4), sy, 1);
+        continue;
       }
-      v.label.classList.toggle('edge', !inView);
-      let px = ((x + 1) / 2) * w;
-      let py = ((1 - y) / 2) * h;
-      if (!inView) {
-        // Keep the whole label on screen.
-        const lw = v.label.offsetWidth / 2 + 6;
-        const lh = v.label.offsetHeight / 2 + 6;
-        px = Math.min(w - lw, Math.max(lw, px));
-        py = Math.min(h - lh, Math.max(lh, py));
+      v.text.textContent = text;
+      const halfV = (camera.fov * Math.PI) / 360;
+      const halfH = Math.atan(Math.tan(halfV) * camera.aspect);
+      const az = Math.atan2(_c.x, -_c.z); // + = to the right, ±π = behind
+      const el = Math.atan2(_c.y, Math.hypot(_c.x, _c.z)); // + = above
+      let x;
+      let y;
+      if (Math.abs(az) > halfH) {
+        // Off to one side (or behind): that side's edge, at its height.
+        x = az >= 0 ? 1 : -1;
+        y = Math.max(-1, Math.min(1, el / halfV));
+      } else {
+        // Ahead but above or below the view: top or bottom edge.
+        x = Math.max(-1, Math.min(1, az / halfH));
+        y = el >= 0 ? 1 : -1;
       }
-      v.label.style.left = `${px}px`;
-      v.label.style.top = `${py}px`;
+      // Arrow from the screen centre towards the aeroplane.
+      v.arrow.style.transform = `rotate(${Math.atan2(az, el)}rad)`;
+      v.label.classList.add('edge');
+      // Keep clear of the room badge (top) and flight readout (bottom).
+      const lw = v.label.offsetWidth / 2 + 6;
+      const top = 50;
+      const bottom = h - (h > 500 ? 110 : 70);
+      v.label.style.left = `${Math.min(w - lw, Math.max(lw, ((x + 1) / 2) * w))}px`;
+      v.label.style.top = `${Math.min(bottom, Math.max(top, ((1 - y) / 2) * h))}px`;
     }
     return hit;
   }
