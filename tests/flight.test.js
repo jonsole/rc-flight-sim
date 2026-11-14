@@ -523,7 +523,7 @@ describe('collisions with obstacles', () => {
   it('crashes into the club hut', () => {
     const ac = flyAt({ x: -29, y: 1.5, z: 26 }, 10);
     expect(ac.crashed).toBe(true);
-    expect(ac.crashReason).toMatch(/club hut/);
+    expect(ac.crashReason).toMatch(/clubhouse/);
   });
 
   it('crashes into foliage at speed', () => {

@@ -9,10 +9,14 @@ import { Input } from './input/input.js';
 import { TouchControls, isTouchDevice } from './input/touch.js';
 import { CameraRig, CAMERA_LABELS } from './view/cameras.js';
 import { Debris } from './view/debris.js';
+import { Shadows } from './world/shadows.js';
+import { PlaneShadow } from './view/planeShadow.js';
 import { Peers } from './view/peers.js';
+import { addNavLights } from './view/navlights.js';
 import { Multiplayer } from './net/multiplayer.js';
 import { DEFAULT_MP_SERVER } from './net/config.js';
 import { Chat } from './ui/chat.js';
+import { clockHours, dayOfYear } from './world/sun.js';
 import { OSD } from './ui/osd.js';
 import { Panel } from './ui/panel.js';
 import { loadSettings, saveSettings } from './ui/settings.js';
@@ -52,11 +56,14 @@ renderer.shadowMap.type = PCFSoftShadowMap;
 
 // --- Simulation ----------------------------------------------------------------
 const obstacles = new Obstacles();
-const world = new World(obstacles);
-if (TOUCH_DEVICE) world.sun.shadow.mapSize.set(1024, 1024);
+const world = new World(obstacles, { lowDetail: TOUCH_DEVICE });
 const wind = new Wind();
 const input = new Input();
 const rig = new CameraRig(settings);
+// Scenery shadows (redrawn only when the sun moves; smaller map on phones),
+// and the aeroplane's own shadow, drawn every frame.
+world.attachShadows(new Shadows(world.sun, { mapSize: TOUCH_DEVICE ? 2048 : 4096 }));
+const planeShadow = new PlaneShadow(world.scene, ground);
 
 let entry = null; // selected aircraft (registry entry)
 let aircraft = null; // flight model
@@ -79,8 +86,11 @@ function replaceModel() {
     });
   }
   model = entry.createModel();
+  navLights = addNavLights(model, { shine: true });
+  planeShadow.setModel(model, entry.def.wingSpan);
   world.scene.add(model.root);
 }
+let navLights = null;
 
 function loadAircraft(id) {
   entry = getAircraft(id);
@@ -113,12 +123,22 @@ let paused = false;
 let assistFlash = 0; // seconds to show the assist-mode banner
 let touchSeen = false; // a real finger touched the screen (auto-enables the sticks)
 
+/** Sun, sky and light for the chosen time of day (or the clock). */
+function applyTime() {
+  const now = new Date();
+  const hours = settings.useClock ? clockHours(now) : Number(settings.timeOfDay);
+  world.setTime(hours, dayOfYear(now));
+  renderer.toneMappingExposure = world.exposure;
+}
+let clockTimer = 0;
+
 function applySettings() {
   aircraft.assistMode = settings.assist;
   wind.speed = settings.windSpeed;
   wind.directionDeg = settings.windDir;
   wind.turbulence = settings.turbulence;
-  world.setSun(settings.sunElevation, settings.sunAzimuth);
+  applyTime();
+  world.setClouds(Number(settings.cloudCover));
   sound.volume = settings.volume;
   osd.showHud = settings.showHud;
   const showTouch = settings.touchControls === 'on' || (settings.touchControls === 'auto' && (TOUCH_DEVICE || touchSeen));
@@ -172,6 +192,11 @@ function selectAircraft(id) {
 const mp = new Multiplayer();
 let mpGraceUntil = 0; // no collisions just after a reset
 const peers = new Peers(world.scene, ground);
+peers.addShadow = (model, span) => {
+  const s = new PlaneShadow(world.scene, ground);
+  s.setModel(model, span);
+  return s;
+};
 const mpBadge = document.getElementById('mp-badge');
 const mpToast = document.getElementById('mp-toast');
 const mpServer = () => settings.mpServer || DEFAULT_MP_SERVER;
@@ -386,12 +411,18 @@ function frame(now) {
     debris.update(dt);
     osd.update(dt, aircraft);
   }
+  // Following the clock: move the sun along every 20 s.
+  if (settings.useClock && (clockTimer -= dt) <= 0) {
+    clockTimer = 20;
+    applyTime();
+  }
   // Others see you even while your menu is open.
   mp.update(dt, aircraft);
 
   model.root.position.copy(aircraft.position);
   model.root.quaternion.copy(aircraft.orientation);
   model.update(aircraft, paused ? 0 : dt);
+  navLights.update(world.night, now / 1000, rig.camera, window.innerHeight, aircraft.broken);
 
   const fpv = rig.mode === 'fpv';
   model.setPilotVisible(!(fpv && settings.fpvMount === 'cockpit'));
@@ -399,6 +430,10 @@ function frame(now) {
   // Other players (after the camera has moved, so their labels line up).
   rig.camera.updateMatrixWorld();
   const solid = mp.connected && !paused && !aircraft.crashed && now / 1000 > mpGraceUntil;
+  peers.night = world.night;
+  // Aeroplane shadows as dark as the scenery's.
+  const shadowDark = world.shadowDarkness();
+  peers.shadowCtx = { renderer, lightDir: world.lightDir, strength: shadowDark };
   const hit = peers.update(mp.peers, dt, rig.camera, { aircraft, id: entry.id, solid });
   if (hit) {
     // Mid-air (or on the ground): the part that hit breaks off, and the other
@@ -408,8 +443,11 @@ function frame(now) {
     aircraft.velocity.lerp(hit.velocity, 0.5);
     mp.sendHit(hit.peer.id, hit.theirPart, hit.relSpeed);
   }
-  world.followShadow(aircraft.position);
+  world.updateShadows();
+  world.updateTrees(now / 1000, wind.speed + wind.gust.length() * 0.5, wind.directionDeg);
+  planeShadow.update(renderer, aircraft.position, world.lightDir, shadowDark);
   world.updateWindsock(wind.at(new Vector3(-35, 5, -42), 0, windTmp));
+  if (!paused) world.updateClouds(dt, windTmp);
 
   const eye = rig.pilotEye();
   const dist = eye.distanceTo(aircraft.position);
@@ -448,4 +486,10 @@ window.sim = {
   input,
   settings,
   selectAircraft,
+  /** Debug: set the time of day (hours). */
+  setTime(h) {
+    settings.timeOfDay = h;
+    settings.useClock = false;
+    applyTime();
+  },
 };

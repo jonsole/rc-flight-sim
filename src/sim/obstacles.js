@@ -66,10 +66,28 @@ export class Obstacles {
         this.shapes.push({ type: 'ellipsoid', name: 'a tree', cx: t.x, cy: t.y + t.h * 0.62, cz: t.z, rx: t.crownW, ry: t.h * 0.38, rz: t.crownW });
       }
     }
-    // Club hut (body + roof overhang), behind the pilot.
-    this.hut = { x: -24, z: 26 };
-    this.shapes.push({ type: 'box', name: 'the club hut', min: [-29, 0, 23], max: [-19, 3.45, 29] });
-    this.shapes.push({ type: 'box', name: 'the club hut roof', min: [-29.3, 3.15, 22.5], max: [-18.7, 3.45, 29.5] });
+    // Clubhouse behind the pilot: walls, pitched roof (eaves to ridge).
+    this.hut = { x: -24, z: 26, w: 10, d: 6, wall: 2.8, ridge: 4.3 };
+    this.shapes.push({ type: 'box', name: 'the clubhouse', min: [-29, 0, 23], max: [-19, 2.8, 29] });
+    this.shapes.push({ type: 'box', name: 'the clubhouse roof', min: [-29.4, 2.7, 22.6], max: [-18.6, 3.55, 29.4] });
+    this.shapes.push({ type: 'box', name: 'the clubhouse roof', min: [-29.4, 3.5, 24.6], max: [-18.6, 4.3, 27.4] });
+    // Shipping container (20 ft) beside it.
+    this.container = { x: -11.5, z: 27, l: 6.06, w: 2.44, h: 2.59 };
+    this.shapes.push({ type: 'box', name: 'the container', min: [-14.53, 0, 25.78], max: [-8.47, 2.59, 28.22] });
+    // Cars in the car park by the clubhouse, nose to the field.
+    this.cars = [
+      { x: -43, z: 29, color: '#b8202a' },
+      { x: -39.5, z: 29.4, color: '#c9ccd0' },
+      { x: -36, z: 28.8, color: '#284f8f' },
+    ];
+    for (const c of this.cars) this.shapes.push({ type: 'box', name: 'a car', min: [c.x - 0.9, 0, c.z - 2.1], max: [c.x + 0.9, 1.45, c.z + 2.1] });
+    // Pop-up gazebo in the pits, behind the safety fence.
+    this.gazebo = { x: 12, z: 12, size: 3, h: 2.5 };
+    for (const [dx, dz] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5]]) {
+      this.shapes.push({ type: 'cylinder', name: 'the gazebo', x: 12 + dx, z: 12 + dz, r: 0.03, y0: 0, y1: 2.2 });
+    }
+    this.shapes.push({ type: 'box', name: 'the gazebo', min: [10.4, 2.1, 10.4], max: [13.6, 2.7, 13.6] });
+    this.shapes.push({ type: 'box', name: 'the pits table', min: [11, 0, 12.2], max: [13, 0.75, 13] });
     // Windsock pole.
     this.windsock = { x: -35, z: -42, height: 5 };
     this.shapes.push({ type: 'cylinder', name: 'the windsock pole', x: -35, z: -42, r: 0.05, y0: 0, y1: 5 });

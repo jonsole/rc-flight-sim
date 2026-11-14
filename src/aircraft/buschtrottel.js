@@ -290,6 +290,13 @@ export function buildBuschtrottel(style) {
       hard('nose', high ? [0.218, -0.025, 0] : [0.21, -0.045, 0], 3),
       hard('wing-tip-L', [tipX, tipY, -HALF]),
       hard('wing-tip-R', [tipX, tipY, HALF]),
+      // Tip corners (leading and trailing edge) so the wing can't dip in.
+      hard('wing-tip-L-le', [L.wingLeX - 0.01, tipY, -HALF + 0.01]),
+      hard('wing-tip-R-le', [L.wingLeX - 0.01, tipY, HALF - 0.01]),
+      hard('wing-tip-L-te', [L.wingLeX - CHORD + 0.01, tipY, -HALF + 0.01]),
+      hard('wing-tip-R-te', [L.wingLeX - CHORD + 0.01, tipY, HALF - 0.01]),
+      hard('stab-tip-L', [L.tail.leX - L.tail.chord * 0.4, L.tail.y, -L.tail.span / 2 + 0.01], 3.5),
+      hard('stab-tip-R', [L.tail.leX - L.tail.chord * 0.4, L.tail.y, L.tail.span / 2 - 0.01], 3.5),
       hard('wing-top', [L.wingLeX - CHORD * 0.3, L.wingY + 0.015, 0], 3),
       hard('cabin-top', [0.0, Math.max(...L.fuselage.map((s) => s[3])), 0], 3),
       hard('fin-top', [-0.46, finTop, 0], 3),

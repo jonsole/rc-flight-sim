@@ -2,6 +2,7 @@
 import { CHANNELS } from '../input/input.js';
 import { CAMERA_LABELS } from '../view/cameras.js';
 import { AIRCRAFT, getAircraft } from '../aircraft/index.js';
+import { formatHours } from '../world/sun.js';
 
 const CH_LABEL = { roll: 'Aileron (roll)', pitch: 'Elevator (pitch)', yaw: 'Rudder (yaw)', throttle: 'Throttle' };
 
@@ -184,8 +185,9 @@ export class Panel {
       this.#range('Wind speed', 'windSpeed', 0, 12, 0.5, (v) => `${v} m/s (${Math.round(v * 3.6)} km/h)`),
       this.#range('Wind from', 'windDir', 0, 359, 5, compass),
       this.#range('Turbulence', 'turbulence', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
-      this.#range('Sun elevation', 'sunElevation', 2, 80, 1, (v) => `${v}°`),
-      this.#range('Sun direction', 'sunAzimuth', 0, 359, 5, compass),
+      this.#range('Time of day', 'timeOfDay', 0, 24, 0.25, formatHours),
+      this.#check('Use my clock', 'useClock'),
+      this.#range('Cloud cover', 'cloudCover', 0, 1, 0.05, (v) => (v < 0.05 ? 'Clear' : v > 0.85 ? 'Overcast' : `${Math.round(v * 100)}%`)),
       el('p', { class: 'hint' }, 'You stand at the flight line facing north; the runway runs east–west in front of you.'),
     ];
   }

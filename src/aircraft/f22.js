@@ -240,6 +240,7 @@ export function buildF22(style) {
   }];
 
   const tip = O.wing.reduce((a, b) => (b[1] > a[1] ? b : a));
+  const tipTe = O.wing.filter((p) => p[1] > tip[1] * 0.85).reduce((a, b) => (b[0] < a[0] ? b : a));
   const elevTip = O.elevon.reduce((a, b) => (b[0] < a[0] ? b : a));
   const hard = (name, pos, crashSpeed = 4) => ({ name, pos, type: 'hard', k: 800, c: 6, crashSpeed });
   const propX = (O.slot.front + O.slot.back) / 2;
@@ -301,6 +302,9 @@ export function buildF22(style) {
       { name: 'keel-rear', pos: [O.fuselage.stations[22][0] + 0.005, keelY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
       hard('wing-tip-L', [tip[0] - 0.02, wingY, -tip[1]]),
       hard('wing-tip-R', [tip[0] - 0.02, wingY, tip[1]]),
+      // Trailing corner of each tip too.
+      hard('wing-tip-L-te', [tipTe[0] + 0.01, wingY, -tipTe[1]]),
+      hard('wing-tip-R-te', [tipTe[0] + 0.01, wingY, tipTe[1]]),
       hard('cabin-top', [O.canopy.back + 0.005, under + 0.0095, 0], 3),
       hard('fin-top-L', [O.fin[2][0], wingY + finH * Math.cos(cant), -(O.finZ + finH * Math.sin(cant))], 3),
       hard('fin-top-R', [O.fin[2][0], wingY + finH * Math.cos(cant), O.finZ + finH * Math.sin(cant)], 3),

@@ -238,6 +238,13 @@ export function buildSE5a(o) {
       hard('upper-tip-R', [G.upperLeX - CHORD / 2, tipY(G.upperY), SPAN / 2], 3.5),
       hard('lower-tip-L', [G.lowerLeX - CHORD / 2, tipY(G.lowerY), -SPAN / 2], 3.5),
       hard('lower-tip-R', [G.lowerLeX - CHORD / 2, tipY(G.lowerY), SPAN / 2], 3.5),
+      // Tip corners (leading and trailing edge) so the wings can't dip in.
+      ...[['upper', G.upperLeX, G.upperY], ['lower', G.lowerLeX, G.lowerY]].flatMap(([w, le, y]) => [-1, 1].flatMap((side) => [
+        hard(`${w}-tip-${side < 0 ? 'L' : 'R'}-le`, [le - s(0.02), tipY(y), side * (SPAN / 2 - s(0.02))], 3.5),
+        hard(`${w}-tip-${side < 0 ? 'L' : 'R'}-te`, [le - CHORD + s(0.02), tipY(y), side * (SPAN / 2 - s(0.02))], 3.5),
+      ])),
+      hard('stab-tip-L', [G.tail.leX - G.tail.chord * 0.4, G.tail.y, -G.tail.span / 2 + s(0.02)], 3),
+      hard('stab-tip-R', [G.tail.leX - G.tail.chord * 0.4, G.tail.y, G.tail.span / 2 - s(0.02)], 3),
       hard('upper-centre', [G.upperLeX - CHORD / 2, G.upperY + s(0.02), 0], 2.5),
       hard('fin-top', [G.fin.leX - s(0.1), G.fin.baseY + G.fin.height, 0], 2.5),
       hard('tail-end', [s(-0.92), s(0.05), 0], 3),
