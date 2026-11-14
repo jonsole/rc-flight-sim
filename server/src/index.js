@@ -10,6 +10,7 @@
 //     { t: 'hello', name, aircraft }       first message, required
 //     { t: 's', ... }                      flight state, relayed as-is plus `id`
 //     { t: 'hit', to, part }               "I collided with player `to`" (relayed)
+//     { t: 'chat', text }                  a chat line (trimmed, rate-limited)
 //     { t: 'info', name, aircraft }        changed name or aeroplane
 //   server -> client
 //     { t: 'welcome', id, peers: [{ id, name, aircraft }] }
@@ -18,12 +19,15 @@
 //     { t: 'leave', id }
 //     { t: 's', id, ... }
 //     { t: 'hit', id, to, part }
+//     { t: 'chat', id, text }
 //     { t: 'error', message }
 
 const MAX_PLAYERS = 16;
 const MAX_MESSAGE = 1024; // bytes; states are ~200
 const MAX_RATE = 40; // messages per second per player (sim sends 15)
 const CODE_RE = /^[A-Z0-9-]{1,24}$/;
+const MAX_CHAT = 200; // characters per chat line
+const CHAT_GAP = 300; // ms between chat lines from one player
 
 function allowedOrigin(origin, env) {
   if (!origin) return true; // non-browser clients (tests)
@@ -49,6 +53,8 @@ export default {
 };
 
 const clean = (s, max) => String(s ?? '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, max);
+// Chat is shown as plain text (never HTML), so only control characters go.
+const cleanText = (s, max) => String(s ?? '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, max);
 
 export class Room {
   constructor(ctx) {
@@ -131,6 +137,13 @@ export class Room {
     if (msg.t === 's' || (msg.t === 'hit' && Number.isInteger(msg.to))) {
       msg.id = info.id;
       this.broadcast(ws, JSON.stringify(msg));
+    } else if (msg.t === 'chat') {
+      // At most ~3 lines a second, 200 characters each.
+      const text = cleanText(msg.text, MAX_CHAT);
+      if (!text || now - (info.chatAt || 0) < CHAT_GAP) return;
+      info.chatAt = now;
+      ws.serializeAttachment(info);
+      this.broadcast(ws, JSON.stringify({ t: 'chat', id: info.id, text }));
     }
   }
 

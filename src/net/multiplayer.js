@@ -104,6 +104,14 @@ export class Multiplayer {
     if (this.connected) this.ws.send(JSON.stringify({ t: 'hit', to: peerId, part, speed: r(speed, 10) }));
   }
 
+  /** Send a chat line to everyone in the room. Returns the text sent, or ''. */
+  sendChat(text) {
+    const t = String(text).replace(/[\u0000-\u001f]/g, '').trim().slice(0, 200);
+    if (!t || !this.connected) return '';
+    this.ws.send(JSON.stringify({ t: 'chat', text: t }));
+    return t;
+  }
+
   /** Tell the room about a new name or aeroplane. */
   setInfo(name, aircraft) {
     this.name = name;
@@ -154,6 +162,11 @@ export class Multiplayer {
         // older) view of them just missed.
         const p = this.peers.get(m.id);
         if (p && m.to === this.myId) this.onEvent('hit', p, m);
+        break;
+      }
+      case 'chat': {
+        const p = this.peers.get(m.id);
+        if (p && typeof m.text === 'string') this.onEvent('chat', p, m);
         break;
       }
       case 's': {
