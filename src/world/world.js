@@ -3,13 +3,14 @@ import {
   Scene, Color, FogExp2, HemisphereLight, Points, PointsMaterial, BufferGeometry, Sprite, SpriteMaterial, DirectionalLight, Mesh, PlaneGeometry, MeshStandardMaterial,
   CanvasTexture, RepeatWrapping, SRGBColorSpace, InstancedMesh, CylinderGeometry, IcosahedronGeometry,
   Object3D, BoxGeometry, ConeGeometry, Group, Vector3, MathUtils, DoubleSide, Float32BufferAttribute,
-  MeshBasicMaterial, ShaderMaterial, SphereGeometry, BackSide,
+  MeshBasicMaterial, ShaderMaterial, SphereGeometry, BackSide, MeshLambertMaterial, Vector2,
 } from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY } from '../sim/terrain.js';
 import { sunPosition, moonPosition } from './sun.js';
 import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail } from './ground.js';
+import { GrassField } from './grass.js';
 
 const smooth = (e0, e1, x) => {
   const t = MathUtils.clamp((x - e0) / (e1 - e0), 0, 1);
@@ -148,6 +149,36 @@ function moonSprite() {
 export { RUNWAY } from '../sim/terrain.js';
 export const PILOT_POS = new Vector3(0, 0, 0);
 
+/** Normal map from a canvas (its brightness as height). */
+function normalMapFrom(src, strength = 0.9) {
+  const w = src.width;
+  const h = src.height;
+  const d = src.getContext('2d').getImageData(0, 0, w, h).data;
+  const H = (x, y) => d[(((y + h) % h) * w + ((x + w) % w)) * 4 + 1] / 255; // green channel
+  const out = document.createElement('canvas');
+  out.width = w;
+  out.height = h;
+  const ctx = out.getContext('2d');
+  const img = ctx.createImageData(w, h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const dx = (H(x + 1, y) - H(x - 1, y)) * strength;
+      const dy = (H(x, y + 1) - H(x, y - 1)) * strength;
+      const len = Math.hypot(dx, dy, 1);
+      const i = (y * w + x) * 4;
+      img.data[i] = (-dx / len * 0.5 + 0.5) * 255;
+      img.data[i + 1] = (dy / len * 0.5 + 0.5) * 255;
+      img.data[i + 2] = (1 / len * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const t = new CanvasTexture(out);
+  t.wrapS = t.wrapT = RepeatWrapping;
+  t.anisotropy = 8;
+  return t;
+}
+
 function grassTexture() {
   // 6 m of grass: a mid green base, soft clumps, then thousands of short
   // blade strokes in varied greens with a few dry and clover-coloured bits.
@@ -199,6 +230,7 @@ function grassTexture() {
   t.wrapS = t.wrapT = RepeatWrapping;
   t.colorSpace = SRGBColorSpace;
   t.anisotropy = 8;
+  t.userData.normal = normalMapFrom(c);
   return t;
 }
 
@@ -255,7 +287,7 @@ function runwayTexture() {
 
 export class World {
   /** @param {import('../sim/obstacles.js').Obstacles} obstacles */
-  constructor(obstacles) {
+  constructor(obstacles, opts = {}) {
     this.obstacles = obstacles;
     this.scene = new Scene();
     this.scene.background = new Color('#9cc3e6');
@@ -272,6 +304,9 @@ export class World {
     this.scene.add(this.clouds.mesh);
     this.#lights();
     this.#terrain();
+    // 3D grass close to the camera (fewer tufts on phones).
+    this.grass = new GrassField(opts.lowDetail ? { cell: 0.3, radius: 16 } : { cell: 0.2, radius: 22 });
+    this.scene.add(this.grass.mesh);
     this.#runway();
     this.#trees();
     this.#props();
@@ -383,6 +418,11 @@ export class World {
     this.clouds.mesh.visible = cover > 0.01;
   }
 
+  /** Grass around the camera, swaying in the wind. */
+  updateGrass(camera, t, wind) {
+    this.grass.update(camera, t, wind);
+  }
+
   /** Let the clouds drift with the wind (world velocity, m/s). */
   updateClouds(dt, wind) {
     this.clouds.update(dt, wind);
@@ -449,7 +489,10 @@ export class World {
     geo.computeVertexNormals();
     const tex = grassTexture();
     tex.repeat.set(size / 6, size / 6);
-    const mat = addCloudShadows(addGroundDetail(new MeshStandardMaterial({ map: tex, vertexColors: true, roughness: 1 })));
+    // Matte (no plastic sheen), with the grass bumps as a normal map.
+    const nrm = tex.userData.normal;
+    nrm.repeat.copy(tex.repeat);
+    const mat = addCloudShadows(addGroundDetail(new MeshLambertMaterial({ map: tex, normalMap: nrm, normalScale: new Vector2(0.45, 0.45), vertexColors: true })));
     const ground = new Mesh(geo, mat);
     ground.receiveShadow = true;
     this.scene.add(ground);
@@ -458,7 +501,7 @@ export class World {
   #runway() {
     const g = new PlaneGeometry(RUNWAY.length, RUNWAY.width);
     g.rotateX(-Math.PI / 2);
-    const rw = new Mesh(g, addCloudShadows(new MeshStandardMaterial({ map: runwayTexture(), roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 })));
+    const rw = new Mesh(g, addCloudShadows(new MeshLambertMaterial({ map: runwayTexture(), polygonOffset: true, polygonOffsetFactor: -2 })));
     // Just above the physics ground (y = 0); polygonOffset prevents z-fighting.
     rw.position.set(RUNWAY.x, 0.002, RUNWAY.z);
     rw.receiveShadow = true;
