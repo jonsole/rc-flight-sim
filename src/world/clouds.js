@@ -142,7 +142,8 @@ export function addCloudShadows(material) {
           reflectedLight.directSpecular *= shade;
         }`);
   };
-  material.customProgramCacheKey = () => 'cloudShadows';
+  const prevKey = material.customProgramCacheKey?.bind(material);
+  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|cloudShadows`;
   material.needsUpdate = true;
   return material;
 }

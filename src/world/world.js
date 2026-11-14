@@ -9,6 +9,7 @@ import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY } from '../sim/terrain.js';
 import { sunPosition, moonPosition } from './sun.js';
 import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
+import { addGroundDetail } from './ground.js';
 
 const smooth = (e0, e1, x) => {
   const t = MathUtils.clamp((x - e0) / (e1 - e0), 0, 1);
@@ -148,17 +149,51 @@ export { RUNWAY } from '../sim/terrain.js';
 export const PILOT_POS = new Vector3(0, 0, 0);
 
 function grassTexture() {
+  // 6 m of grass: a mid green base, soft clumps, then thousands of short
+  // blade strokes in varied greens with a few dry and clover-coloured bits.
+  const N = 512;
   const c = document.createElement('canvas');
-  c.width = c.height = 256;
+  c.width = c.height = N;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#5d7a3a';
-  ctx.fillRect(0, 0, 256, 256);
-  for (let i = 0; i < 9000; i++) {
-    const x = Math.random() * 256;
-    const y = Math.random() * 256;
-    const l = 30 + Math.random() * 25;
-    ctx.fillStyle = `hsl(${80 + Math.random() * 25}, ${35 + Math.random() * 20}%, ${l}%)`;
-    ctx.fillRect(x, y, 1 + Math.random() * 1.5, 1 + Math.random() * 3);
+  let seed = 3;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  ctx.fillStyle = '#5f7d3b';
+  ctx.fillRect(0, 0, N, N);
+  // Clumps (drawn wrapped so the tile repeats seamlessly).
+  const wrap = (fn) => { for (const dx of [-N, 0, N]) for (const dy of [-N, 0, N]) fn(dx, dy); };
+  for (let i = 0; i < 260; i++) {
+    const x = rnd() * N;
+    const y = rnd() * N;
+    const r = 6 + rnd() * 26;
+    const l = 22 + rnd() * 16;
+    const col = `hsla(${78 + rnd() * 22}, ${35 + rnd() * 20}%, ${l}%, 0.35)`;
+    wrap((dx, dy) => {
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(x + dx, y + dy, r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+  // Blades.
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 26000; i++) {
+    const x = rnd() * N;
+    const y = rnd() * N;
+    const len = 2 + rnd() * 5;
+    const a = -Math.PI / 2 + (rnd() - 0.5) * 1.4;
+    const dry = rnd() < 0.04;
+    const l = dry ? 48 + rnd() * 14 : 24 + rnd() * 26;
+    ctx.strokeStyle = dry ? `hsl(${48 + rnd() * 12}, 40%, ${l}%)` : `hsl(${76 + rnd() * 30}, ${38 + rnd() * 24}%, ${l}%)`;
+    ctx.lineWidth = 0.7 + rnd() * 0.8;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
+    ctx.stroke();
+  }
+  // A few clover and daisy flecks.
+  for (let i = 0; i < 400; i++) {
+    ctx.fillStyle = rnd() < 0.7 ? 'rgba(70,110,50,0.8)' : 'rgba(235,235,220,0.8)';
+    ctx.fillRect(rnd() * N, rnd() * N, 1.5, 1.5);
   }
   const t = new CanvasTexture(c);
   t.wrapS = t.wrapT = RepeatWrapping;
@@ -168,24 +203,49 @@ function grassTexture() {
 }
 
 function runwayTexture() {
+  // The mown strip, lengthwise along the canvas: two-tone mowing stripes
+  // running down the runway, worn patches where models touch down and
+  // lift off, and white edge markers.
+  const W = 2048;
+  const H = 256;
   const c = document.createElement('canvas');
-  c.width = 512;
-  c.height = 64;
+  c.width = W;
+  c.height = H;
   const ctx = c.getContext('2d');
-  // Mowing stripes along the runway
-  for (let i = 0; i < 16; i++) {
-    ctx.fillStyle = i % 2 ? '#7f9c4c' : '#6e8d40';
-    ctx.fillRect((i * 512) / 16, 0, 512 / 16 + 1, 64);
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const lanes = 5;
+  for (let i = 0; i < lanes; i++) {
+    ctx.fillStyle = i % 2 ? '#86a253' : '#729246';
+    ctx.fillRect(0, (i * H) / lanes, W, H / lanes + 1);
   }
-  for (let i = 0; i < 4000; i++) {
-    ctx.fillStyle = `rgba(${40 + Math.random() * 60},${70 + Math.random() * 60},30,0.35)`;
-    ctx.fillRect(Math.random() * 512, Math.random() * 64, 1, 2);
+  // Fine grass texture.
+  for (let i = 0; i < 60000; i++) {
+    const l = 30 + rnd() * 25;
+    ctx.fillStyle = `hsla(${78 + rnd() * 25}, 40%, ${l}%, 0.35)`;
+    ctx.fillRect(rnd() * W, rnd() * H, 2 + rnd() * 3, 1);
   }
-  // Edge markers
-  ctx.fillStyle = 'rgba(240,240,230,0.9)';
-  for (let i = 0; i < 512; i += 32) {
-    ctx.fillRect(i, 1, 10, 2);
-    ctx.fillRect(i, 61, 10, 2);
+  // Wear: touchdown and lift-off areas a third of the way in from each end,
+  // and faint wheel tracks down the middle.
+  for (const cx of [0.28, 0.72]) {
+    for (let i = 0; i < 70; i++) {
+      const x = (cx + (rnd() - 0.5) * 0.22) * W;
+      const y = H / 2 + (rnd() - 0.5) * H * 0.5;
+      const r = 6 + rnd() * 24;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, 'rgba(120,105,70,0.35)');
+      g.addColorStop(1, 'rgba(120,105,70,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+  }
+  ctx.fillStyle = 'rgba(110,100,70,0.12)';
+  for (const y of [0.44, 0.56]) ctx.fillRect(W * 0.15, H * y - 3, W * 0.7, 6);
+  // Edge markers.
+  ctx.fillStyle = 'rgba(240,240,230,0.95)';
+  for (let i = 0; i < W; i += 128) {
+    ctx.fillRect(i, 3, 44, 7);
+    ctx.fillRect(i, H - 10, 44, 7);
   }
   const t = new CanvasTexture(c);
   t.colorSpace = SRGBColorSpace;
@@ -383,18 +443,13 @@ export class World {
       const n = Math.sin(x * 0.011) * Math.cos(z * 0.013) * 0.5 + 0.5;
       tmp.copy(c1).lerp(c2, n * 0.8);
       if (h > 40) tmp.lerp(c3, Math.min(1, (h - 40) / 120));
-      // Patchwork fields far away
-      const fx = Math.floor(x / 180);
-      const fz = Math.floor(z / 140);
-      const r = Math.abs(Math.sin(fx * 12.9898 + fz * 78.233) * 43758.5453) % 1;
-      if (Math.hypot(x, z) > 500) tmp.offsetHSL((r - 0.5) * 0.06, 0, (r - 0.5) * 0.08);
       colors.push(tmp.r, tmp.g, tmp.b);
     }
     geo.setAttribute('color', new Float32BufferAttribute(colors, 3));
     geo.computeVertexNormals();
     const tex = grassTexture();
     tex.repeat.set(size / 6, size / 6);
-    const mat = addCloudShadows(new MeshStandardMaterial({ map: tex, vertexColors: true, roughness: 1 }));
+    const mat = addCloudShadows(addGroundDetail(new MeshStandardMaterial({ map: tex, vertexColors: true, roughness: 1 })));
     const ground = new Mesh(geo, mat);
     ground.receiveShadow = true;
     this.scene.add(ground);
