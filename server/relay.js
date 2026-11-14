@@ -10,6 +10,7 @@
 //   client -> server
 //     { t: 'hello', name, aircraft }       first message, required
 //     { t: 's', ... }                      flight state, relayed as-is plus `id`
+//     { t: 'hit', to, part }               "I collided with player `to`" (relayed)
 //     { t: 'info', name, aircraft }        changed name or aeroplane
 //   server -> client
 //     { t: 'welcome', id, peers: [{ id, name, aircraft }] }
@@ -17,6 +18,7 @@
 //     { t: 'info', id, name, aircraft }
 //     { t: 'leave', id }
 //     { t: 's', id, ... }
+//     { t: 'hit', id, to, part }
 //
 // Environment: PORT (default 8787), ALLOWED_ORIGINS (comma separated pages
 // that may connect; local dev servers are always allowed).
@@ -111,7 +113,7 @@ function join(ws, code) {
       info.name = clean(msg.name, 20) || info.name;
       info.aircraft = clean(msg.aircraft, 40) || info.aircraft;
       broadcast(room, ws, JSON.stringify({ t: 'info', id: info.id, name: info.name, aircraft: info.aircraft }));
-    } else if (msg.t === 's') {
+    } else if (msg.t === 's' || (msg.t === 'hit' && Number.isInteger(msg.to))) {
       msg.id = info.id;
       broadcast(room, ws, JSON.stringify(msg));
     }

@@ -99,6 +99,11 @@ export class Multiplayer {
     this.#setStatus('off');
   }
 
+  /** Tell another player we collided with them (and which of their parts). */
+  sendHit(peerId, part, speed) {
+    if (this.connected) this.ws.send(JSON.stringify({ t: 'hit', to: peerId, part, speed: r(speed, 10) }));
+  }
+
   /** Tell the room about a new name or aeroplane. */
   setInfo(name, aircraft) {
     this.name = name;
@@ -142,6 +147,13 @@ export class Multiplayer {
         if (!p) break;
         this.peers.delete(m.id);
         this.onEvent('leave', p);
+        break;
+      }
+      case 'hit': {
+        // Another player collided with us: crash too, even if our (slightly
+        // older) view of them just missed.
+        const p = this.peers.get(m.id);
+        if (p && m.to === this.myId) this.onEvent('hit', p, m);
         break;
       }
       case 's': {
