@@ -165,3 +165,59 @@ export function trunk(seed, branches = true) {
     return [k, k, k];
   });
 }
+
+/** Shared state for the leaf shader: time and wind (m/s, blowing towards dir). */
+export const leafUniforms = {
+  uLeafTime: { value: 0 },
+  uWindSpeed: { value: 0 },
+  uWindDir: { value: new Vector3(1, 0, 0) },
+};
+
+/**
+ * Leaves: mottled colour (lighter and darker patches across each crown) and
+ * a gentle sway that only starts once the wind is fairly strong. Add after
+ * addCloudShadows, whose noise and world position this reuses.
+ */
+export function addLeafShading(material) {
+  const prev = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    prev?.(shader, renderer);
+    Object.assign(shader.uniforms, leafUniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uLeafTime;\nuniform float uWindSpeed;\nuniform vec3 uWindDir;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        #ifdef USE_INSTANCING
+        {
+          // Nothing in light winds, building up from 6 to 14 m/s.
+          float k = smoothstep(6.0, 14.0, uWindSpeed);
+          if (k > 0.0) {
+            mat3 m = mat3(instanceMatrix);
+            vec3 s2 = vec3(dot(m[0], m[0]), dot(m[1], m[1]), dot(m[2], m[2]));
+            float hgt = sqrt(s2.y);
+            vec3 org = instanceMatrix[3].xyz;
+            float ph = org.x * 0.05 + org.z * 0.07; // gusts roll across the woods
+            float gust = 0.55 + 0.3 * sin(uLeafTime * 0.9 - ph) + 0.15 * sin(uLeafTime * 2.1 - ph * 1.6);
+            float bend = smoothstep(-1.0, 1.0, position.y);
+            bend *= bend;
+            // Metres at the top of the tree, along the wind.
+            float metres = k * gust * 0.03 * min(hgt, 8.0) * bend;
+            // Small leafy flutter on top.
+            vec3 fl = vec3(sin(uLeafTime * 5.3 + position.x * 9.0 + ph), 0.0, cos(uLeafTime * 4.7 + position.z * 9.0 + ph)) * 0.04 * k * bend;
+            vec3 w = uWindDir * metres + fl;
+            // World-space offset into the tree's own (rotated, scaled) space.
+            transformed += (transpose(m) * w) / s2;
+          }
+        }
+        #endif`);
+    shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+        {
+          vec3 wp = vCloudWorld;
+          float m = cNoise(wp.xz * 0.45 + wp.y * 0.6) * 0.6 + cNoise(wp.xz * 1.7 - wp.y * 1.3) * 0.4;
+          diffuseColor.rgb *= mix(vec3(0.84, 0.86, 0.86), vec3(1.12, 1.12, 0.96), m);
+        }`);
+  };
+  const prevKey = material.customProgramCacheKey?.bind(material);
+  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|leaves`;
+  material.needsUpdate = true;
+  return material;
+}

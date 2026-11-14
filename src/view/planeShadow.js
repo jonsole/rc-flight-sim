@@ -101,6 +101,7 @@ export class PlaneShadow {
       if (o.isMesh) {
         o.layers.enable(this.layer);
         o.castShadow = false;
+        o.receiveShadow = true; // trees, buildings etc. shade the plane
       }
     });
   }

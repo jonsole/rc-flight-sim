@@ -10,7 +10,7 @@ import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY } from '..
 import { sunPosition, moonPosition } from './sun.js';
 import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail } from './ground.js';
-import { broadleafCrown, conifer, trunk } from './trees.js';
+import { broadleafCrown, conifer, trunk, addLeafShading, leafUniforms } from './trees.js';
 import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes } from './props.js';
 
 const smooth = (e0, e1, x) => {
@@ -456,13 +456,21 @@ export class World {
     this.scene.add(rail);
   }
 
+  /** Leaf sway and wind: time in seconds, wind speed m/s and direction it blows FROM (degrees). */
+  updateTrees(t, windSpeed, windFromDeg) {
+    leafUniforms.uLeafTime.value = t;
+    leafUniforms.uWindSpeed.value = windSpeed;
+    const from = (windFromDeg * Math.PI) / 180;
+    leafUniforms.uWindDir.value.set(-Math.sin(from), 0, Math.cos(from));
+  }
+
   #trees() {
     const count = this.obstacles.trees.length;
     // A few shapes of each kind, picked per tree, so the woods don't repeat.
     const crownGeos = [broadleafCrown(11), broadleafCrown(23), broadleafCrown(37), broadleafCrown(53), broadleafCrown(71)];
     const coniferGeos = [conifer(5), conifer(17), conifer(29)];
     const trunkGeo = trunk(3);
-    const leafMat = addCloudShadows(new MeshLambertMaterial({ vertexColors: true }));
+    const leafMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })));
     this.leafMat = leafMat;
     const barkMat = addCloudShadows(new MeshLambertMaterial({ color: '#5a4632', vertexColors: true }));
     const mk = (geo, mat) => new InstancedMesh(geo, mat, count);

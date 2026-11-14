@@ -444,6 +444,7 @@ function frame(now) {
     mp.sendHit(hit.peer.id, hit.theirPart, hit.relSpeed);
   }
   world.updateShadows();
+  world.updateTrees(now / 1000, wind.speed + wind.gust.length() * 0.5, wind.directionDeg);
   planeShadow.update(renderer, aircraft.position, world.lightDir, shadowDark);
   world.updateWindsock(wind.at(new Vector3(-35, 5, -42), 0, windTmp));
   if (!paused) world.updateClouds(dt, windTmp);
