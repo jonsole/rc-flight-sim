@@ -171,3 +171,10 @@ Each aircraft is a registry entry in `src/aircraft/index.js`:
 Another size of S.E.5a is one `buildSE5a({...})` call in `src/aircraft/se5a.js`.
 A different type needs its own definition and 3D model module. The flight
 tests run automatically for every registered aircraft.
+
+## Multiplayer
+
+Players who join the same room code see each other's aeroplanes (menu → Multiplayer, or share an invite link `…/?room=CODE`). Each browser flies its own aeroplane and sends its state about 15 times a second through a small relay server, `server/`: a Cloudflare Worker with one Durable Object per room. Everything goes over secure WebSocket on port 443, so it works behind NAT and firewalls; no peer-to-peer connections are made.
+
+- Local relay: `cd server && npm install && npx wrangler dev` (then set Server to `ws://127.0.0.1:8787` in the Multiplayer menu).
+- Deploy: `cd server && npx wrangler deploy`, then put the `wss://…workers.dev` address in `src/net/config.js` (or build with `VITE_MP_SERVER`).

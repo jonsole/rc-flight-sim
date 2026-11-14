@@ -1,0 +1,14 @@
+{
+  "name": "rc-flight-sim-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multiplayer relay for the RC flight sim: one Durable Object per room passes each player's state to the others over WebSocket.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.162.0"
+  }
+}

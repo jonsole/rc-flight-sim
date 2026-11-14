@@ -63,13 +63,21 @@ export class Panel {
     return el('label', { class: 'row' }, el('span', { class: 'lbl' }, label), s);
   }
 
+  #text(label, key, attrs = {}) {
+    const i = el('input', {
+      type: 'text', value: this.settings[key] ?? '', spellcheck: 'false', autocomplete: 'off', ...attrs,
+      onchange: (e) => this.#set(key, e.target.value.trim()),
+    });
+    return el('label', { class: 'row' }, el('span', { class: 'lbl' }, label), i);
+  }
+
   #check(label, key) {
     const c = el('input', { type: 'checkbox', checked: this.settings[key], onchange: (e) => this.#set(key, e.target.checked) });
     return el('label', { class: 'row' }, el('span', { class: 'lbl' }, label), c);
   }
 
   render() {
-    const tabs = { fly: 'Flying', view: 'View', env: 'Weather', controls: 'Transmitter', help: 'Help' };
+    const tabs = { fly: 'Flying', mp: 'Multiplayer', view: 'View', env: 'Weather', controls: 'Transmitter', help: 'Help' };
     this.root.replaceChildren(
       el('div', { class: 'panel' },
         el('div', { class: 'panel-head' },
@@ -91,6 +99,56 @@ export class Panel {
       this.#range('Volume', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.#check('Show HUD / OSD (H)', 'showHud'),
     ];
+  }
+
+  tab_mp() {
+    const mp = this.opts.mp;
+    const o = this.opts;
+    const status = {
+      off: 'Not connected.',
+      connecting: 'Connecting…',
+      on: `Connected to room ${mp.room}.`,
+      error: mp.error || 'Connection failed.',
+    }[mp.status];
+    const out = [
+      el('p', { class: 'hint' }, 'Fly with friends: everyone who joins the same room code sees each other\'s aeroplanes. Each player keeps their own weather.'),
+      this.#text('Your name', 'mpName', { maxlength: 20 }),
+      el('label', { class: 'row' },
+        el('span', { class: 'lbl' }, 'Room code'),
+        el('input', {
+          type: 'text', value: this.settings.mpRoom, maxlength: 24, spellcheck: 'false', autocomplete: 'off', style: 'text-transform: uppercase',
+          onchange: (e) => this.#set('mpRoom', e.target.value.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '')),
+        }),
+        el('button', { onclick: () => { this.#set('mpRoom', o.newRoomCode()); this.render(); } }, 'New code')),
+      el('div', { class: 'row' },
+        mp.status === 'on' || mp.status === 'connecting'
+          ? el('button', { onclick: () => o.onMpDisconnect() }, 'Disconnect')
+          : el('button', { onclick: () => o.onMpConnect(), disabled: !this.settings.mpRoom }, 'Connect'),
+        el('span', { class: mp.status === 'error' ? 'mp-status err' : 'mp-status' }, status)),
+    ];
+    if (mp.status === 'on') {
+      const name = (id) => getAircraft(id)?.name || id;
+      out.push(
+        el('h3', {}, `Pilots in the room (${mp.peers.size + 1})`),
+        el('ul', { class: 'mp-list' },
+          el('li', {}, `${this.settings.mpName} (you): ${name(this.settings.aircraft)}`),
+          [...mp.peers.values()].map((p) => el('li', {}, `${p.name}: ${name(p.aircraft)}`))),
+        el('div', { class: 'row' },
+          el('span', { class: 'lbl' }, 'Invite link'),
+          el('input', { type: 'text', readonly: true, value: o.inviteLink(), onclick: (e) => e.target.select() }),
+          el('button', {
+            onclick: (e) => {
+              navigator.clipboard?.writeText(o.inviteLink()).then(() => (e.target.textContent = 'Copied'), () => {});
+            },
+          }, 'Copy')),
+      );
+    }
+    out.push(
+      el('h3', {}, 'Advanced'),
+      this.#text('Server', 'mpServer', { placeholder: o.defaultServer || 'wss://…' }),
+      el('p', { class: 'hint' }, 'Leave blank to use the built-in server.'),
+    );
+    return out;
   }
 
   tab_view() {

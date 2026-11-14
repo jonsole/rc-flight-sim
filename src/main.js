@@ -9,6 +9,9 @@ import { Input } from './input/input.js';
 import { TouchControls, isTouchDevice } from './input/touch.js';
 import { CameraRig, CAMERA_LABELS } from './view/cameras.js';
 import { Debris } from './view/debris.js';
+import { Peers } from './view/peers.js';
+import { Multiplayer } from './net/multiplayer.js';
+import { DEFAULT_MP_SERVER } from './net/config.js';
 import { OSD } from './ui/osd.js';
 import { Panel } from './ui/panel.js';
 import { loadSettings, saveSettings } from './ui/settings.js';
@@ -27,6 +30,11 @@ if (import.meta.env.VITE_CHANNEL === 'dev') {
 
 const settings = loadSettings();
 settings.losZoom = Number(settings.losZoom);
+if (!settings.mpName) settings.mpName = `Pilot ${100 + Math.floor(Math.random() * 900)}`;
+// Invite links: ?room=CODE fills in the room and joins when you start flying.
+const inviteRoom = new URLSearchParams(location.search).get('room');
+if (inviteRoom) settings.mpRoom = inviteRoom.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 24);
+saveSettings(settings);
 
 // --- Renderer ----------------------------------------------------------------
 const canvas = document.getElementById('view');
@@ -146,6 +154,7 @@ function resetAircraft() {
 /** User picked a different model: load it with its default flight assist. */
 function selectAircraft(id) {
   loadAircraft(id);
+  mp.setInfo(settings.mpName, entry.id);
   settings.assist = entry.defaultAssist;
   applySettings();
   saveSettings(settings);
@@ -154,10 +163,57 @@ function selectAircraft(id) {
   updateSplash();
 }
 
+// --- Multiplayer -------------------------------------------------------------
+const mp = new Multiplayer();
+const peers = new Peers(world.scene, ground);
+const mpBadge = document.getElementById('mp-badge');
+const mpToast = document.getElementById('mp-toast');
+const mpServer = () => settings.mpServer || DEFAULT_MP_SERVER;
+function toast(text) {
+  const d = document.createElement('div');
+  d.textContent = text;
+  mpToast.append(d);
+  setTimeout(() => (d.style.opacity = '0'), 3500);
+  setTimeout(() => d.remove(), 4200);
+}
+function mpConnect() {
+  if (!settings.mpRoom) return;
+  mp.connect(mpServer(), settings.mpRoom, settings.mpName, entry.id);
+}
+mp.onEvent = (type, p) => {
+  if (type === 'join') toast(`${p.name} joined (${getAircraft(p.aircraft).name})`);
+  if (type === 'leave' && mp.connected) toast(`${p.name} left`);
+  if (type === 'status' && mp.status === 'on') toast(`Joined room ${mp.room}`);
+  if (type === 'status' && mp.status === 'error') toast(`Multiplayer: ${mp.error}`);
+  mpBadge.style.display = mp.connected ? 'block' : 'none';
+  mpBadge.textContent = `Room ${mp.room} · ${mp.peers.size + 1} ${mp.peers.size ? 'pilots' : 'pilot'}`;
+  if (panel?.visible && panel.tab === 'mp') panel.render();
+};
+function newRoomCode() {
+  const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({ length: 5 }, () => a[Math.floor(Math.random() * a.length)]).join('');
+}
+
 const panel = new Panel(document.getElementById('panel'), {
   settings,
   input,
+  mp,
+  defaultServer: DEFAULT_MP_SERVER,
+  newRoomCode,
+  inviteLink: () => `${location.origin}${location.pathname}?room=${encodeURIComponent(mp.room)}`,
+  onMpConnect: () => {
+    mpConnect();
+    panel.render();
+  },
+  onMpDisconnect: () => {
+    mp.disconnect();
+    panel.render();
+  },
   onChange(key, value) {
+    if (key === 'mpName') {
+      settings.mpName = value || settings.mpName;
+      mp.setInfo(settings.mpName, entry.id);
+    }
     if (key === 'losZoom') settings.losZoom = Number(value);
     applySettings();
     saveSettings(settings);
@@ -244,6 +300,7 @@ document.getElementById('start').addEventListener('click', () => {
   document.getElementById('splash').remove();
   sound.start();
   paused = false;
+  if (inviteRoom) mpConnect();
 });
 window.addEventListener('pointerdown', () => sound.start(), { once: true });
 
@@ -287,6 +344,9 @@ function frame(now) {
     debris.update(dt);
     osd.update(dt, aircraft);
   }
+  // Others see you even while your menu is open.
+  mp.update(dt, aircraft);
+  peers.update(mp.peers, dt);
 
   model.root.position.copy(aircraft.position);
   model.root.quaternion.copy(aircraft.orientation);
@@ -331,6 +391,7 @@ window.sim = {
   },
   world,
   rig,
+  mp,
   input,
   settings,
   selectAircraft,
