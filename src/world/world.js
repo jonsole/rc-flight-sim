@@ -378,37 +378,6 @@ export class World {
     return 1 - ratio ** (1 / 2.2); // as displayed (sRGB)
   }
 
-  /**
-   * Swap the trees round the flying field for realistic EZ-Tree trees
-   * (loaded in the background; see ezTrees.js). The simple versions of
-   * those trees are hidden; the rest stay as they are.
-   */
-  async upgradeTrees() {
-    const { buildEzTrees } = await import('./ezTrees.js');
-    const near = [];
-    const idx = [];
-    this.obstacles.trees.forEach((t, i) => {
-      if (Math.hypot(t.x, t.z + 40) < 320) {
-        near.push(t);
-        idx.push(i);
-      }
-    });
-    this.ezTrees = await buildEzTrees(this.scene, near);
-    const zero = new Object3D();
-    zero.scale.setScalar(0);
-    zero.updateMatrix();
-    const touched = new Set();
-    for (const i of idx) {
-      const [mesh, slot] = this.treeSlots[i];
-      mesh.setMatrixAt(slot, zero.matrix);
-      this.trees.trunks.setMatrixAt(i, zero.matrix);
-      touched.add(mesh);
-    }
-    for (const m of [...touched, this.trees.trunks]) m.instanceMatrix.needsUpdate = true;
-    if (this.shadows) this.shadows.dirty = true;
-    return near.length;
-  }
-
   /** Scenery shadows (see shadows.js). */
   attachShadows(shadows) {
     this.shadows = shadows;
@@ -501,7 +470,6 @@ export class World {
     const crowns = crownGeos.map((g) => mk(g, leafMat));
     const conifers = coniferGeos.map((g) => mk(g, leafMat));
     const nCrown = crowns.map(() => 0);
-    this.treeSlots = []; // tree index -> [crown mesh, instance]
     const nCon = conifers.map(() => 0);
     const o = new Object3D();
     const col = new Color();
@@ -522,7 +490,6 @@ export class World {
         o.position.set(x, y + h * 0.1, z);
         o.scale.set(h * 0.22, h * 0.95, h * 0.22);
         o.updateMatrix();
-        this.treeSlots[i] = [conifers[k], nCon[k]];
         conifers[k].setMatrixAt(nCon[k], o.matrix);
         conifers[k].setColorAt(nCon[k]++, col);
       } else {
@@ -530,7 +497,6 @@ export class World {
         o.position.set(x, y + h * 0.62, z);
         o.scale.set(t.crownW * 1.05, h * 0.4, t.crownW * 1.05);
         o.updateMatrix();
-        this.treeSlots[i] = [crowns[k], nCrown[k]];
         crowns[k].setMatrixAt(nCrown[k], o.matrix);
         crowns[k].setColorAt(nCrown[k]++, col);
       }

@@ -363,9 +363,6 @@ function updateSplash() {
 }
 updateSplash();
 
-// Realistic trees round the field: loaded in the background once running.
-setTimeout(() => world.upgradeTrees().catch((e) => console.warn('Trees:', e)), 1500);
-
 document.getElementById('start').addEventListener('click', () => {
   document.getElementById('splash').remove();
   sound.start();
@@ -447,7 +444,6 @@ function frame(now) {
     mp.sendHit(hit.peer.id, hit.theirPart, hit.relSpeed);
   }
   world.updateShadows();
-  world.ezTrees?.update(now / 1000);
   planeShadow.update(renderer, aircraft.position, world.lightDir, shadowDark);
   world.updateWindsock(wind.at(new Vector3(-35, 5, -42), 0, windTmp));
   if (!paused) world.updateClouds(dt, windTmp);
