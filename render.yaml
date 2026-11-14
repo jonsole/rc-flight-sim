@@ -1,0 +1,15 @@
+# Render Blueprint for the multiplayer relay (server/).
+# One-click deploy: https://render.com/deploy?repo=https://github.com/jonsole/rc-flight-sim
+services:
+  - type: web
+    name: rc-flight-sim-relay
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: ALLOWED_ORIGINS
+        value: https://jonsole.github.io

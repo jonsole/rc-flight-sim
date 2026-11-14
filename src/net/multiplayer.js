@@ -48,6 +48,27 @@ export class Multiplayer {
     }
     this.wantClose = false;
     this.#setStatus('connecting');
+    const attempt = (this.attempt = (this.attempt || 0) + 1);
+    // A free-tier server sleeps when idle: wake it with a plain request first
+    // (that can take up to a minute), then open the WebSocket.
+    const health = new URL(url);
+    health.protocol = health.protocol.replace(/^ws/, 'http');
+    health.pathname = '/';
+    const slow = setTimeout(() => {
+      if (attempt === this.attempt && this.status === 'connecting') this.#setStatus('connecting', 'Waking the server up (can take up to a minute)…');
+    }, 2500);
+    const ctl = new AbortController();
+    const giveUp = setTimeout(() => ctl.abort(), 90000);
+    fetch(health, { signal: ctl.signal, cache: 'no-store' })
+      .catch(() => {}) // try the WebSocket anyway
+      .then(() => {
+        clearTimeout(slow);
+        clearTimeout(giveUp);
+        if (attempt === this.attempt && this.status === 'connecting' && !this.wantClose) this.#open(url, name, aircraft);
+      });
+  }
+
+  #open(url, name, aircraft) {
     const ws = new WebSocket(url);
     this.ws = ws;
     ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', name, aircraft }));
@@ -66,6 +87,7 @@ export class Multiplayer {
   }
 
   disconnect() {
+    this.attempt = (this.attempt || 0) + 1; // cancel a pending wake-up
     if (this.ws) {
       this.wantClose = true;
       const ws = this.ws;

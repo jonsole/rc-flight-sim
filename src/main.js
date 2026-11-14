@@ -185,6 +185,7 @@ mp.onEvent = (type, p) => {
   if (type === 'leave' && mp.connected) toast(`${p.name} left`);
   if (type === 'status' && mp.status === 'on') toast(`Joined room ${mp.room}`);
   if (type === 'status' && mp.status === 'error') toast(`Multiplayer: ${mp.error}`);
+  if (type === 'status' && mp.status === 'connecting' && mp.error) toast(mp.error);
   mpBadge.style.display = mp.connected ? 'block' : 'none';
   mpBadge.textContent = `Room ${mp.room} · ${mp.peers.size + 1} ${mp.peers.size ? 'pilots' : 'pilot'}`;
   if (panel?.visible && panel.tab === 'mp') panel.render();

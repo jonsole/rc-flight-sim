@@ -106,7 +106,7 @@ export class Panel {
     const o = this.opts;
     const status = {
       off: 'Not connected.',
-      connecting: 'Connecting…',
+      connecting: mp.error || 'Connecting…',
       on: `Connected to room ${mp.room}.`,
       error: mp.error || 'Connection failed.',
     }[mp.status];
