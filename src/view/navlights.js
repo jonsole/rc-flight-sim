@@ -62,11 +62,11 @@ export function addNavLights(model, { shine = false } = {}) {
   const e = extremes(root);
   // Lights hang off the model's root so they move with it.
   const holder = root;
-  const L = led('#ff3020', 22);
-  const R = led('#20ff50', 22);
-  const T = led('#ffffff', 18);
-  const SL = led('#ffffff', 40);
-  const SR = led('#ffffff', 40);
+  const L = led('#ff3020', 18);
+  const R = led('#20ff50', 18);
+  const T = led('#ffffff', 15);
+  const SL = led('#ffffff', 32);
+  const SR = led('#ffffff', 32);
   const nudge = 0.01;
   L.position.copy(e.left).add(new Vector3(0, 0, -nudge));
   R.position.copy(e.right).add(new Vector3(0, 0, nudge));
@@ -83,7 +83,7 @@ export function addNavLights(model, { shine = false } = {}) {
   const lamps = [];
   if (shine) {
     for (const [s, color] of [[L, '#ff3020'], [R, '#20ff50'], [T, '#ffffff']]) {
-      const lamp = new PointLight(color, 0, 4.5, 2);
+      const lamp = new PointLight(color, 0, 3.5, 2);
       lamp.position.copy(s.position);
       lamp.userData.base = color;
       lamp.userData.led = s;
@@ -114,7 +114,7 @@ export function addNavLights(model, { shine = false } = {}) {
         // Steady glow, much brighter and white during a strobe flash.
         const flash = led !== T && strobe > 0;
         lamp.color.set(flash ? '#ffffff' : lamp.userData.base);
-        lamp.intensity = lit ? night * (flash ? 6 : 1.6) : 0;
+        lamp.intensity = lit ? night * (flash ? 1.8 : 0.35) : 0;
       }
     },
   };
