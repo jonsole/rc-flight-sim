@@ -17,23 +17,14 @@ function makeTrees() {
   const trees = [];
   let rnd = 12345;
   const rand = () => ((rnd = (rnd * 16807) % 2147483647) / 2147483647);
-  // The tree line round the field grows in clumps with gaps between them:
-  // each tree is either near the last one or starts a new clump.
-  let ringA = 0;
-  let ringR = 200;
   for (let i = 0; i < 1800; i++) {
     let x;
     let z;
     if (i < 500) {
-      if (rand() < 0.22) {
-        ringA = rand() * Math.PI * 2;
-        ringR = 170 + rand() * 60;
-      } else {
-        ringA += (rand() - 0.5) * 0.07;
-        ringR = Math.min(240, Math.max(165, ringR + (rand() - 0.5) * 14));
-      }
-      x = Math.cos(ringA) * ringR * 1.3;
-      z = Math.sin(ringA) * ringR - 40;
+      const a = rand() * Math.PI * 2;
+      const r = 170 + rand() * 60;
+      x = Math.cos(a) * r * 1.3;
+      z = Math.sin(a) * r - 40;
       if (z > 20 && Math.abs(x) < 60) z += 80; // keep the view behind the pilot open
     } else {
       const cx = Math.floor(rand() * 14);
@@ -43,32 +34,19 @@ function makeTrees() {
       z = Math.sin(ca * 2.1) * cr + (rand() - 0.5) * 140;
     }
     const y = heightAt(x, z);
-    // Mostly mid-sized trees, a few young ones and a few big old ones.
-    const sz = rand();
-    const h = sz < 0.15 ? 5 + rand() * 4 : sz > 0.9 ? 19 + rand() * 6 : 9 + rand() * 11;
+    const h = 9 + rand() * 12;
     const conifer = rand() < 0.3;
     const rot = rand() * Math.PI * 2;
     const tree = { x, y, z, h, conifer, rot };
-    const c = rand();
     if (conifer) {
-      tree.hue = 0.28 + rand() * 0.1; // olive to blue-green
-      tree.sat = 0.25 + rand() * 0.2;
-      tree.light = 0.13 + rand() * 0.09;
+      tree.hue = 0.3 + rand() * 0.04;
+      tree.sat = 0.35;
+      tree.light = 0.16 + rand() * 0.06;
     } else {
-      // Crown shape: narrow and tall, round, or broad and spreading.
-      const shape = rand();
-      tree.crownW = h * (shape < 0.2 ? 0.2 + rand() * 0.06 : shape > 0.8 ? 0.42 + rand() * 0.12 : 0.28 + rand() * 0.12);
-      tree.crownH = h * (shape < 0.2 ? 0.38 + rand() * 0.05 : 0.32 + rand() * 0.09);
-      if (c < 0.06) {
-        // The odd tree already turning: yellow, orange or coppery.
-        tree.hue = 0.07 + rand() * 0.08;
-        tree.sat = 0.45 + rand() * 0.2;
-        tree.light = 0.24 + rand() * 0.08;
-      } else {
-        tree.hue = 0.19 + rand() * 0.12; // yellow-green to deep green
-        tree.sat = 0.32 + rand() * 0.28;
-        tree.light = 0.15 + rand() * 0.15;
-      }
+      tree.crownW = h * (0.28 + rand() * 0.12);
+      tree.hue = 0.22 + rand() * 0.07;
+      tree.sat = 0.4 + rand() * 0.15;
+      tree.light = 0.2 + rand() * 0.1;
     }
     trees.push(tree);
   }
@@ -85,7 +63,7 @@ export class Obstacles {
       if (t.conifer) {
         this.shapes.push({ type: 'cone', name: 'a tree', x: t.x, z: t.z, r: t.h * 0.22, y0: t.y + t.h * 0.15, h: t.h * 0.9 });
       } else {
-        this.shapes.push({ type: 'ellipsoid', name: 'a tree', cx: t.x, cy: t.y + t.h - t.crownH, cz: t.z, rx: t.crownW, ry: t.crownH, rz: t.crownW });
+        this.shapes.push({ type: 'ellipsoid', name: 'a tree', cx: t.x, cy: t.y + t.h * 0.62, cz: t.z, rx: t.crownW, ry: t.h * 0.38, rz: t.crownW });
       }
     }
     // Clubhouse behind the pilot: walls, pitched roof (eaves to ridge).

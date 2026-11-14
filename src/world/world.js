@@ -494,8 +494,8 @@ export class World {
         conifers[k].setColorAt(nCon[k]++, col);
       } else {
         const k = pick % crowns.length;
-        o.position.set(x, y + h - t.crownH, z);
-        o.scale.set(t.crownW * 1.05, t.crownH * 1.05, t.crownW * 1.05);
+        o.position.set(x, y + h * 0.62, z);
+        o.scale.set(t.crownW * 1.05, h * 0.4, t.crownW * 1.05);
         o.updateMatrix();
         crowns[k].setMatrixAt(nCrown[k], o.matrix);
         crowns[k].setColorAt(nCrown[k]++, col);
