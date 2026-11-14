@@ -277,10 +277,11 @@ export class World {
   #lights() {
     this.hemi = new HemisphereLight('#cfe3ff', '#4d5a33', 1.1);
     this.scene.add(this.hemi);
-    // The sun's (or moon's) strength and colour live here; the cascaded
-    // shadow lights (shadows.js) do the actual lighting.
+    // The sun (or moon at night). Its shadow map covers the flying area and
+    // is redrawn only when it moves (shadows.js).
     const sun = new DirectionalLight('#fff3df', 2.6);
     this.sun = sun;
+    this.scene.add(sun, sun.target);
   }
 
   /**
@@ -348,7 +349,7 @@ export class World {
     cloudUniforms.cloudShadowStrength.value = 0.75 * daylight + 0.2 * night;
     this.clouds.setLight(this.sun.color, this.sun.intensity, this.scene.fog.color, night);
     // Tree shadows: soft in low sun, faint by moonlight.
-    this.shadows?.setLight(this.lightDir, this.sun.intensity, this.sun.color);
+    this.shadows?.setDirection(this.lightDir);
   }
 
   /** Cloud cover, 0 (clear) to 1 (overcast). */
@@ -362,11 +363,10 @@ export class World {
     this.clouds.update(dt, wind);
   }
 
-  /** Cascaded soft shadows for the whole scene (see shadows.js). */
+  /** Scenery shadows (see shadows.js). */
   attachShadows(shadows) {
     this.shadows = shadows;
-    shadows.prepare(this.scene);
-    shadows.setLight(this.lightDir, this.sun.intensity, this.sun.color);
+    shadows.setDirection(this.lightDir);
   }
 
   /** Every frame, after the camera has moved. */

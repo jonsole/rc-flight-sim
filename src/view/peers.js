@@ -94,7 +94,7 @@ export class Peers {
     const model = entry.createModel();
     model.setPilotVisible(true);
     const nav = addNavLights(model);
-    this.prepare?.(model.root); // shadows: register its materials
+    const shadow = this.addShadow?.(model, entry.def.wingSpan); // its shadow on the ground
     this.scene.add(model.root);
     const tag = labelSprite();
     this.scene.add(tag);
@@ -114,6 +114,7 @@ export class Peers {
       proxy,
       model,
       nav,
+      shadow,
       tag,
       label,
       arrow,
@@ -129,6 +130,7 @@ export class Peers {
   #remove(id) {
     const v = this.views.get(id);
     if (!v) return;
+    v.shadow?.dispose();
     this.scene.remove(v.model.root, v.tag);
     dispose(v.model.root);
     dispose(v.tag);
@@ -168,6 +170,7 @@ export class Peers {
       v.tag.visible = visible;
       v.label.style.display = visible ? '' : 'none';
       if (!visible) {
+        if (v.shadow) v.shadow.decal.visible = false;
         v.sweep = {};
         continue;
       }
@@ -195,6 +198,8 @@ export class Peers {
       v.model.root.position.copy(ac.position);
       v.model.root.quaternion.copy(ac.orientation);
       v.model.update(ac, dt);
+      const sc = this.shadowCtx;
+      if (v.shadow && sc) v.shadow.update(sc.renderer, ac.position, sc.lightDir, sc.strength);
       v.nav.update(this.night || 0, now, camera, h, ac.broken);
 
       // Mid-air collision with me (against the aeroplane as drawn).
