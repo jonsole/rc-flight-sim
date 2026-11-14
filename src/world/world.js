@@ -10,6 +10,7 @@ import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY } from '..
 import { sunPosition, moonPosition } from './sun.js';
 import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail } from './ground.js';
+import { broadleafCrown, conifer, trunk } from './trees.js';
 
 const smooth = (e0, e1, x) => {
   const t = MathUtils.clamp((x - e0) / (e1 - e0), 0, 1);
@@ -468,46 +469,51 @@ export class World {
 
   #trees() {
     const count = this.obstacles.trees.length;
-    const trunkGeo = new CylinderGeometry(0.25, 0.4, 1, 6);
-    trunkGeo.translate(0, 0.5, 0);
-    const crownGeo = new IcosahedronGeometry(1, 1);
-    const coniferGeo = new ConeGeometry(1, 1, 8);
-    coniferGeo.translate(0, 0.5, 0);
-    const trunkMat = addCloudShadows(new MeshStandardMaterial({ color: '#4b3a2a', roughness: 1 }));
-    const crownMat = addCloudShadows(new MeshStandardMaterial({ color: '#ffffff', roughness: 0.95, flatShading: true }));
-    const trunks = new InstancedMesh(trunkGeo, trunkMat, count);
-    const crowns = new InstancedMesh(crownGeo, crownMat, count);
-    const conifers = new InstancedMesh(coniferGeo, crownMat, count);
+    // A few shapes of each kind, picked per tree, so the woods don't repeat.
+    const crownGeos = [broadleafCrown(11), broadleafCrown(23), broadleafCrown(37)];
+    const coniferGeos = [conifer(5), conifer(17)];
+    const trunkGeo = trunk(3);
+    const leafMat = addCloudShadows(new MeshLambertMaterial({ vertexColors: true }));
+    const barkMat = addCloudShadows(new MeshLambertMaterial({ color: '#5a4632', vertexColors: true }));
+    const mk = (geo, mat) => new InstancedMesh(geo, mat, count);
+    const trunks = mk(trunkGeo, barkMat);
+    const crowns = crownGeos.map((g) => mk(g, leafMat));
+    const conifers = coniferGeos.map((g) => mk(g, leafMat));
+    const nCrown = crowns.map(() => 0);
+    const nCon = conifers.map(() => 0);
     const o = new Object3D();
     const col = new Color();
-    let nc = 0;
-    let nf = 0;
     // Same layout the physics collides with (src/sim/obstacles.js).
     this.obstacles.trees.forEach((t, i) => {
       const { x, y, z, h } = t;
+      const pick = Math.floor(((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1 * 1000);
       o.rotation.set(0, t.rot, 0);
       o.position.set(x, y - 0.2, z);
-      o.scale.set(1, h * 0.45, 1);
+      o.scale.set(t.conifer ? 0.7 : 1, h * (t.conifer ? 0.3 : 0.5), t.conifer ? 0.7 : 1);
       o.updateMatrix();
       trunks.setMatrixAt(i, o.matrix);
-      col.setHSL(t.hue, t.sat, t.light);
+      // Leaf colour per tree, a little brighter than before (the shapes
+      // carry their own shading).
+      col.setHSL(t.hue, t.sat, t.light * 1.12 + 0.02);
       if (t.conifer) {
-        o.position.set(x, y + h * 0.15, z);
-        o.scale.set(h * 0.22, h * 0.9, h * 0.22);
+        const k = pick % conifers.length;
+        o.position.set(x, y + h * 0.1, z);
+        o.scale.set(h * 0.22, h * 0.95, h * 0.22);
         o.updateMatrix();
-        conifers.setMatrixAt(nf, o.matrix);
-        conifers.setColorAt(nf++, col);
+        conifers[k].setMatrixAt(nCon[k], o.matrix);
+        conifers[k].setColorAt(nCon[k]++, col);
       } else {
+        const k = pick % crowns.length;
         o.position.set(x, y + h * 0.62, z);
-        o.scale.set(t.crownW, h * 0.38, t.crownW);
+        o.scale.set(t.crownW * 1.05, h * 0.4, t.crownW * 1.05);
         o.updateMatrix();
-        crowns.setMatrixAt(nc, o.matrix);
-        crowns.setColorAt(nc++, col);
+        crowns[k].setMatrixAt(nCrown[k], o.matrix);
+        crowns[k].setColorAt(nCrown[k]++, col);
       }
     });
-    crowns.count = nc;
-    conifers.count = nf;
-    for (const m of [trunks, crowns, conifers]) {
+    crowns.forEach((m, k) => (m.count = nCrown[k]));
+    conifers.forEach((m, k) => (m.count = nCon[k]));
+    for (const m of [trunks, ...crowns, ...conifers]) {
       // Trees don't cast into the sun's shadow map (it only covers a few
       // metres around the model); they get soft ground shadows instead,
       // visible at any distance (see #updateTreeShadows).
