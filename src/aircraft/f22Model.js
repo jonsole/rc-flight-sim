@@ -81,34 +81,36 @@ export function createF22Model(G) {
     root.add(fin);
   }
 
-  // --- Fuselage: a 40 mm box, deep nose through the wing, low box behind -------
+  // --- Fuselage: printed nose fairing ahead of the wing, box under it ---------
   const F = G.fuselage;
-  const floor = wingTop - F.wingStep;
-  // Folded foam: full width right to the sharp tip, crisp corners.
-  const box = new Mesh(loft(F.stations.map(([x, b, t], i) => boxRing(x, F.halfWidth, floor + b, floor + t + (i === 0 ? 0.0008 : 0), 0.0015))), foam(C.box));
+  const under = G.wingY - T / 2;
+  const box = new Mesh(loft(F.stations.map(([x, b, t, hw]) => boxRing(x, hw, under + b, under + t, 0.003))), foam(C.box));
   root.add(box);
-  const topAt = (x) => {
+  const at = (x, k) => {
     const st = F.stations;
     for (let i = 0; i < st.length - 1; i++) {
-      if (x <= st[i][0] && x >= st[i + 1][0]) return floor + st[i][2] + ((st[i + 1][2] - st[i][2]) * (st[i][0] - x)) / (st[i][0] - st[i + 1][0]);
+      if (x <= st[i][0] && x >= st[i + 1][0]) return st[i][k] + ((st[i + 1][k] - st[i][k]) * (st[i][0] - x)) / (st[i][0] - st[i + 1][0]);
     }
-    return floor + st[st.length - 1][2];
+    return st[st.length - 1][k];
   };
 
-  // Canopy (parts 03 and 04): a full-width hump on top of the nose box.
+  // Canopy: a skin over the top of the fairing, growing from its front tip.
   const canopyMat = new MeshStandardMaterial({ color: C.canopy, roughness: 0.15, metalness: 0.5, flatShading: true });
-  const canopyRings = G.canopy.profile.map(([d, h]) => {
-    const x = G.canopy.front - d;
-    const base = topAt(x) - 0.0005;
-    return boxRing(x, F.halfWidth + 0.0005, base, base + Math.max(h, 0.0003), 0.004);
-  });
+  const canopyRings = [];
+  for (let i = 0; i <= 10; i++) {
+    const t = i / 10;
+    const x = G.canopy.front + (G.canopy.back - G.canopy.front) * t;
+    const top = under + at(x, 2) + 0.0006;
+    const depth = 0.0012 + 0.009 * Math.min(1, t * 2.5);
+    canopyRings.push(boxRing(x, at(x, 3) + 0.0006, top - depth, top, 0.003));
+  }
   const canopy = new Mesh(loft(canopyRings), canopyMat);
   canopy.userData.part = 'canopy';
   root.add(canopy);
 
   // --- Underneath: side plates down to the belly pan (the intakes) -----------
   const U = G.underbody;
-  const under = G.wingY - T / 2; // underside of the wing
+  // (under: the underside of the wing, defined above)
   const bottom = under - U.depth;
   for (const side of [-1, 1]) {
     for (let i = 0; i < U.plate.length - 1; i++) {
