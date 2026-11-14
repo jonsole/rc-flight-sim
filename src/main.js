@@ -134,17 +134,21 @@ function resetAircraft() {
   const dir = windFromEast ? 1 : -1; // fly towards the wind (+x = east)
   const heading = dir > 0 ? 0 : Math.PI;
   const startX = RUNWAY.x - dir * 40;
+  // In multiplayer, each player starts in their own lane so nobody spawns
+  // inside someone else's aeroplane.
+  const lane = mp.connected ? ((mp.myId - 1) % 4) - 1.5 : 0;
+  mpGraceUntil = performance.now() / 1000 + 3;
   if (settings.startMode === 'air') {
-    aircraft.resetInAir(new Vector3(startX + dir * 40, 30, RUNWAY.z - 10), heading, 14);
+    aircraft.resetInAir(new Vector3(startX + dir * 40, 30 + lane * 4, RUNWAY.z - 10 + lane * 8), heading, 14);
     input.kb.throttle = 0.5;
   } else if (entry.def.handLaunch) {
     // In the pilot's right hand at the flight line, half a metre ahead,
     // pointing along the runway into wind.
-    const hx = settings.pilotX + Math.cos(heading) * 0.5 + Math.sin(heading) * 0.3;
+    const hx = settings.pilotX + lane * 3 + Math.cos(heading) * 0.5 + Math.sin(heading) * 0.3;
     const hz = settings.pilotZ - Math.sin(heading) * 0.5 + Math.cos(heading) * 0.3;
     aircraft.resetHandLaunch(hx, hz, heading);
   } else {
-    aircraft.resetOnGround(startX, RUNWAY.z, heading);
+    aircraft.resetOnGround(startX, RUNWAY.z + lane * 4, heading);
   }
   osd.reset();
   rig.chaseInit = false;
@@ -165,6 +169,7 @@ function selectAircraft(id) {
 
 // --- Multiplayer -------------------------------------------------------------
 const mp = new Multiplayer();
+let mpGraceUntil = 0; // no collisions just after a reset
 const peers = new Peers(world.scene, ground);
 const mpBadge = document.getElementById('mp-badge');
 const mpToast = document.getElementById('mp-toast');
@@ -180,7 +185,14 @@ function mpConnect() {
   if (!settings.mpRoom) return;
   mp.connect(mpServer(), settings.mpRoom, settings.mpName, entry.id);
 }
-mp.onEvent = (type, p) => {
+mp.onEvent = (type, p, m) => {
+  if (type === 'hit' && !aircraft.crashed && !paused) {
+    aircraft.crash(`Collided with ${p.name}`);
+    aircraft.breakAt({ part: m.part, crashSpeed: 3 }, Number(m.speed) || 5);
+    const other = p.buf.items[p.buf.items.length - 1];
+    if (other) aircraft.velocity.lerp(other.v, 0.5);
+    return;
+  }
   if (type === 'join') toast(`${p.name} joined (${getAircraft(p.aircraft).name})`);
   if (type === 'leave' && mp.connected) toast(`${p.name} left`);
   if (type === 'status' && mp.status === 'on') toast(`Joined room ${mp.room}`);
@@ -347,7 +359,6 @@ function frame(now) {
   }
   // Others see you even while your menu is open.
   mp.update(dt, aircraft);
-  peers.update(mp.peers, dt);
 
   model.root.position.copy(aircraft.position);
   model.root.quaternion.copy(aircraft.orientation);
@@ -356,6 +367,18 @@ function frame(now) {
   const fpv = rig.mode === 'fpv';
   model.setPilotVisible(!(fpv && settings.fpvMount === 'cockpit'));
   rig.update(aircraft, dt);
+  // Other players (after the camera has moved, so their labels line up).
+  rig.camera.updateMatrixWorld();
+  const solid = mp.connected && !paused && !aircraft.crashed && now / 1000 > mpGraceUntil;
+  const hit = peers.update(mp.peers, dt, rig.camera, { aircraft, id: entry.id, solid });
+  if (hit) {
+    // Mid-air (or on the ground): the part that hit breaks off, and the other
+    // player is told so they crash too (their view of us is a little older).
+    aircraft.crash(`Collided with ${hit.peer.name}`);
+    aircraft.breakAt({ part: hit.sample.part, crashSpeed: 3 }, hit.relSpeed);
+    aircraft.velocity.lerp(hit.velocity, 0.5);
+    mp.sendHit(hit.peer.id, hit.theirPart, hit.relSpeed);
+  }
   world.followShadow(aircraft.position);
   world.updateWindsock(wind.at(new Vector3(-35, 5, -42), 0, windTmp));
 

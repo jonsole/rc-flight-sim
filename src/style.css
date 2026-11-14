@@ -45,6 +45,14 @@ button:disabled { opacity: 0.5; cursor: default; }
 .mp-status { color: #9fd29f; font-size: 13px; }
 .mp-status.err { color: #e88; }
 .mp-list { margin: 4px 0; padding-left: 20px; color: #dde; font-size: 14px; line-height: 1.6; }
+#mp-labels { position: fixed; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; }
+.mp-label {
+  position: absolute; transform: translate(-50%, -100%); white-space: nowrap;
+  padding: 1px 6px; border-radius: 4px; background: rgba(15,18,22,0.55); color: #fff; font: 600 11px/1.5 system-ui, sans-serif;
+}
+.mp-label .arrow { display: none; margin-right: 5px; vertical-align: -1px; line-height: 0; }
+.mp-label.edge { transform: translate(-50%, -50%); background: rgba(224,160,48,0.85); color: #111; }
+.mp-label.edge .arrow { display: inline-block; }
 #mp-badge {
   position: fixed; top: 10px; right: 12px; z-index: 5; pointer-events: none; display: none;
   padding: 3px 9px; border-radius: 6px; background: rgba(20,24,28,0.55); color: #fff; font: 600 12px/1.5 system-ui, sans-serif;

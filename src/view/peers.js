@@ -1,33 +1,14 @@
 // Draws the other players' aeroplanes: their own model, moved to the smoothed
-// pose from the network, with control surfaces, prop and damage, and a name
-// tag that stays readable at any distance.
-import { Sprite, SpriteMaterial, CanvasTexture, SRGBColorSpace, Vector3, Quaternion } from 'three';
+// pose from the network, with control surfaces, prop and damage. Each has a
+// small name label drawn in the scene (so your own aeroplane, trees and hills
+// hide it when they are in front), kept a fixed size on screen. Players out
+// of view get a marker on the left or right edge of the screen, on the side
+// they are on, with an arrow pointing their way. Also checks for mid-air
+// collisions with this player's aeroplane.
+import { Vector3, Quaternion, Sprite, SpriteMaterial, CanvasTexture, SRGBColorSpace } from 'three';
 import { Aircraft } from '../sim/aircraft.js';
 import { getAircraft } from '../aircraft/index.js';
-
-function nameTag(text) {
-  const c = document.createElement('canvas');
-  c.width = 256;
-  c.height = 64;
-  const g = c.getContext('2d');
-  g.font = 'bold 30px system-ui, sans-serif';
-  const w = Math.min(248, g.measureText(text).width + 24);
-  g.fillStyle = 'rgba(15,18,22,0.6)';
-  g.beginPath();
-  g.roundRect((256 - w) / 2, 10, w, 44, 10);
-  g.fill();
-  g.fillStyle = '#fff';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.fillText(text, 128, 33);
-  const t = new CanvasTexture(c);
-  t.colorSpace = SRGBColorSpace;
-  // Fixed size on screen (no perspective shrink), always on top.
-  const s = new Sprite(new SpriteMaterial({ map: t, sizeAttenuation: false, depthTest: false, transparent: true }));
-  s.scale.set(0.22, 0.055, 1);
-  s.renderOrder = 10;
-  return s;
-}
+import { buildShape, sweptHit } from '../net/collide.js';
 
 function dispose(obj) {
   obj.traverse((o) => {
@@ -39,6 +20,57 @@ function dispose(obj) {
   });
 }
 
+const shapes = new Map(); // aircraft id -> collision shape
+/** Collision shape for an aeroplane type (built once from a spare model). */
+export function shapeFor(id) {
+  if (!shapes.has(id)) {
+    const m = getAircraft(id).createModel();
+    shapes.set(id, buildShape(m.root));
+    dispose(m.root);
+  }
+  return shapes.get(id);
+}
+
+const _v = new Vector3();
+const _c = new Vector3();
+const LABEL_PX = 17; // label height on screen
+const RES = 3; // canvas pixels per screen pixel, for crisp text
+
+/** Name label as a sprite; redraw(text) updates it. */
+function labelSprite() {
+  const canvas = document.createElement('canvas');
+  const tex = new CanvasTexture(canvas);
+  tex.colorSpace = SRGBColorSpace;
+  const sprite = new Sprite(new SpriteMaterial({ map: tex, sizeAttenuation: false, transparent: true, depthWrite: false }));
+  sprite.center.set(0.5, 0); // anchored at its bottom edge, above the aeroplane
+  sprite.renderOrder = 5;
+  let current = '';
+  sprite.userData.redraw = (text) => {
+    if (text === current) return;
+    current = text;
+    const h = LABEL_PX * RES;
+    const g = canvas.getContext('2d');
+    const font = `600 ${Math.round(11 * RES)}px system-ui, sans-serif`;
+    g.font = font;
+    const w = Math.ceil(g.measureText(text).width + 12 * RES);
+    canvas.width = w;
+    canvas.height = h;
+    g.font = font;
+    g.fillStyle = 'rgba(15,18,22,0.6)';
+    g.beginPath();
+    g.roundRect(0, 0, w, h, 4 * RES);
+    g.fill();
+    g.fillStyle = '#fff';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(text, w / 2, h / 2 + RES);
+    tex.dispose(); // canvas size changed: re-upload
+    tex.needsUpdate = true;
+    sprite.userData.aspect = w / h;
+  };
+  return sprite;
+}
+
 export class Peers {
   /**
    * @param {import('three').Scene} scene
@@ -48,7 +80,9 @@ export class Peers {
     this.scene = scene;
     this.ground = ground;
     this.views = new Map(); // peer id -> view
-    this.pose = { p: new Vector3(), q: new Quaternion(), state: null };
+    this.layer = document.createElement('div');
+    this.layer.id = 'mp-labels';
+    document.body.append(this.layer);
   }
 
   #build(peer) {
@@ -58,10 +92,34 @@ export class Peers {
     const proxy = new Aircraft(entry.def, { ground: this.ground });
     const model = entry.createModel();
     model.setPilotVisible(true);
-    const tag = nameTag(peer.name);
-    this.scene.add(model.root, tag);
-    const tagHeight = 0.25 + 0.4 * (entry.def.wingSpan || 1); // just above it, whatever its size
-    return { aircraft: peer.aircraft, name: peer.name, proxy, model, tag, tagHeight, broken: '' };
+    this.scene.add(model.root);
+    const tag = labelSprite();
+    this.scene.add(tag);
+    const label = document.createElement('div');
+    label.className = 'mp-label';
+    // A narrow arrow pointing up, rotated towards the player. (A plain
+    // triangle looks the same every 120°, so it can't show direction.)
+    const arrow = document.createElement('span');
+    arrow.className = 'arrow';
+    arrow.innerHTML = '<svg viewBox="0 0 10 14" width="8" height="11"><path d="M5 0 L10 8 L6.5 8 L6.5 14 L3.5 14 L3.5 8 L0 8 Z" fill="currentColor"/></svg>';
+    const text = document.createElement('span');
+    label.append(arrow, text);
+    this.layer.append(label);
+    return {
+      aircraft: peer.aircraft,
+      name: peer.name,
+      proxy,
+      model,
+      tag,
+      label,
+      arrow,
+      text,
+      tagHeight: 0.15 + 0.3 * (entry.def.wingSpan || 1),
+      broken: '',
+      pose: { p: new Vector3(), q: new Quaternion(), state: null },
+      sweep: {},
+      shown: false,
+    };
   }
 
   #remove(id) {
@@ -70,16 +128,25 @@ export class Peers {
     this.scene.remove(v.model.root, v.tag);
     dispose(v.model.root);
     dispose(v.tag);
+    v.label.remove();
     this.views.delete(id);
   }
 
   /**
    * @param {Map} peers  Multiplayer.peers
    * @param {number} dt
+   * @param {import('three').PerspectiveCamera} camera
+   * @param {object} me  { aircraft, id (aircraft type), solid } this player
+   * @returns {{ peer, sample, relSpeed }|null} a collision with this player's aeroplane
    */
-  update(peers, dt) {
+  update(peers, dt, camera, me) {
     for (const id of this.views.keys()) if (!peers.has(id)) this.#remove(id);
     const now = performance.now() / 1000;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    let hit = null;
+    const myShape = me ? shapeFor(me.id) : null;
+    const myPose = me ? { p: me.aircraft.position, q: me.aircraft.orientation } : null;
     for (const peer of peers.values()) {
       let v = this.views.get(peer.id);
       if (v && (v.aircraft !== peer.aircraft || v.name !== peer.name)) {
@@ -90,15 +157,20 @@ export class Peers {
         v = this.#build(peer);
         this.views.set(peer.id, v);
       }
-      const ok = peer.buf.sample(now, this.pose);
+      const ok = peer.buf.sample(now, v.pose);
       // Hide players we have not heard from for a while.
       const visible = ok && peer.buf.age(now) < 3;
-      v.model.root.visible = v.tag.visible = visible;
-      if (!visible) continue;
-      const s = this.pose.state;
+      v.model.root.visible = visible;
+      v.tag.visible = visible;
+      v.label.style.display = visible ? '' : 'none';
+      if (!visible) {
+        v.sweep = {};
+        continue;
+      }
+      const s = v.pose.state;
       const ac = v.proxy;
-      ac.position.copy(this.pose.p);
-      ac.orientation.copy(this.pose.q);
+      ac.position.copy(v.pose.p);
+      ac.orientation.copy(v.pose.q);
       ac.velocity.fromArray(s.v || [0, 0, 0]);
       ac.rpm = s.rpm || 0;
       ac.propBroken = !!s.propBroken;
@@ -118,8 +190,61 @@ export class Peers {
       v.model.root.position.copy(ac.position);
       v.model.root.quaternion.copy(ac.orientation);
       v.model.update(ac, dt);
-      v.tag.position.copy(ac.position).y += v.tagHeight;
+
+      // Mid-air collision with me (against the aeroplane as drawn).
+      if (me?.solid && !hit) {
+        const c = sweptHit(myShape, myPose, shapeFor(peer.aircraft), v.pose, v.sweep);
+        if (c) hit = { peer, sample: c.sample, theirPart: c.theirPart, relSpeed: _v.copy(me.aircraft.velocity).sub(ac.velocity).length(), velocity: ac.velocity.clone() };
+      } else if (!me?.solid) {
+        v.sweep = {};
+      }
+
+      // Label: in the scene above the aeroplane when in view; otherwise a
+      // marker on the edge of the screen on the side the aeroplane is.
+      const dist = me ? me.aircraft.position.distanceTo(ac.position) : 0;
+      const text = dist > 30 ? `${peer.name} ${dist > 200 ? Math.round(dist / 10) * 10 : Math.round(dist)} m` : peer.name;
+      v.tag.position.copy(ac.position);
+      v.tag.position.y += v.tagHeight;
+      _v.copy(v.tag.position).project(camera);
+      _c.copy(v.tag.position).applyMatrix4(camera.matrixWorldInverse); // x right, y up, -z ahead
+      const inView = _c.z < 0 && Math.abs(_v.x) <= 1 && Math.abs(_v.y) <= 1;
+      v.tag.visible = inView;
+      v.label.style.display = inView ? 'none' : '';
+      if (inView) {
+        v.tag.userData.redraw(text);
+        // Constant size in pixels whatever the zoom: without size attenuation
+        // a sprite's screen height is scale * projection[1][1] * height / 2.
+        const sy = (2 * LABEL_PX) / (h * camera.projectionMatrix.elements[5]);
+        v.tag.scale.set(sy * (v.tag.userData.aspect || 4), sy, 1);
+        continue;
+      }
+      v.text.textContent = text;
+      const halfV = (camera.fov * Math.PI) / 360;
+      const halfH = Math.atan(Math.tan(halfV) * camera.aspect);
+      const az = Math.atan2(_c.x, -_c.z); // + = to the right, ±π = behind
+      const el = Math.atan2(_c.y, Math.hypot(_c.x, _c.z)); // + = above
+      let x;
+      let y;
+      if (Math.abs(az) > halfH) {
+        // Off to one side (or behind): that side's edge, at its height.
+        x = az >= 0 ? 1 : -1;
+        y = Math.max(-1, Math.min(1, el / halfV));
+      } else {
+        // Ahead but above or below the view: top or bottom edge.
+        x = Math.max(-1, Math.min(1, az / halfH));
+        y = el >= 0 ? 1 : -1;
+      }
+      // Arrow from the screen centre towards the aeroplane.
+      v.arrow.style.transform = `rotate(${Math.atan2(az, el)}rad)`;
+      v.label.classList.add('edge');
+      // Keep clear of the room badge (top) and flight readout (bottom).
+      const lw = v.label.offsetWidth / 2 + 6;
+      const top = 50;
+      const bottom = h - (h > 500 ? 110 : 70);
+      v.label.style.left = `${Math.min(w - lw, Math.max(lw, ((x + 1) / 2) * w))}px`;
+      v.label.style.top = `${Math.min(bottom, Math.max(top, ((1 - y) / 2) * h))}px`;
     }
+    return hit;
   }
 
   clear() {

@@ -62,3 +62,55 @@ describe('multiplayer state message', () => {
     expect(JSON.stringify(m).length).toBeLessThan(400);
   });
 });
+
+import { Group, Mesh, BoxGeometry, MeshBasicMaterial } from 'three';
+import { buildShape, sweptHit } from '../src/net/collide.js';
+
+describe('mid-air collisions', () => {
+  // A 0.9 m "wing" plate with a fuselage box: roughly a model aeroplane.
+  function plane() {
+    const g = new Group();
+    const wing = new Mesh(new BoxGeometry(0.2, 0.01, 0.9), new MeshBasicMaterial());
+    wing.userData.part = 'wingR';
+    const fus = new Mesh(new BoxGeometry(0.7, 0.08, 0.08), new MeshBasicMaterial());
+    g.add(wing, fus);
+    return buildShape(g);
+  }
+  const shape = plane();
+  const pose = (x, y = 0, z = 0) => ({ p: new Vector3(x, y, z), q: new Quaternion() });
+
+  it('builds a shape with a sensible size', () => {
+    expect(shape.radius).toBeGreaterThan(0.44);
+    expect(shape.radius).toBeLessThan(0.5);
+    expect(shape.samples.length).toBeGreaterThan(50);
+    expect(shape.samples.length).toBeLessThan(2000);
+  });
+
+  it('detects overlapping aeroplanes', () => {
+    expect(sweptHit(shape, pose(0.3, 0, 0.2), shape, pose(0), {})).not.toBeNull();
+  });
+
+  it('does not flag a near miss', () => {
+    expect(sweptHit(shape, pose(0, 0.3, 0), shape, pose(0), {})).toBeNull();
+    expect(sweptHit(shape, pose(0, 0, 1.0), shape, pose(0), {})).toBeNull();
+  });
+
+  it('catches a fast head-on pass between two frames', () => {
+    // Closing fast: in one frame it goes from just short to just past.
+    const state = {};
+    expect(sweptHit(shape, pose(0.8), shape, pose(0), state)).toBeNull(); // nose to nose, 10 cm apart
+    expect(sweptHit(shape, pose(-0.8), shape, pose(0), state)).not.toBeNull(); // a frame later: through and out
+  });
+
+  it('catches a pass that jumps right through in one frame', () => {
+    const state = {};
+    expect(sweptHit(shape, pose(0, 1.0, 0), shape, pose(0), state)).toBeNull(); // 1 m above
+    expect(sweptHit(shape, pose(0, -1.0, 0), shape, pose(0), state)).not.toBeNull(); // 1 m below: went through
+  });
+
+  it('a pass well clear stays clear', () => {
+    const state = {};
+    expect(sweptHit(shape, pose(-3, 0, 2), shape, pose(0), state)).toBeNull();
+    expect(sweptHit(shape, pose(3, 0, 2), shape, pose(0), state)).toBeNull();
+  });
+});

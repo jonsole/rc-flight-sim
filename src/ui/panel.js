@@ -117,13 +117,21 @@ export class Panel {
         el('span', { class: 'lbl' }, 'Room code'),
         el('input', {
           type: 'text', value: this.settings.mpRoom, maxlength: 24, spellcheck: 'false', autocomplete: 'off', style: 'text-transform: uppercase',
-          onchange: (e) => this.#set('mpRoom', e.target.value.trim().toUpperCase().replace(/[^A-Z0-9-]/g, '')),
+          // Save on every keystroke so Connect enables as soon as there is a code.
+          oninput: (e) => {
+            this.#set('mpRoom', e.target.value.trim().toUpperCase().replace(/[^A-Z0-9-]/g, ''));
+            const btn = this.root.querySelector('#mp-connect');
+            if (btn) btn.disabled = !this.settings.mpRoom;
+          },
+          onkeydown: (e) => {
+            if (e.key === 'Enter' && this.settings.mpRoom && (mp.status === 'off' || mp.status === 'error')) o.onMpConnect();
+          },
         }),
         el('button', { onclick: () => { this.#set('mpRoom', o.newRoomCode()); this.render(); } }, 'New code')),
       el('div', { class: 'row' },
         mp.status === 'on' || mp.status === 'connecting'
           ? el('button', { onclick: () => o.onMpDisconnect() }, 'Disconnect')
-          : el('button', { onclick: () => o.onMpConnect(), disabled: !this.settings.mpRoom }, 'Connect'),
+          : el('button', { id: 'mp-connect', onclick: () => o.onMpConnect(), disabled: !this.settings.mpRoom }, 'Connect'),
         el('span', { class: mp.status === 'error' ? 'mp-status err' : 'mp-status' }, status)),
     ];
     if (mp.status === 'on') {
