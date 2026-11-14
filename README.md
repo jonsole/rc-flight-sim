@@ -178,4 +178,4 @@ Players who join the same room code see each other's aeroplanes (menu → Multip
 
 - Hosting: Cloudflare Workers Builds deploys the relay from this repository on every push to main, using `wrangler.toml` at the repo root (no build command; deploy command `npx wrangler deploy`).
 - Local relay: `cd server && npm install && npm start` (or `npx wrangler dev`), then set Server to `ws://127.0.0.1:8787` in the Multiplayer menu.
-- The game's built-in server address is in `src/net/config.js` (or build with `VITE_MP_SERVER`).
+- The game connects to `wss://rc-flight-sim.jon-sole.workers.dev` (`src/net/config.js`, or build with `VITE_MP_SERVER`).
