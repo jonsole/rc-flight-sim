@@ -1,0 +1,18 @@
+# Multiplayer relay (Cloudflare Worker + Durable Objects).
+# Deployed by Cloudflare Workers Builds from this repo (root directory: server).
+# Manual deploy: cd server && npx wrangler deploy
+name = "rc-flight-sim"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[vars]
+# Pages that may connect (comma separated). Local dev servers are always allowed.
+ALLOWED_ORIGINS = "https://jonsole.github.io"

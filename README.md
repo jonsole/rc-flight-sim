@@ -174,8 +174,8 @@ tests run automatically for every registered aircraft.
 
 ## Multiplayer
 
-Players who join the same room code see each other's aeroplanes (menu → Multiplayer, or share an invite link `…/?room=CODE`). Each browser flies its own aeroplane and sends its state about 15 times a second through a small relay server, `server/relay.js` (Node + `ws`). Everything goes over secure WebSocket on port 443, so it works behind NAT and firewalls; no peer-to-peer connections are made.
+Players who join the same room code see each other's aeroplanes (menu → Multiplayer, or share an invite link `…/?room=CODE`). Each browser flies its own aeroplane and sends its state about 15 times a second through a small relay, `server/`: a Cloudflare Worker with one Durable Object per room (`server/relay.js` is the same relay as a plain Node server). Everything goes over secure WebSocket on port 443, so it works behind NAT and firewalls; no peer-to-peer connections are made.
 
-- Hosting: Render's free tier, set up from `render.yaml` with one click: <https://render.com/deploy?repo=https://github.com/jonsole/rc-flight-sim>. It sleeps after 15 minutes without players; the game wakes it when someone connects (up to a minute).
-- Local relay: `cd server && npm install && npm start`, then set Server to `ws://127.0.0.1:8787` in the Multiplayer menu.
-- The game connects to `wss://rc-flight-sim-relay.onrender.com` (`src/net/config.js`, or build with `VITE_MP_SERVER`).
+- Hosting: Cloudflare Workers Builds deploys `server/` from this repository on every push (root directory `server`, deploy command `npx wrangler deploy`).
+- Local relay: `cd server && npm install && npm start` (or `npx wrangler dev`), then set Server to `ws://127.0.0.1:8787` in the Multiplayer menu.
+- The game's built-in server address is in `src/net/config.js` (or build with `VITE_MP_SERVER`).
