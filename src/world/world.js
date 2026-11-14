@@ -11,6 +11,7 @@ import { sunPosition, moonPosition } from './sun.js';
 import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail } from './ground.js';
 import { broadleafCrown, conifer, trunk } from './trees.js';
+import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes } from './props.js';
 
 const smooth = (e0, e1, x) => {
   const t = MathUtils.clamp((x - e0) / (e1 - e0), 0, 1);
@@ -445,7 +446,7 @@ export class World {
     this.scene.add(rw);
 
     // Pilot box (gravel pad) and safety fence line
-    const pad = new Mesh(new PlaneGeometry(6, 4), new MeshStandardMaterial({ color: '#a39a86', roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 }));
+    const pad = new Mesh(new PlaneGeometry(6, 4), addCloudShadows(new MeshLambertMaterial({ map: gravelTexture(), polygonOffset: true, polygonOffsetFactor: -2 })));
     pad.rotation.x = -Math.PI / 2;
     pad.position.set(0, 0.002, 0.5);
     pad.receiveShadow = true;
@@ -474,6 +475,7 @@ export class World {
     const coniferGeos = [conifer(5), conifer(17)];
     const trunkGeo = trunk(3);
     const leafMat = addCloudShadows(new MeshLambertMaterial({ vertexColors: true }));
+    this.leafMat = leafMat;
     const barkMat = addCloudShadows(new MeshLambertMaterial({ color: '#5a4632', vertexColors: true }));
     const mk = (geo, mat) => new InstancedMesh(geo, mat, count);
     const trunks = mk(trunkGeo, barkMat);
@@ -577,20 +579,22 @@ export class World {
     this.scene.add(ws);
     this.windsock = sock;
 
-    // Club hut / hangar behind the pilot
-    const hut = new Group();
-    const body = new Mesh(new BoxGeometry(10, 3, 6), new MeshStandardMaterial({ color: '#8b6b4a', roughness: 0.9 }));
-    body.position.y = 1.5;
-    const roof = new Mesh(new BoxGeometry(10.6, 0.25, 7), new MeshStandardMaterial({ color: '#3d4a52', roughness: 0.7 }));
-    roof.position.y = 3.3;
-    roof.rotation.x = 0.06;
-    hut.add(body, roof);
-    hut.traverse((m) => {
+    // Club scenery (placement and collisions from src/sim/obstacles.js).
+    const ob = this.obstacles;
+    const shadowy = (o) => o.traverse((m) => {
+      if (!m.isMesh) return;
       m.castShadow = true;
       m.receiveShadow = true;
+      if (m.material && !m.material.userData.clouds) {
+        addCloudShadows(m.material);
+        m.material.userData.clouds = true;
+      }
     });
-    hut.position.set(-24, 0, 26);
-    this.scene.add(hut);
+    for (const o of [clubhouse(ob.hut), shippingContainer(ob.container), gazebo(ob.gazebo), ...ob.cars.map(car)]) {
+      shadowy(o);
+      this.scene.add(o);
+    }
+    for (const b of bushes(this.leafMat)) this.scene.add(b);
 
     // Flight-line table
     const table = new Mesh(new BoxGeometry(2, 0.06, 0.8), new MeshStandardMaterial({ color: '#c8c8c8' }));
