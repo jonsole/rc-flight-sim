@@ -36,7 +36,7 @@ export function partOf(name) {
   if (name === 'prop-low' || name === 'nose') return 'prop';
   if (name === 'wheel-L') return 'wheelL';
   if (name === 'wheel-R') return 'wheelR';
-  if (/fin-top|tail-end|skid|tail-wheel/.test(name)) return 'tail';
+  if (/fin-top|tail-end|skid|tail-wheel|stab-tip/.test(name)) return 'tail';
   if (/cabin-top|upper-centre|wing-top/.test(name)) return 'canopy';
   if (/tip-L|-L\d-le$/.test(name)) return 'wingL';
   if (/tip-R|-R\d-le$/.test(name)) return 'wingR';
@@ -546,8 +546,11 @@ export class Aircraft {
 
       const kSpring = c.k ?? 4000;
       const damp = c.c ?? 50;
-      let fn = kSpring * Math.min(depth, 0.05) - damp * vn;
-      if (depth > 0.05) fn += 30000 * (depth - 0.05);
+      // Wheels and skids give a few centimetres; airframe points (wing tips,
+      // tail) only about a centimetre before stiffening, so they don't sink in.
+      const soft = c.type === 'hard' || c.type === 'prop' ? 0.01 : 0.05;
+      let fn = kSpring * Math.min(depth, soft) - damp * vn;
+      if (depth > soft) fn += 30000 * (depth - soft);
       if (fn < 0) fn = 0;
       c.load = fn;
 

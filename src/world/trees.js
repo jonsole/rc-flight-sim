@@ -196,13 +196,13 @@ export function addLeafShading(material) {
             float hgt = sqrt(s2.y);
             vec3 org = instanceMatrix[3].xyz;
             float ph = org.x * 0.05 + org.z * 0.07; // gusts roll across the woods
-            float gust = 0.55 + 0.3 * sin(uLeafTime * 0.9 - ph) + 0.15 * sin(uLeafTime * 2.1 - ph * 1.6);
+            float gust = 0.45 + 0.4 * sin(uLeafTime * 0.9 - ph) + 0.15 * sin(uLeafTime * 2.1 - ph * 1.6);
             float bend = smoothstep(-1.0, 1.0, position.y);
             bend *= bend;
             // Metres at the top of the tree, along the wind.
-            float metres = k * gust * 0.045 * min(hgt, 8.0) * bend;
+            float metres = k * gust * 0.11 * min(hgt, 8.0) * bend;
             // Small leafy flutter on top.
-            vec3 fl = vec3(sin(uLeafTime * 5.3 + position.x * 9.0 + ph), 0.0, cos(uLeafTime * 4.7 + position.z * 9.0 + ph)) * 0.04 * k * bend;
+            vec3 fl = vec3(sin(uLeafTime * 5.3 + position.x * 9.0 + ph), 0.0, cos(uLeafTime * 4.7 + position.z * 9.0 + ph)) * 0.1 * k * bend;
             vec3 w = uWindDir * metres + fl;
             // World-space offset into the tree's own (rotated, scaled) space.
             transformed += (transpose(m) * w) / s2;
