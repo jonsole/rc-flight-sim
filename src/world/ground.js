@@ -66,9 +66,9 @@ export function addGroundDetail(material) {
         float mixAB = smoothstep(0.3, 0.7, gNoise(p / 37.0));
         vec4 grass = mix(texture2D(map, uvA), texture2D(map, uvB), mixAB);
         vec3 g = grass.rgb;
-        // Large, soft patches of lighter and darker grass.
-        float patches = gFbm(p / 23.0);
-        g *= 0.86 + 0.28 * patches;
+        // Large, soft patches of slightly lighter and darker grass.
+        float patches = gFbm(p / 31.0);
+        g *= 0.94 + 0.12 * patches;
 
         // Zones: mown around the runway and pits, field grass, then rough.
         float rField = length(p - vec2(${FIELD.x.toFixed(1)}, ${FIELD.z.toFixed(1)}));
@@ -77,7 +77,7 @@ export function addGroundDetail(material) {
         float mown = 1.0 - smoothstep(18.0, 26.0, min(dRunway, dPits));
         // Mowing stripes along the runway, 3.5 m wide.
         float stripe = step(0.5, fract(p.y / 7.0));
-        g *= mix(1.0, 1.06 + 0.1 * stripe - 0.05, mown);
+        g *= mix(1.0, 1.0 + 0.07 * stripe, mown);
         g = mix(g, g * vec3(1.02, 1.05, 0.95), mown); // short grass is a fresher green
         // Rough: longer, darker, browner grass with seed heads.
         float rough = smoothstep(${(FIELD.r - 15).toFixed(1)}, ${(FIELD.r + 25).toFixed(1)}, rField);

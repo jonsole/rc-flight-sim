@@ -3,7 +3,7 @@ import {
   Scene, Color, FogExp2, HemisphereLight, Points, PointsMaterial, BufferGeometry, Sprite, SpriteMaterial, DirectionalLight, Mesh, PlaneGeometry, MeshStandardMaterial,
   CanvasTexture, RepeatWrapping, SRGBColorSpace, InstancedMesh, CylinderGeometry, IcosahedronGeometry,
   Object3D, BoxGeometry, ConeGeometry, Group, Vector3, MathUtils, DoubleSide, Float32BufferAttribute,
-  MeshBasicMaterial, ShaderMaterial, SphereGeometry, BackSide, MeshLambertMaterial, Vector2,
+  MeshBasicMaterial, ShaderMaterial, SphereGeometry, BackSide, MeshLambertMaterial,
 } from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY } from '../sim/terrain.js';
@@ -149,88 +149,35 @@ function moonSprite() {
 export { RUNWAY } from '../sim/terrain.js';
 export const PILOT_POS = new Vector3(0, 0, 0);
 
-/** Normal map from a canvas (its brightness as height). */
-function normalMapFrom(src, strength = 0.9) {
-  const w = src.width;
-  const h = src.height;
-  const d = src.getContext('2d').getImageData(0, 0, w, h).data;
-  const H = (x, y) => d[(((y + h) % h) * w + ((x + w) % w)) * 4 + 1] / 255; // green channel
-  const out = document.createElement('canvas');
-  out.width = w;
-  out.height = h;
-  const ctx = out.getContext('2d');
-  const img = ctx.createImageData(w, h);
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const dx = (H(x + 1, y) - H(x - 1, y)) * strength;
-      const dy = (H(x, y + 1) - H(x, y - 1)) * strength;
-      const len = Math.hypot(dx, dy, 1);
-      const i = (y * w + x) * 4;
-      img.data[i] = (-dx / len * 0.5 + 0.5) * 255;
-      img.data[i + 1] = (dy / len * 0.5 + 0.5) * 255;
-      img.data[i + 2] = (1 / len * 0.5 + 0.5) * 255;
-      img.data[i + 3] = 255;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  const t = new CanvasTexture(out);
-  t.wrapS = t.wrapT = RepeatWrapping;
-  t.anisotropy = 8;
-  return t;
-}
-
 function grassTexture() {
-  // 6 m of grass: a mid green base, soft clumps, then thousands of short
-  // blade strokes in varied greens with a few dry and clover-coloured bits.
+  // 6 m of lawn: an even mid green covered in fine, low-contrast blade
+  // strokes, so from a distance it reads as smooth grass, not camouflage.
   const N = 512;
   const c = document.createElement('canvas');
   c.width = c.height = N;
   const ctx = c.getContext('2d');
   let seed = 3;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  ctx.fillStyle = '#5f7d3b';
+  ctx.fillStyle = '#6a8c3e';
   ctx.fillRect(0, 0, N, N);
-  // Clumps (drawn wrapped so the tile repeats seamlessly).
-  const wrap = (fn) => { for (const dx of [-N, 0, N]) for (const dy of [-N, 0, N]) fn(dx, dy); };
-  for (let i = 0; i < 260; i++) {
-    const x = rnd() * N;
-    const y = rnd() * N;
-    const r = 6 + rnd() * 26;
-    const l = 22 + rnd() * 16;
-    const col = `hsla(${78 + rnd() * 22}, ${35 + rnd() * 20}%, ${l}%, 0.35)`;
-    wrap((dx, dy) => {
-      ctx.fillStyle = col;
-      ctx.beginPath();
-      ctx.arc(x + dx, y + dy, r, 0, Math.PI * 2);
-      ctx.fill();
-    });
-  }
-  // Blades.
   ctx.lineCap = 'round';
-  for (let i = 0; i < 26000; i++) {
+  for (let i = 0; i < 30000; i++) {
     const x = rnd() * N;
     const y = rnd() * N;
-    const len = 2 + rnd() * 5;
-    const a = -Math.PI / 2 + (rnd() - 0.5) * 1.4;
-    const dry = rnd() < 0.04;
-    const l = dry ? 48 + rnd() * 14 : 24 + rnd() * 26;
-    ctx.strokeStyle = dry ? `hsl(${48 + rnd() * 12}, 40%, ${l}%)` : `hsl(${76 + rnd() * 30}, ${38 + rnd() * 24}%, ${l}%)`;
-    ctx.lineWidth = 0.7 + rnd() * 0.8;
+    const len = 1.5 + rnd() * 3.5;
+    const a = -Math.PI / 2 + (rnd() - 0.5) * 1.2;
+    const l = 30 + rnd() * 16;
+    ctx.strokeStyle = `hsla(${80 + rnd() * 16}, ${36 + rnd() * 14}%, ${l}%, 0.55)`;
+    ctx.lineWidth = 0.8 + rnd() * 0.6;
     ctx.beginPath();
     ctx.moveTo(x, y);
     ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len);
     ctx.stroke();
   }
-  // A few clover and daisy flecks.
-  for (let i = 0; i < 400; i++) {
-    ctx.fillStyle = rnd() < 0.7 ? 'rgba(70,110,50,0.8)' : 'rgba(235,235,220,0.8)';
-    ctx.fillRect(rnd() * N, rnd() * N, 1.5, 1.5);
-  }
   const t = new CanvasTexture(c);
   t.wrapS = t.wrapT = RepeatWrapping;
   t.colorSpace = SRGBColorSpace;
   t.anisotropy = 8;
-  t.userData.normal = normalMapFrom(c);
   return t;
 }
 
@@ -305,7 +252,7 @@ export class World {
     this.#lights();
     this.#terrain();
     // 3D grass close to the camera (fewer tufts on phones).
-    this.grass = new GrassField(opts.lowDetail ? { cell: 0.3, radius: 16 } : { cell: 0.2, radius: 22 });
+    this.grass = new GrassField(opts.lowDetail ? { cell: 0.22, radius: 9, blades: 10 } : { cell: 0.18, radius: 13, blades: 14 });
     this.scene.add(this.grass.mesh);
     this.#runway();
     this.#trees();
@@ -489,10 +436,8 @@ export class World {
     geo.computeVertexNormals();
     const tex = grassTexture();
     tex.repeat.set(size / 6, size / 6);
-    // Matte (no plastic sheen), with the grass bumps as a normal map.
-    const nrm = tex.userData.normal;
-    nrm.repeat.copy(tex.repeat);
-    const mat = addCloudShadows(addGroundDetail(new MeshLambertMaterial({ map: tex, normalMap: nrm, normalScale: new Vector2(0.45, 0.45), vertexColors: true })));
+    // Matte (no plastic sheen).
+    const mat = addCloudShadows(addGroundDetail(new MeshLambertMaterial({ map: tex, vertexColors: true })));
     const ground = new Mesh(geo, mat);
     ground.receiveShadow = true;
     this.scene.add(ground);
