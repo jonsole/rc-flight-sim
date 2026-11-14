@@ -29,6 +29,10 @@ export const DEFAULT_SETTINGS = {
   // Touch screens
   touchControls: 'auto', // 'auto' | 'on' | 'off'
   stickMode: '2',        // '2' = throttle left, '1' = throttle right
+  // Multiplayer
+  mpName: '',            // set to "Pilot NNN" on first run
+  mpRoom: '',
+  mpServer: '',          // blank = the built-in relay
 };
 
 export function loadSettings() {

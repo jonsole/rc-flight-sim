@@ -95,36 +95,29 @@ export function f22Outlines() {
   // the front 159 mm between them, leaving a square intake at the front.
   const plate = [[694, 109], [733, 290], [735, 661]].map(P);
   const underbody = { plate, depth: 0.028, panEnd: plate[0][0] - 0.159 };
-  // Fuselage (part 01): a 40 mm box whose side walls carry its side profile.
-  // Traced off a wall in 60 dpi plan pixels: [column, bottom, top], heights
-  // as rows from the fold line (row 1040), which is the box's floor. The tab
-  // on the wall's rear strip (column 1185) sits in the wing slots beside the
-  // motor cut-out (wing row 293.5), and that strip stands on the wing, 38 mm
-  // up from the floor. So the deep nose passes down through the wing's front
-  // notch to the belly pan, and behind it a 31 mm box sits on the wing and
-  // ends at the motor.
-  const px60 = 0.0254 / 60;
-  const fx = (col) => P([0, 293.5])[0] + (1185 - col) * px60;
+  // Fuselage, from the printed front section (F22_Fuselage_FRONT_Rev03):
+  // [STL x, bottom z, top z, half-width], mm, measured off the model. Its
+  // open back channel (x 264-342) fills the wing's 76 mm front notch, with
+  // the wing sheet resting on ledges 40 mm up so the top is flush with it:
+  // the fuselage hangs under the wing, and the nose fairing ahead of the wing
+  // rises in one line into the canopy, 4.5 mm proud at the wing's front edge.
+  // Heights below are from the underside of the wing. Behind the section the
+  // same 41 mm box carries on under the wing to the motor (assumed).
+  const stlX = (x) => P([0, 205])[0] + (342 - x) / 1000;
   const fuselage = {
-    halfWidth: 0.0215,
-    wingStep: (1130 - 1040) * px60, // floor to the top of the wing
     stations: [
-      [425, 63, 63], [450, 43, 82], [470, 32, 93], [490, 23, 102], [530, 10, 115], [585, 0, 128],
-      [620, 0, 133], [650, 0, 145], [700, 0, 165], [900, 0, 165], [960, 25, 165], [1000, 55, 165],
-      [1060, 90, 165], [1390, 90, 165],
-    ].map(([c, b, t]) => [fx(c), b * px60, t * px60]),
+      [182.5, 20.9, 23.3, 2.4], [184, 20, 24.4, 4.75], [186, 19.2, 25.6, 6.3], [188, 18.5, 26.7, 7.5],
+      [191, 17.4, 28.4, 9.15], [195, 16, 30.4, 11.2], [200, 14.4, 32.6, 13.45], [205, 12.9, 34.6, 15.35],
+      [210, 11.4, 36.4, 17], [215, 10.1, 38.1, 18.3], [220, 8.9, 39.7, 19.35], [225, 7.7, 41.2, 20],
+      [230, 6.7, 42.6, 20], [240, 4.8, 45.1, 20], [250, 3.4, 47.4, 20], [260, 2.3, 49.3, 20],
+      [261.5, 2.1, 49.5, 20.3], [263, 2, 48.5, 20.6], [265, 1.8, 44.8, 20.6], [280, 0.9, 44.8, 20.6],
+      [300, 0, 44.8, 20.6], [342, 0, 44.8, 20.6],
+    ].map(([x, b, t, hw]) => [stlX(x), (b - 40) / 1000, (t - 40) / 1000, hw / 1000]),
   };
-  // Canopy (parts 03 and 04): full fuselage width. The side flaps of 03 fold
-  // up into its walls ([mm from the front, height in mm], traced off the
-  // plan) and the 04 strip bends over the top. The low end is the front: it
-  // rises at about the slope of the nose's top curve and carries it on, so
-  // it starts (from nothing) where that curve ends. Highest 70 mm back,
-  // 8.5 mm high at the back.
-  const canopy = {
-    front: fx(700),
-    profile: [[0, 0], [6.5, 5.9], [17, 10.2], [28, 15.7], [48.8, 23.3], [70, 25.4], [91.1, 24.1], [112.3, 19.9], [133.4, 12.7], [144, 8.5]]
-      .map(([d, h]) => [d / 1000, h / 1000]),
-  };
+  // Foam box on behind, under the wing, to the motor.
+  fuselage.stations.push([P([0, 415])[0], -0.04, 0, 0.0206]);
+  // Canopy: the top of the fairing, from part way along the nose to the wing.
+  const canopy = { front: stlX(215), back: stlX(262.5) };
   return { wing, elevon, hingeX, fin, finZ, slot, underbody, fuselage, canopy, nose: fuselage.stations[0][0] };
 }
 
@@ -238,10 +231,10 @@ export function buildF22(style) {
   // Fuselage box on top and the side plates underneath, side-on.
   const body = [{
     name: 'fuselage-side',
-    pos: [0.06, -0.012, 0],
+    pos: [0.0, -0.025, 0],
     chord: [1, 0, 0],
     span: [0, -1, 0],
-    area: 0.031,
+    area: 0.024,
     foil: { cla: liftSlope(0.2), alpha0: 0, alphaStall: 25 * deg, cd0: 0.02, ar: 0.2, e: 0.5 },
     controls: [],
   }];
@@ -256,7 +249,8 @@ export function buildF22(style) {
   const radius = style.prop.diameterIn * 0.0254 / 2;
   const U = O.underbody;
   const bottomY = wingY - 0.0025 - U.depth;
-  const floorY = wingY + 0.0025 - O.fuselage.wingStep; // underside of the nose
+  const under = wingY - 0.0025; // underside of the wing: fuselage heights are from here
+  const keelY = under - 0.04; // bottom of the fuselage
 
   const def = {
     name: style.name,
@@ -302,11 +296,12 @@ export function buildF22(style) {
       { name: 'belly-rear', pos: [U.plate[2][0] + 0.01, bottomY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
       // The pusher prop hangs below the wing in its slot.
       { name: 'prop-low', pos: [propX, propY - radius, 0], type: 'prop', k: 600, c: 5, crashSpeed: 0 },
-      hard('nose', [O.nose - 0.004, floorY + O.fuselage.stations[0][1], 0], 3),
-      { name: 'chin', pos: [O.fuselage.stations[5][0], floorY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
+      hard('nose', [O.nose - 0.002, under + O.fuselage.stations[0][1], 0], 3),
+      { name: 'chin', pos: [O.fuselage.stations[20][0], keelY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
+      { name: 'keel-rear', pos: [O.fuselage.stations[22][0] + 0.005, keelY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
       hard('wing-tip-L', [tip[0] - 0.02, wingY, -tip[1]]),
       hard('wing-tip-R', [tip[0] - 0.02, wingY, tip[1]]),
-      hard('cabin-top', [O.canopy.front - 0.07, floorY + 0.07 + 0.025, 0], 3),
+      hard('cabin-top', [O.canopy.back + 0.005, under + 0.0095, 0], 3),
       hard('fin-top-L', [O.fin[2][0], wingY + finH * Math.cos(cant), -(O.finZ + finH * Math.sin(cant))], 3),
       hard('fin-top-R', [O.fin[2][0], wingY + finH * Math.cos(cant), O.finZ + finH * Math.sin(cant)], 3),
       hard('tail-end-L', [elevTip[0], wingY, -elevTip[1]], 3.5),
@@ -327,8 +322,8 @@ export function buildF22(style) {
       span: SPAN,
       // Under the canopy, and a camera on top of the fuselage box.
       // Under the canopy, and a camera on the box behind it.
-      cockpit: [O.canopy.front - 0.05, floorY + 0.086, 0],
-      pod: [0.0, floorY + 0.08, 0],
+      cockpit: [O.canopy.back + 0.02, under + 0.002, 0],
+      pod: [0.0, under + 0.012, 0],
       chase: { back: 1.4, up: 0.45 },
     },
     createModel: () => createF22Model(geometry),

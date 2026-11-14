@@ -21,7 +21,9 @@ The Mini F-22 (`src/aircraft/f22.js`) is traced off the FT plan sheets: 508 mm
 span, 667 mm long, 14.2 dm², 211 g all up, 3S 800 mAh. This one has a 2204
 2600Kv with a 5x4.5 five-blade prop (the plan's 2300Kv and 6x4.5 is slower). The flat wing makes lift only from its angle
 of attack, so the elevons are trimmed with the plan's 8° of reflex, and the CG
-is at the plan's 305 mm from the nose. Elevons: 25° each way. Hands-off it
+is at the plan's marks on the wing. The fuselage follows a printed front
+section (F22_Fuselage_FRONT_Rev03): a nose fairing ahead of the wing that runs
+into the canopy, and a 41 mm box hanging under the wing. Elevons: 25° each way. Hands-off it
 flies level at a bit over half throttle (~50 km/h); it climbs with more.
 At the stall the elevons sit in the wing's dead air and lose most of their
 bite, and it falls off on the left wing. Thrust and inertia are estimates.
@@ -169,3 +171,11 @@ Each aircraft is a registry entry in `src/aircraft/index.js`:
 Another size of S.E.5a is one `buildSE5a({...})` call in `src/aircraft/se5a.js`.
 A different type needs its own definition and 3D model module. The flight
 tests run automatically for every registered aircraft.
+
+## Multiplayer
+
+Players who join the same room code see each other's aeroplanes (menu → Multiplayer, or share an invite link `…/?room=CODE`). Each browser flies its own aeroplane and sends its state about 15 times a second through a small relay, `server/`: a Cloudflare Worker with one Durable Object per room (`server/relay.js` is the same relay as a plain Node server). Everything goes over secure WebSocket on port 443, so it works behind NAT and firewalls; no peer-to-peer connections are made.
+
+- Hosting: Cloudflare Workers Builds deploys the relay from this repository on every push to main, using `wrangler.toml` at the repo root (no build command; deploy command `npx wrangler deploy`).
+- Local relay: `cd server && npm install && npm start` (or `npx wrangler dev`), then set Server to `ws://127.0.0.1:8787` in the Multiplayer menu.
+- The game's built-in server address is in `src/net/config.js` (or build with `VITE_MP_SERVER`).

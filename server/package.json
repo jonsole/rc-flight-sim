@@ -1,0 +1,18 @@
+{
+  "name": "rc-flight-sim-relay",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Multiplayer relay for the RC flight sim: one Durable Object per room passes each player's state to the others over WebSocket. relay.js is the same relay as a plain Node server, for local testing.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev -c ../wrangler.toml",
+    "deploy": "wrangler deploy -c ../wrangler.toml",
+    "start": "node relay.js"
+  },
+  "dependencies": {
+    "ws": "^8.23.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.162.0"
+  }
+}
