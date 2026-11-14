@@ -188,8 +188,8 @@ export function addLeafShading(material) {
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         #ifdef USE_INSTANCING
         {
-          // Nothing in light winds, building up from 6 to 14 m/s.
-          float k = smoothstep(6.0, 14.0, uWindSpeed);
+          // Nothing in light winds, building up from 3 to 10 m/s.
+          float k = smoothstep(3.0, 10.0, uWindSpeed);
           if (k > 0.0) {
             mat3 m = mat3(instanceMatrix);
             vec3 s2 = vec3(dot(m[0], m[0]), dot(m[1], m[1]), dot(m[2], m[2]));
@@ -200,7 +200,7 @@ export function addLeafShading(material) {
             float bend = smoothstep(-1.0, 1.0, position.y);
             bend *= bend;
             // Metres at the top of the tree, along the wind.
-            float metres = k * gust * 0.03 * min(hgt, 8.0) * bend;
+            float metres = k * gust * 0.045 * min(hgt, 8.0) * bend;
             // Small leafy flutter on top.
             vec3 fl = vec3(sin(uLeafTime * 5.3 + position.x * 9.0 + ph), 0.0, cos(uLeafTime * 4.7 + position.z * 9.0 + ph)) * 0.04 * k * bend;
             vec3 w = uWindDir * metres + fl;
