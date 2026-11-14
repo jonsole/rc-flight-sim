@@ -2,8 +2,8 @@
 // pose from the network, with control surfaces, prop and damage. Each has a
 // small name label drawn in the scene (so your own aeroplane, trees and hills
 // hide it when they are in front), kept a fixed size on screen. Players out
-// of view get a marker on the left or right edge of the screen, on the side
-// they are on, with an arrow pointing their way. Also checks for mid-air
+// of view get a marker on the screen edge (their side, or the bottom when
+// behind) with an arrow pointing their way. Also checks for mid-air
 // collisions with this player's aeroplane.
 import { Vector3, Quaternion, Sprite, SpriteMaterial, CanvasTexture, SRGBColorSpace } from 'three';
 import { Aircraft } from '../sim/aircraft.js';
@@ -219,30 +219,39 @@ export class Peers {
         continue;
       }
       v.text.textContent = text;
-      const halfV = (camera.fov * Math.PI) / 360;
-      const halfH = Math.atan(Math.tan(halfV) * camera.aspect);
-      const az = Math.atan2(_c.x, -_c.z); // + = to the right, ±π = behind
-      const el = Math.atan2(_c.y, Math.hypot(_c.x, _c.z)); // + = above
-      let x;
-      let y;
-      if (Math.abs(az) > halfH) {
-        // Off to one side (or behind): that side's edge, at its height.
-        x = az >= 0 ? 1 : -1;
-        y = Math.max(-1, Math.min(1, el / halfV));
-      } else {
-        // Ahead but above or below the view: top or bottom edge.
-        x = Math.max(-1, Math.min(1, az / halfH));
-        y = el >= 0 ? 1 : -1;
+      // A line from the screen centre towards the player, clipped at the
+      // screen edge. Ahead of the camera that is the direction of their
+      // projected position. Behind it, the same direction (which projection
+      // would flip) tilted downwards the further behind they are, so it
+      // moves smoothly round to the bottom edge: bottom centre is straight
+      // behind.
+      const tanV = Math.tan((camera.fov * Math.PI) / 360);
+      const tanH = tanV * camera.aspect;
+      let u = _c.x / tanH; // screen right, in half-widths per unit depth
+      let vv = _c.y / tanV; // screen up
+      if (_c.z >= 0) vv -= (_c.z / tanV) * 0.7;
+      else {
+        u /= -_c.z;
+        vv /= -_c.z;
       }
-      // Arrow from the screen centre towards the aeroplane.
-      v.arrow.style.transform = `rotate(${Math.atan2(az, el)}rad)`;
-      v.label.classList.add('edge');
-      // Keep clear of the room badge (top) and flight readout (bottom).
+      // To pixels from the centre, then scale the ray to the nearest edge.
+      const dx = (u * w) / 2;
+      const dy = (-vv * h) / 2;
       const lw = v.label.offsetWidth / 2 + 6;
-      const top = 50;
-      const bottom = h - (h > 500 ? 110 : 70);
-      v.label.style.left = `${Math.min(w - lw, Math.max(lw, ((x + 1) / 2) * w))}px`;
-      v.label.style.top = `${Math.min(bottom, Math.max(top, ((1 - y) / 2) * h))}px`;
+      const top = 50; // clear of the room badge
+      const bottom = h - (h > 500 ? 110 : 70); // and the flight readout
+      const cx = w / 2;
+      const cy = h / 2;
+      let t = Infinity;
+      if (dx > 1e-9) t = Math.min(t, (w - lw - cx) / dx);
+      if (dx < -1e-9) t = Math.min(t, (lw - cx) / dx);
+      if (dy > 1e-9) t = Math.min(t, (bottom - cy) / dy);
+      if (dy < -1e-9) t = Math.min(t, (top - cy) / dy);
+      if (!Number.isFinite(t)) t = 0;
+      v.arrow.style.transform = `rotate(${Math.atan2(dx, -dy)}rad)`;
+      v.label.classList.add('edge');
+      v.label.style.left = `${cx + dx * t}px`;
+      v.label.style.top = `${cy + dy * t}px`;
     }
     return hit;
   }
