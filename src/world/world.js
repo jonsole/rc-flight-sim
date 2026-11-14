@@ -277,15 +277,10 @@ export class World {
   #lights() {
     this.hemi = new HemisphereLight('#cfe3ff', '#4d5a33', 1.1);
     this.scene.add(this.hemi);
+    // The sun's (or moon's) strength and colour live here; the cascaded
+    // shadow lights (shadows.js) do the actual lighting.
     const sun = new DirectionalLight('#fff3df', 2.6);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    const s = 6;
-    Object.assign(sun.shadow.camera, { left: -s, right: s, top: s, bottom: -s, near: 1, far: 200 });
-    sun.shadow.bias = -0.0004;
-    sun.shadow.normalBias = 0.02;
     this.sun = sun;
-    this.scene.add(sun, sun.target);
   }
 
   /**
@@ -353,8 +348,7 @@ export class World {
     cloudUniforms.cloudShadowStrength.value = 0.75 * daylight + 0.2 * night;
     this.clouds.setLight(this.sun.color, this.sun.intensity, this.scene.fog.color, night);
     // Tree shadows: soft in low sun, faint by moonlight.
-    if (this.treeShadows) this.treeShadows.material.opacity = 0.5 * daylight + 0.12 * moonUp * night;
-    this.#updateTreeShadows();
+    this.shadows?.setLight(this.lightDir, this.sun.intensity, this.sun.color);
   }
 
   /** Cloud cover, 0 (clear) to 1 (overcast). */
@@ -368,37 +362,16 @@ export class World {
     this.clouds.update(dt, wind);
   }
 
-  /** Lay each tree's crown shadow on the ground, away from the sun. */
-  #updateTreeShadows() {
-    if (!this.treeShadows) return;
-    const s = this.lightDir;
-    const elev = Math.max(0.12, s.y);
-    const horiz = Math.hypot(s.x, s.z) || 1;
-    // Unit vector along the ground pointing away from the sun.
-    const ax = -s.x / horiz;
-    const az = -s.z / horiz;
-    const yaw = Math.atan2(-az, ax);
-    const stretch = Math.min(4, 1 / elev);
-    const o = new Object3D();
-    this.obstacles.trees.forEach((t, i) => {
-      const hc = t.conifer ? t.h * 0.5 : t.h * 0.62; // crown centre height
-      const rc = t.conifer ? t.h * 0.17 : t.crownW;
-      const reach = (hc * Math.hypot(s.x, s.z)) / elev; // horizontal offset of the crown's shadow
-      const x = t.x + ax * reach;
-      const z = t.z + az * reach;
-      o.position.set(x, heightAt(x, z) + 0.06, z);
-      o.rotation.set(0, yaw, 0);
-      o.scale.set(rc * stretch * 1.05, 1, rc * 1.05);
-      o.updateMatrix();
-      this.treeShadows.setMatrixAt(i, o.matrix);
-    });
-    this.treeShadows.instanceMatrix.needsUpdate = true;
+  /** Cascaded soft shadows for the whole scene (see shadows.js). */
+  attachShadows(shadows) {
+    this.shadows = shadows;
+    shadows.prepare(this.scene);
+    shadows.setLight(this.lightDir, this.sun.intensity, this.sun.color);
   }
 
-  /** Keep the shadow camera centred on the aircraft so its shadow is crisp. */
-  followShadow(target) {
-    this.sun.position.copy(target).addScaledVector(this.lightDir, 80);
-    this.sun.target.position.copy(target);
+  /** Every frame, after the camera has moved. */
+  updateShadows() {
+    this.shadows?.update();
   }
 
   #terrain() {
@@ -516,33 +489,11 @@ export class World {
     crowns.forEach((m, k) => (m.count = nCrown[k]));
     conifers.forEach((m, k) => (m.count = nCon[k]));
     for (const m of [trunks, ...crowns, ...conifers]) {
-      // Trees don't cast into the sun's shadow map (it only covers a few
-      // metres around the model); they get soft ground shadows instead,
-      // visible at any distance (see #updateTreeShadows).
-      m.castShadow = false;
+      m.castShadow = true;
       m.receiveShadow = true;
       this.scene.add(m);
     }
     this.trees = { trunks, crowns, conifers };
-
-    const c = document.createElement('canvas');
-    c.width = c.height = 64;
-    const g = c.getContext('2d');
-    const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
-    grad.addColorStop(0, 'rgba(0,0,0,1)');
-    grad.addColorStop(0.55, 'rgba(0,0,0,0.85)');
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 64, 64);
-    const shadowGeo = new PlaneGeometry(2, 2);
-    shadowGeo.rotateX(-Math.PI / 2);
-    this.treeShadows = new InstancedMesh(
-      shadowGeo,
-      new MeshBasicMaterial({ map: new CanvasTexture(c), transparent: true, opacity: 0.5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, fog: true }),
-      count,
-    );
-    this.treeShadows.renderOrder = 1;
-    this.scene.add(this.treeShadows);
   }
 
   #props() {

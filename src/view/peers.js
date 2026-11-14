@@ -94,6 +94,7 @@ export class Peers {
     const model = entry.createModel();
     model.setPilotVisible(true);
     const nav = addNavLights(model);
+    this.prepare?.(model.root); // shadows: register its materials
     this.scene.add(model.root);
     const tag = labelSprite();
     this.scene.add(tag);

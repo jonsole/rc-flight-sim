@@ -9,6 +9,7 @@ import { Input } from './input/input.js';
 import { TouchControls, isTouchDevice } from './input/touch.js';
 import { CameraRig, CAMERA_LABELS } from './view/cameras.js';
 import { Debris } from './view/debris.js';
+import { Shadows } from './world/shadows.js';
 import { Peers } from './view/peers.js';
 import { addNavLights } from './view/navlights.js';
 import { Multiplayer } from './net/multiplayer.js';
@@ -55,10 +56,11 @@ renderer.shadowMap.type = PCFSoftShadowMap;
 // --- Simulation ----------------------------------------------------------------
 const obstacles = new Obstacles();
 const world = new World(obstacles, { lowDetail: TOUCH_DEVICE });
-if (TOUCH_DEVICE) world.sun.shadow.mapSize.set(1024, 1024);
 const wind = new Wind();
 const input = new Input();
 const rig = new CameraRig(settings);
+// Soft cascaded shadows for everything (smaller maps on phones).
+world.attachShadows(new Shadows(world.scene, rig.camera, { mapSize: TOUCH_DEVICE ? 1024 : 2048 }));
 
 let entry = null; // selected aircraft (registry entry)
 let aircraft = null; // flight model
@@ -82,9 +84,11 @@ function replaceModel() {
   }
   model = entry.createModel();
   navLights = addNavLights(model, { shine: true });
+  world.shadows.prepare(model.root);
   world.scene.add(model.root);
 }
 let navLights = null;
+let shadowSweep = 1;
 
 function loadAircraft(id) {
   entry = getAircraft(id);
@@ -186,6 +190,7 @@ function selectAircraft(id) {
 const mp = new Multiplayer();
 let mpGraceUntil = 0; // no collisions just after a reset
 const peers = new Peers(world.scene, ground);
+peers.prepare = (root) => world.shadows.prepare(root);
 const mpBadge = document.getElementById('mp-badge');
 const mpToast = document.getElementById('mp-toast');
 const mpServer = () => settings.mpServer || DEFAULT_MP_SERVER;
@@ -429,7 +434,12 @@ function frame(now) {
     aircraft.velocity.lerp(hit.velocity, 0.5);
     mp.sendHit(hit.peer.id, hit.theirPart, hit.relSpeed);
   }
-  world.followShadow(aircraft.position);
+  world.updateShadows();
+  // Safety net: register any lit material added since (once a second).
+  if ((shadowSweep -= dt) <= 0) {
+    shadowSweep = 1;
+    world.shadows.prepare(world.scene);
+  }
   world.updateWindsock(wind.at(new Vector3(-35, 5, -42), 0, windTmp));
   if (!paused) world.updateClouds(dt, windTmp);
 

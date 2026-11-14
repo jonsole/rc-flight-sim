@@ -295,14 +295,14 @@ export function bushes(material) {
     const x = Math.cos(a) * r * 1.3;
     let z = Math.sin(a) * r - 40;
     if (z > 20 && Math.abs(x) < 60) z += 80; // keep the view behind the pilot open
-    const size = 0.8 + rnd() * 1.4;
+    const size = 0.6 + rnd() * 0.9;
     o.position.set(x, heightAt(x, z) + size * 0.55, z);
     o.rotation.set(0, rnd() * Math.PI * 2, 0);
     o.scale.set(size * (1 + rnd() * 0.6), size * 0.75, size * (1 + rnd() * 0.6));
     o.updateMatrix();
     const k = i % shapes.length;
     meshes[k].setMatrixAt(counts[k], o.matrix);
-    col.setHSL(0.24 + rnd() * 0.06, 0.4 + rnd() * 0.15, 0.24 + rnd() * 0.08);
+    col.setHSL(0.25 + rnd() * 0.05, 0.38 + rnd() * 0.12, 0.13 + rnd() * 0.05);
     meshes[k].setColorAt(counts[k]++, col);
   }
   meshes.forEach((m, k) => {
