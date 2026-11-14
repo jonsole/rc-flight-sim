@@ -58,31 +58,33 @@ function shade(geo, fn) {
   return geo;
 }
 
-/** A billowy broadleaf crown (unit radius). */
+/** A billowy broadleaf crown (unit radius): distinct leaf clumps with dark gaps between them. */
 export function broadleafCrown(seed) {
   const rnd = rng(seed);
   const parts = [];
-  const blobs = 6 + Math.floor(rnd() * 4);
-  for (let i = 0; i < blobs; i++) {
-    const r = 0.38 + rnd() * 0.22;
+  // Clumps scattered over a slightly squashed dome, more of them up top,
+  // poking out by different amounts so the outline is ragged, not round.
+  const clumps = 11 + Math.floor(rnd() * 5);
+  for (let i = 0; i < clumps; i++) {
+    const r = 0.26 + rnd() * 0.2;
     const g = new IcosahedronGeometry(r, 2);
-    // Spread the blobs over an ellipsoid, more of them up top.
     const a = rnd() * Math.PI * 2;
-    const up = rnd() * 0.9 - 0.25;
-    const out = (1 - r) * (0.55 + rnd() * 0.45);
-    g.translate(Math.cos(a) * out, up * 0.55, Math.sin(a) * out);
+    const y = Math.min(1, Math.max(-0.6, rnd() * 1.5 - 0.5)); // -0.5..1, biased upwards
+    const ring = Math.sqrt(1 - y * y);
+    const out = (1 - r) * (0.75 + rnd() * 0.35);
+    g.translate(Math.cos(a) * ring * out, y * out * 0.8, Math.sin(a) * ring * out);
     parts.push(g);
   }
-  parts.push(new IcosahedronGeometry(0.62, 2)); // fill the middle
+  parts.push(new IcosahedronGeometry(0.6, 2)); // fill the middle
   let geo = mergeGeometries(parts.map(ni));
-  // Lumpy leaf masses.
+  // Leafy lumps on each clump: two octaves of noise.
   const p = geo.attributes.position;
   const v = new Vector3();
   let max = 0;
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i);
-    const n = noise3(v.x * 3.1 + seed, v.y * 3.1, v.z * 3.1) - 0.5;
-    v.multiplyScalar(1 + n * 0.22);
+    const n = noise3(v.x * 3 + seed, v.y * 3, v.z * 3) - 0.5 + (noise3(v.x * 9, v.y * 9 + seed, v.z * 9) - 0.5) * 0.45;
+    v.multiplyScalar(1 + n * 0.32);
     p.setXYZ(i, v.x, v.y, v.z);
     max = Math.max(max, v.length());
   }
@@ -92,12 +94,17 @@ export function broadleafCrown(seed) {
   geo.deleteAttribute('uv');
   geo = mergeVertices(geo, 1e-4);
   geo.computeVertexNormals();
+  const ss = (e0, e1, x) => {
+    const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+    return t * t * (3 - 2 * t);
+  };
   geo = shade(geo, (pos, nrm) => {
-    // Underside and inner shade darker; sunlit top and outer leaves lighter.
-    const top = 0.55 + 0.35 * (pos.y * 0.5 + 0.5) + 0.15 * Math.max(0, nrm.y);
-    const outer = 0.85 + 0.2 * Math.min(1, pos.length());
-    const k = top * outer * (0.9 + 0.2 * noise3(pos.x * 7, pos.y * 7, pos.z * 7 + seed));
-    return [k, k * 1.02, k * 0.92];
+    // Gaps between clumps (closer to the middle) fall into shadow; the
+    // underside is darker, sunlit tops lighter.
+    const gap = 0.5 + 0.55 * ss(0.45, 0.95, pos.length());
+    const top = 0.62 + 0.28 * (pos.y * 0.5 + 0.5) + 0.12 * Math.max(0, nrm.y);
+    const k = gap * top * (0.88 + 0.24 * noise3(pos.x * 7, pos.y * 7, pos.z * 7 + seed));
+    return [k, k * 1.02, k * 0.9];
   });
   return geo;
 }
