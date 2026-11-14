@@ -109,7 +109,7 @@ export class PlaneShadow {
    * @param {import('three').WebGLRenderer} renderer
    * @param {Vector3} position  the aeroplane
    * @param {Vector3} towards   unit vector towards the sun (or moon)
-   * @param {number} strength   0..1 how dark (sunlight strength)
+   * @param {number} strength   0..1 how dark, matching the scenery's shadows (World.shadowDarkness)
    */
   update(renderer, position, towards, strength) {
     if (!this.model || !this.model.root.visible || strength < 0.02 || towards.y < 0.05) {
@@ -185,7 +185,7 @@ export class PlaneShadow {
     u.right.value.setFromMatrixColumn(cam.matrixWorld, 0);
     u.up.value.setFromMatrixColumn(cam.matrixWorld, 1);
     u.halfSize.value = half;
-    u.strength.value = 0.62 * strength;
+    u.strength.value = strength;
     const stretch = 1 / Math.max(0.15, towards.y);
     const size = half * 2 * stretch + 1;
     this.decal.scale.set(size, 1, size);

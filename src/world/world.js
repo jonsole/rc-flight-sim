@@ -363,6 +363,21 @@ export class World {
     this.clouds.update(dt, wind);
   }
 
+  /**
+   * How much darker a shadow on open ground is than the sunlit ground
+   * around it (0 none .. 1 black), as it comes out on screen: the shadow
+   * removes the direct sun but keeps the sky's light. Used for aeroplane
+   * shadows so they match the scenery's.
+   */
+  shadowDarkness() {
+    const lum = (c) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    const sky = this.hemi.intensity * lum(this.hemi.color);
+    const direct = this.sun.intensity * lum(this.sun.color) * Math.max(0, this.lightDir.y);
+    if (direct <= 0) return 0;
+    const ratio = sky / (sky + direct); // in linear light
+    return 1 - ratio ** (1 / 2.2); // as displayed (sRGB)
+  }
+
   /** Scenery shadows (see shadows.js). */
   attachShadows(shadows) {
     this.shadows = shadows;

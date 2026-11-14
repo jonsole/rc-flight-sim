@@ -431,7 +431,9 @@ function frame(now) {
   rig.camera.updateMatrixWorld();
   const solid = mp.connected && !paused && !aircraft.crashed && now / 1000 > mpGraceUntil;
   peers.night = world.night;
-  peers.shadowCtx = { renderer, lightDir: world.lightDir, strength: Math.min(1, world.sun.intensity / 2) };
+  // Aeroplane shadows as dark as the scenery's.
+  const shadowDark = world.shadowDarkness();
+  peers.shadowCtx = { renderer, lightDir: world.lightDir, strength: shadowDark };
   const hit = peers.update(mp.peers, dt, rig.camera, { aircraft, id: entry.id, solid });
   if (hit) {
     // Mid-air (or on the ground): the part that hit breaks off, and the other
@@ -442,7 +444,7 @@ function frame(now) {
     mp.sendHit(hit.peer.id, hit.theirPart, hit.relSpeed);
   }
   world.updateShadows();
-  planeShadow.update(renderer, aircraft.position, world.lightDir, Math.min(1, world.sun.intensity / 2));
+  planeShadow.update(renderer, aircraft.position, world.lightDir, shadowDark);
   world.updateWindsock(wind.at(new Vector3(-35, 5, -42), 0, windTmp));
   if (!paused) world.updateClouds(dt, windTmp);
 
