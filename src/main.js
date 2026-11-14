@@ -13,6 +13,7 @@ import { Peers } from './view/peers.js';
 import { Multiplayer } from './net/multiplayer.js';
 import { DEFAULT_MP_SERVER } from './net/config.js';
 import { Chat } from './ui/chat.js';
+import { clockHours, dayOfYear } from './world/sun.js';
 import { OSD } from './ui/osd.js';
 import { Panel } from './ui/panel.js';
 import { loadSettings, saveSettings } from './ui/settings.js';
@@ -113,12 +114,21 @@ let paused = false;
 let assistFlash = 0; // seconds to show the assist-mode banner
 let touchSeen = false; // a real finger touched the screen (auto-enables the sticks)
 
+/** Sun, sky and light for the chosen time of day (or the clock). */
+function applyTime() {
+  const now = new Date();
+  const hours = settings.useClock ? clockHours(now) : Number(settings.timeOfDay);
+  world.setTime(hours, dayOfYear(now));
+  renderer.toneMappingExposure = world.exposure;
+}
+let clockTimer = 0;
+
 function applySettings() {
   aircraft.assistMode = settings.assist;
   wind.speed = settings.windSpeed;
   wind.directionDeg = settings.windDir;
   wind.turbulence = settings.turbulence;
-  world.setSun(settings.sunElevation, settings.sunAzimuth);
+  applyTime();
   sound.volume = settings.volume;
   osd.showHud = settings.showHud;
   const showTouch = settings.touchControls === 'on' || (settings.touchControls === 'auto' && (TOUCH_DEVICE || touchSeen));
@@ -386,6 +396,11 @@ function frame(now) {
     debris.update(dt);
     osd.update(dt, aircraft);
   }
+  // Following the clock: move the sun along every 20 s.
+  if (settings.useClock && (clockTimer -= dt) <= 0) {
+    clockTimer = 20;
+    applyTime();
+  }
   // Others see you even while your menu is open.
   mp.update(dt, aircraft);
 
@@ -448,4 +463,10 @@ window.sim = {
   input,
   settings,
   selectAircraft,
+  /** Debug: set the time of day (hours). */
+  setTime(h) {
+    settings.timeOfDay = h;
+    settings.useClock = false;
+    applyTime();
+  },
 };

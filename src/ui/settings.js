@@ -21,8 +21,8 @@ export const DEFAULT_SETTINGS = {
   windSpeed: 3,
   windDir: 270,
   turbulence: 0.3,
-  sunElevation: 38,
-  sunAzimuth: 215,
+  timeOfDay: 14,         // hours, local solar time
+  useClock: false,       // follow the computer's clock instead
   // Misc
   volume: 0.6,
   showHud: true,

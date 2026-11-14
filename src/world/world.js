@@ -1,12 +1,147 @@
 // The flying field: sky, lighting, terrain, runway, trees and props.
 import {
-  Scene, Color, Fog, HemisphereLight, DirectionalLight, Mesh, PlaneGeometry, MeshStandardMaterial,
+  Scene, Color, FogExp2, HemisphereLight, Points, PointsMaterial, BufferGeometry, Sprite, SpriteMaterial, DirectionalLight, Mesh, PlaneGeometry, MeshStandardMaterial,
   CanvasTexture, RepeatWrapping, SRGBColorSpace, InstancedMesh, CylinderGeometry, IcosahedronGeometry,
   Object3D, BoxGeometry, ConeGeometry, Group, Vector3, MathUtils, DoubleSide, Float32BufferAttribute,
-  MeshBasicMaterial,
+  MeshBasicMaterial, ShaderMaterial, SphereGeometry, BackSide,
 } from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY } from '../sim/terrain.js';
+import { sunPosition, moonPosition } from './sun.js';
+
+const smooth = (e0, e1, x) => {
+  const t = MathUtils.clamp((x - e0) / (e1 - e0), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+
+/** Direction (unit vector, +y up) for an elevation/azimuth in degrees (azimuth 0 = north/-z, 90 = east/+x). */
+function skyDir(elevationDeg, azimuthDeg, out) {
+  const el = MathUtils.degToRad(elevationDeg);
+  const az = MathUtils.degToRad(azimuthDeg);
+  return out.set(Math.cos(el) * Math.sin(az), Math.sin(el), -Math.cos(el) * Math.cos(az));
+}
+
+// Horizon haze colours by sun elevation (degrees): night, deep twilight,
+// sunset glow, golden hour, day.
+const HAZE = [
+  [-12, new Color('#070b16')],
+  [-5, new Color('#28334f')],
+  [0, new Color('#d39a72')],
+  [8, new Color('#e3c7a4')],
+  [20, new Color('#c3d5e8')],
+];
+function hazeColour(el, out) {
+  if (el <= HAZE[0][0]) return out.copy(HAZE[0][1]);
+  for (let i = 1; i < HAZE.length; i++) {
+    if (el <= HAZE[i][0]) {
+      const [e0, c0] = HAZE[i - 1];
+      const [e1, c1] = HAZE[i];
+      return out.copy(c0).lerp(c1, (el - e0) / (e1 - e0));
+    }
+  }
+  return out.copy(HAZE[HAZE.length - 1][1]);
+}
+
+const TWILIGHT_ZENITH = new Color('#2a4069');
+const NIGHT_ZENITH = new Color('#02050d');
+const TWILIGHT_HORIZON = new Color('#8b6f86');
+const NIGHT_HORIZON = new Color('#0c1528');
+const TWILIGHT_GLOW = new Color('#e08a4a');
+
+/** A gradient dome for twilight and night (the day sky model only does day). */
+function nightDome() {
+  const m = new ShaderMaterial({
+    uniforms: {
+      zenith: { value: new Color('#02050d') },
+      horizon: { value: new Color('#0c1528') },
+      glow: { value: new Color('#3a2a3a') }, // last light on the horizon towards the sun
+      sunDir: { value: new Vector3(0, -1, 0) },
+      opacity: { value: 0 },
+    },
+    vertexShader: `varying vec3 vDir;
+      void main() {
+        vDir = normalize(position);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `uniform vec3 zenith; uniform vec3 horizon; uniform vec3 glow; uniform vec3 sunDir; uniform float opacity;
+      varying vec3 vDir;
+      void main() {
+        float h = clamp(vDir.y, 0.0, 1.0);
+        vec3 c = mix(horizon, zenith, pow(h, 0.45));
+        // Faint glow low in the sky where the sun went down.
+        vec2 a = normalize(vDir.xz + 1e-5);
+        vec2 b = normalize(sunDir.xz + 1e-5);
+        float toward = max(0.0, dot(a, b));
+        c += glow * pow(toward, 3.0) * exp(-h * 8.0) * clamp(1.0 + sunDir.y * 6.0, 0.0, 1.0);
+        gl_FragColor = vec4(c, opacity);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+    side: BackSide,
+    transparent: true,
+    depthWrite: false,
+    fog: false,
+  });
+  const dome = new Mesh(new SphereGeometry(9800, 32, 16), m);
+  dome.renderOrder = -2;
+  dome.frustumCulled = false;
+  return dome;
+}
+
+function starField() {
+  const n = 2500;
+  const pos = [];
+  const col = [];
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < n; i++) {
+    // Uniform on the upper sky (and a little below the horizon).
+    const y = rnd() * 1.1 - 0.1;
+    const a = rnd() * Math.PI * 2;
+    const r = Math.sqrt(1 - y * y);
+    pos.push(Math.cos(a) * r * 9000, y * 9000, Math.sin(a) * r * 9000);
+    // Mostly faint stars, a few bright ones.
+    const b = 0.18 + rnd() ** 6 * 0.82;
+    const warm = rnd();
+    col.push(b, b * (0.92 + warm * 0.08), b * (0.85 + (1 - warm) * 0.15));
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new Float32BufferAttribute(col, 3));
+  const m = new PointsMaterial({ size: 1.6, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, fog: false });
+  const pts = new Points(g, m);
+  pts.renderOrder = -1;
+  pts.frustumCulled = false;
+  return pts;
+}
+
+function moonSprite() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const glow = g.createRadialGradient(64, 64, 18, 64, 64, 64);
+  glow.addColorStop(0, 'rgba(220,230,255,0.35)');
+  glow.addColorStop(1, 'rgba(220,230,255,0)');
+  g.fillStyle = glow;
+  g.fillRect(0, 0, 128, 128);
+  g.fillStyle = '#eef0f4';
+  g.beginPath();
+  g.arc(64, 64, 20, 0, Math.PI * 2);
+  g.fill();
+  // A few darker "seas".
+  g.fillStyle = 'rgba(150,155,170,0.5)';
+  for (const [x, y, r] of [[58, 58, 6], [70, 66, 5], [62, 72, 4], [72, 55, 3]]) {
+    g.beginPath();
+    g.arc(x, y, r, 0, Math.PI * 2);
+    g.fill();
+  }
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  const sp = new Sprite(new SpriteMaterial({ map: t, transparent: true, depthWrite: false, fog: false }));
+  sp.scale.setScalar(900);
+  sp.renderOrder = -1;
+  return sp;
+}
 
 export { RUNWAY } from '../sim/terrain.js';
 export const PILOT_POS = new Vector3(0, 0, 0);
@@ -63,8 +198,13 @@ export class World {
     this.obstacles = obstacles;
     this.scene = new Scene();
     this.scene.background = new Color('#9cc3e6');
-    this.scene.fog = new Fog('#b9d1e6', 400, 3200);
-    this.sunDir = new Vector3();
+    // Exponential haze: distant hills fade into the colour of the horizon.
+    this.scene.fog = new FogExp2('#c3d5e8', 0.00028);
+    this.sunDir = new Vector3(); // the sun, even below the horizon
+    this.lightDir = new Vector3(); // where the main light comes from (sun, or moon at night)
+    this.moonDir = new Vector3();
+    this.night = 0; // 0 = day .. 1 = full night
+    this.exposure = 0.9; // suggested renderer exposure
 
     this.#sky();
     this.#lights();
@@ -72,7 +212,7 @@ export class World {
     this.#runway();
     this.#trees();
     this.#props();
-    this.setSun(35, 220);
+    this.setTime(14, 172);
   }
 
   #sky() {
@@ -85,6 +225,10 @@ export class World {
     u.mieDirectionalG.value = 0.85;
     this.sky = sky;
     this.scene.add(sky);
+    this.nightDome = nightDome();
+    this.stars = starField();
+    this.moon = moonSprite();
+    this.scene.add(this.nightDome, this.stars, this.moon);
   }
 
   #lights() {
@@ -101,25 +245,75 @@ export class World {
     this.scene.add(sun, sun.target);
   }
 
-  /** Sun elevation/azimuth in degrees (azimuth: 0 = north/-z, 90 = east/+x). */
-  setSun(elevationDeg, azimuthDeg) {
-    const el = MathUtils.degToRad(elevationDeg);
-    const az = MathUtils.degToRad(azimuthDeg);
-    this.sunDir.set(Math.cos(el) * Math.sin(az), Math.sin(el), -Math.cos(el) * Math.cos(az));
+  /**
+   * Set the time of day: sun, moon, sky, light colours, haze and stars.
+   * @param {number} hours  local solar time (0-24)
+   * @param {number} day    day of the year (1-366)
+   */
+  setTime(hours, day) {
+    const sun = sunPosition(hours, day);
+    const moon = moonPosition(hours, day);
+    this.hours = hours;
+    this.sunElevation = sun.elevation;
+    skyDir(sun.elevation, sun.azimuth, this.sunDir);
+    skyDir(moon.elevation, moon.azimuth, this.moonDir);
+    const el = sun.elevation;
+    // The sky shader (Preetham) handles day, sunset and twilight colours.
     this.sky.material.uniforms.sunPosition.value.copy(this.sunDir);
-    const day = MathUtils.clamp(elevationDeg / 25, 0.15, 1);
-    this.sun.intensity = 2.8 * day;
-    this.hemi.intensity = 0.4 + 0.8 * day;
-    const warm = MathUtils.clamp(1 - elevationDeg / 20, 0, 1);
-    this.sun.color.setRGB(1, 0.95 - warm * 0.25, 0.88 - warm * 0.45);
-    this.scene.fog.color.setRGB(0.72 * day + 0.1, 0.8 * day + 0.08, 0.9 * day + 0.08);
+    // 0 in daylight, 1 once the sun is 10° below the horizon.
+    const night = smooth(2, -10, el);
+    this.night = night;
+    // Daylight: strength and colour from the sun's height (warm and weak
+    // near the horizon). At night the moon takes over, faint and blue.
+    const daylight = smooth(-3, 14, el);
+    const warm = 1 - smooth(2, 22, el);
+    const moonUp = smooth(-3, 8, moon.elevation);
+    if (el > -3) {
+      this.lightDir.copy(this.sunDir);
+      if (this.lightDir.y < 0.03) this.lightDir.y = 0.03;
+      this.lightDir.normalize();
+      this.sun.intensity = 2.8 * daylight;
+      this.sun.color.setRGB(1, 0.95 - warm * 0.3, 0.88 - warm * 0.5);
+    } else {
+      this.lightDir.copy(this.moonDir);
+      if (this.lightDir.y < 0.05) this.lightDir.y = 0.05;
+      this.lightDir.normalize();
+      this.sun.intensity = 0.32 * moonUp * night;
+      this.sun.color.setRGB(0.62, 0.72, 1);
+    }
+    // Sky light: blue by day, deep blue at night (never quite black, so the
+    // ground and aeroplanes stay readable).
+    this.hemi.intensity = 0.12 + 1.0 * daylight + 0.08 * (1 - night);
+    this.hemi.color.setRGB(0.81 - 0.45 * night, 0.89 - 0.42 * night, 1 - 0.3 * night);
+    this.hemi.groundColor.setRGB(0.3 * (1 - night) + 0.03, 0.35 * (1 - night) + 0.04, 0.2 * (1 - night) + 0.06);
+    hazeColour(el, this.scene.fog.color);
+    this.scene.background.copy(this.scene.fog.color);
+    // The night dome takes over from the day sky through twilight.
+    // Twilight: deep blue overhead, a warm band on the horizon where the sun
+    // went down; then full night.
+    const u = this.nightDome.material.uniforms;
+    const deep = smooth(-2, -12, el);
+    u.opacity.value = smooth(3, -3, el);
+    u.zenith.value.copy(TWILIGHT_ZENITH).lerp(NIGHT_ZENITH, deep);
+    u.horizon.value.copy(TWILIGHT_HORIZON).lerp(NIGHT_HORIZON, smooth(0, -9, el));
+    u.glow.value.copy(TWILIGHT_GLOW).multiplyScalar(1 - smooth(-4, -14, el));
+    u.sunDir.value.copy(this.sunDir);
+    // Stars fade in as it gets dark; the moon is shown when it is up.
+    this.stars.material.opacity = night;
+    this.moon.visible = moon.elevation > -2;
+    this.moon.material.opacity = 0.25 + 0.75 * smooth(0, -8, el);
+    this.moon.position.copy(this.moonDir).multiplyScalar(8500);
+    // Brighten the picture a little at night, as eyes adapt.
+    this.exposure = 0.9 + 0.5 * night;
+    // Tree shadows: soft in low sun, faint by moonlight.
+    if (this.treeShadows) this.treeShadows.material.opacity = 0.5 * daylight + 0.12 * moonUp * night;
     this.#updateTreeShadows();
   }
 
   /** Lay each tree's crown shadow on the ground, away from the sun. */
   #updateTreeShadows() {
     if (!this.treeShadows) return;
-    const s = this.sunDir;
+    const s = this.lightDir;
     const elev = Math.max(0.12, s.y);
     const horiz = Math.hypot(s.x, s.z) || 1;
     // Unit vector along the ground pointing away from the sun.
@@ -145,7 +339,7 @@ export class World {
 
   /** Keep the shadow camera centred on the aircraft so its shadow is crisp. */
   followShadow(target) {
-    this.sun.position.copy(target).addScaledVector(this.sunDir, 80);
+    this.sun.position.copy(target).addScaledVector(this.lightDir, 80);
     this.sun.target.position.copy(target);
   }
 
