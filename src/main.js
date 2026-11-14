@@ -12,6 +12,7 @@ import { Debris } from './view/debris.js';
 import { Peers } from './view/peers.js';
 import { Multiplayer } from './net/multiplayer.js';
 import { DEFAULT_MP_SERVER } from './net/config.js';
+import { Chat } from './ui/chat.js';
 import { OSD } from './ui/osd.js';
 import { Panel } from './ui/panel.js';
 import { loadSettings, saveSettings } from './ui/settings.js';
@@ -181,11 +182,27 @@ function toast(text) {
   setTimeout(() => (d.style.opacity = '0'), 3500);
   setTimeout(() => d.remove(), 4200);
 }
+const chatBtn = document.getElementById('chat-btn');
+const chat = new Chat({
+  onSend(text) {
+    const sent = mp.sendChat(text);
+    if (sent) chat.add(settings.mpName, sent, true);
+  },
+});
+chatBtn.addEventListener('click', () => chat.show());
+/** Open the chat box (after the key that asked for it has been handled). */
+function openChat() {
+  if (mp.connected && !panel.visible) setTimeout(() => chat.show(), 0);
+}
 function mpConnect() {
   if (!settings.mpRoom) return;
   mp.connect(mpServer(), settings.mpRoom, settings.mpName, entry.id);
 }
 mp.onEvent = (type, p, m) => {
+  if (type === 'chat') {
+    chat.add(p.name, m.text);
+    return;
+  }
   if (type === 'hit' && !aircraft.crashed && !paused) {
     aircraft.crash(`Collided with ${p.name}`);
     aircraft.breakAt({ part: m.part, crashSpeed: 3 }, Number(m.speed) || 5);
@@ -195,10 +212,17 @@ mp.onEvent = (type, p, m) => {
   }
   if (type === 'join') toast(`${p.name} joined (${getAircraft(p.aircraft).name})`);
   if (type === 'leave' && mp.connected) toast(`${p.name} left`);
-  if (type === 'status' && mp.status === 'on') toast(`Joined room ${mp.room}`);
+  if (type === 'status' && mp.status === 'on') {
+    toast(`Joined room ${mp.room}`);
+    // Still parked where everyone starts? Move to this player's own lane so
+    // we don't sit inside someone else's aeroplane.
+    if (aircraft.onGround && aircraft.velocity.length() < 1) resetAircraft();
+  }
   if (type === 'status' && mp.status === 'error') toast(`Multiplayer: ${mp.error}`);
   if (type === 'status' && mp.status === 'connecting' && mp.error) toast(mp.error);
   mpBadge.style.display = mp.connected ? 'block' : 'none';
+  chatBtn.style.display = mp.connected ? 'block' : 'none';
+  if (!mp.connected) chat.close();
   mpBadge.textContent = `Room ${mp.room} · ${mp.peers.size + 1} ${mp.peers.size ? 'pilots' : 'pilot'}`;
   if (panel?.visible && panel.tab === 'mp') panel.render();
 };
@@ -288,6 +312,11 @@ input.onAction = (code) => {
       break;
     case 'KeyM':
       sound.muted = !sound.muted;
+      break;
+    case 'Enter':
+    case 'NumpadEnter':
+    case 'KeyT':
+      openChat();
       break;
     case 'Escape':
       setMenu(!panel.visible);
