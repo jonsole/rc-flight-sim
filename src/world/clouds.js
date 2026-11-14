@@ -105,8 +105,10 @@ export class CloudLayer {
   setLight(sunColor, sunIntensity, hazeColor, night) {
     const u = this.uniforms;
     const k = Math.min(1, sunIntensity / 2.2);
-    u.lightColor.value.copy(sunColor).multiplyScalar(0.35 + 0.75 * k).addScalar(0.08 * (1 - night));
-    u.shadeColor.value.setRGB(0.5, 0.54, 0.6).multiplyScalar(0.25 + 0.85 * k).lerp(hazeColor, 0.25);
+    // By moonlight clouds are only faintly grey against the night sky.
+    const dim = 1 - 0.85 * night;
+    u.lightColor.value.copy(sunColor).multiplyScalar((0.35 + 0.75 * k) * dim).addScalar(0.08 * (1 - night));
+    u.shadeColor.value.setRGB(0.5, 0.54, 0.6).multiplyScalar((0.25 + 0.85 * k) * dim).lerp(hazeColor, 0.25);
     u.hazeColor.value.copy(hazeColor);
     u.night.value = night;
   }

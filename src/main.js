@@ -81,7 +81,7 @@ function replaceModel() {
     });
   }
   model = entry.createModel();
-  navLights = addNavLights(model);
+  navLights = addNavLights(model, { shine: true });
   world.scene.add(model.root);
 }
 let navLights = null;
