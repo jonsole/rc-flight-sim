@@ -10,7 +10,6 @@ import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY } from '..
 import { sunPosition, moonPosition } from './sun.js';
 import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail } from './ground.js';
-import { GrassField } from './grass.js';
 
 const smooth = (e0, e1, x) => {
   const t = MathUtils.clamp((x - e0) / (e1 - e0), 0, 1);
@@ -251,9 +250,6 @@ export class World {
     this.scene.add(this.clouds.mesh);
     this.#lights();
     this.#terrain();
-    // 3D grass close to the camera (fewer tufts on phones).
-    this.grass = new GrassField(opts.lowDetail ? { cell: 0.22, radius: 9, blades: 10 } : { cell: 0.18, radius: 13, blades: 14 });
-    this.scene.add(this.grass.mesh);
     this.#runway();
     this.#trees();
     this.#props();
@@ -363,11 +359,6 @@ export class World {
   setClouds(cover) {
     cloudUniforms.cloudCover.value = cover;
     this.clouds.mesh.visible = cover > 0.01;
-  }
-
-  /** Grass around the camera, swaying in the wind. */
-  updateGrass(camera, t, wind) {
-    this.grass.update(camera, t, wind);
   }
 
   /** Let the clouds drift with the wind (world velocity, m/s). */

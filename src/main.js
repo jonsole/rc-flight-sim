@@ -432,7 +432,6 @@ function frame(now) {
   world.followShadow(aircraft.position);
   world.updateWindsock(wind.at(new Vector3(-35, 5, -42), 0, windTmp));
   if (!paused) world.updateClouds(dt, windTmp);
-  world.updateGrass(rig.camera, now / 1000, windTmp);
 
   const eye = rig.pilotEye();
   const dist = eye.distanceTo(aircraft.position);
