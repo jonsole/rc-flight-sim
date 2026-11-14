@@ -459,8 +459,8 @@ export class World {
   #trees() {
     const count = this.obstacles.trees.length;
     // A few shapes of each kind, picked per tree, so the woods don't repeat.
-    const crownGeos = [broadleafCrown(11), broadleafCrown(23), broadleafCrown(37)];
-    const coniferGeos = [conifer(5), conifer(17)];
+    const crownGeos = [broadleafCrown(11), broadleafCrown(23), broadleafCrown(37), broadleafCrown(53), broadleafCrown(71)];
+    const coniferGeos = [conifer(5), conifer(17), conifer(29)];
     const trunkGeo = trunk(3);
     const leafMat = addCloudShadows(new MeshLambertMaterial({ vertexColors: true }));
     this.leafMat = leafMat;
@@ -494,8 +494,8 @@ export class World {
         conifers[k].setColorAt(nCon[k]++, col);
       } else {
         const k = pick % crowns.length;
-        o.position.set(x, y + h * 0.62, z);
-        o.scale.set(t.crownW * 1.05, h * 0.4, t.crownW * 1.05);
+        o.position.set(x, y + h - t.crownH, z);
+        o.scale.set(t.crownW * 1.05, t.crownH * 1.05, t.crownW * 1.05);
         o.updateMatrix();
         crowns[k].setMatrixAt(nCrown[k], o.matrix);
         crowns[k].setColorAt(nCrown[k]++, col);
