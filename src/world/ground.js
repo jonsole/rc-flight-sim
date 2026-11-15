@@ -16,9 +16,27 @@ import { LOCATION, clubAngle } from '../sim/location.js';
 
 const FIELD = { x: 0, z: -40, r: 260 };
 
+/** GLSL polyFieldDist(p): distance outside a polygon field (0 inside). */
+function polyGlsl() {
+  const poly = LOCATION.layout.field.poly;
+  if (!poly) return '';
+  const v = (q) => `vec2(${q[0].toFixed(1)}, ${q[1].toFixed(1)})`;
+  const edges = poly.map((q, i) => [q, poly[(i + 1) % poly.length]]);
+  return `float polyFieldDist(vec2 p) {
+  float d = 1e9;
+  bool inside = false;
+  vec2 a, b;
+  ${edges.map(([a, b]) => `a = ${v(a)}; b = ${v(b)};
+  d = min(d, segDist(p, a, b));
+  if ((a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) inside = !inside;`).join('\n  ')}
+  return inside ? 0.0 : d;
+}`;
+}
+
 /** GLSL: distance outside the club's field (0 on it). */
 function fieldDist() {
   const f = LOCATION.layout.field;
+  if (f.poly) return 'polyFieldDist(p)';
   if (f.r !== undefined) return `max(0.0, length(p - vec2(${f.x.toFixed(1)}, ${f.z.toFixed(1)})) - ${f.r.toFixed(1)})`;
   return `rectDist(p, vec2(${((f.x0 + f.x1) / 2).toFixed(1)}, ${((f.z0 + f.z1) / 2).toFixed(1)}), vec2(${((f.x1 - f.x0) / 2).toFixed(1)}, ${((f.z1 - f.z0) / 2).toFixed(1)}))`;
 }
@@ -121,7 +139,7 @@ export function addGroundDetail(material) {
       .replace('#include <common>', '#include <common>\nvarying vec3 vGroundWorld;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGroundWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${GLSL}\n#ifdef REAL_GROUND\nuniform sampler2D groundMap; uniform vec2 groundOrigin; uniform float groundSize;\n#endif`)
+      .replace('#include <common>', `#include <common>\n${GLSL}\n${polyGlsl()}\n#ifdef REAL_GROUND\nuniform sampler2D groundMap; uniform vec2 groundOrigin; uniform float groundSize;\n#endif`)
       .replace('#include <map_fragment>', /* glsl */ `
         vec2 p = vGroundWorld.xz;
         // Grass texture at two scales and angles, blended by a slow noise,

@@ -44,7 +44,8 @@ SITES = {
     # Impington Village College sports field (Cambridgeshire).
     'impington': {
         'name': 'Impington Village College',
-        'pilot': (544587.4, 262930.1),  # middle of the playing field (provisional)
+        'centre': (544587.4, 262930.1),  # middle of the baked area
+        'pilot': (544662.4, 262900.1),   # middle of the main playing field
         'half': 1000,
     },
 }
@@ -82,13 +83,15 @@ def fetch(url, path, check=None):
 
 def download(site, cache):
     os.makedirs(cache, exist_ok=True)
-    e0, n0 = site['pilot']
+    # The baked area is centred on 'centre' if given (so the pilot spot can
+    # move without new downloads), otherwise on the pilot.
+    e0, n0 = site.get('centre', site['pilot'])
     h = site['half']
     box = (e0 - h, n0 - h, e0 + h, n0 + h)
     out = {}
     for key, (ds, cov) in COVERAGES.items():
         print(f'LIDAR {key}...')
-        out[key] = fetch_mosaic(ds, cov, box, os.path.join(cache, f'{key}.tif'), cache, key)
+        out[key] = fetch_mosaic(ds, cov, box, os.path.join(cache, f'{key}_E{box[0]:.0f}_N{box[1]:.0f}_{box[2] - box[0]:.0f}.tif'), cache, key)
     to_ll = Transformer.from_crs(27700, 4326, always_xy=True)
     lon0, lat0 = to_ll.transform(box[0], box[1])
     lon1, lat1 = to_ll.transform(box[2], box[3])
@@ -103,6 +106,7 @@ def fetch_mosaic(ds, cov, box, path, cache, key, tile=500):
     big requests) and stitched into a single GeoTIFF-less array file."""
     if os.path.exists(path):
         return path
+    # Named by where they are, so a different box never reuses the wrong ones.
     n = int(box[2] - box[0])
     full = np.full((n, n), np.nan, np.float32)
     for i in range(0, n, tile):
@@ -111,7 +115,7 @@ def fetch_mosaic(ds, cov, box, path, cache, key, tile=500):
             n0, n1 = box[1] + j, box[1] + min(n, j + tile)
             url = (f'{EA}/{ds}/wcs?service=WCS&version=2.0.1&request=GetCoverage&coverageId={cov}'
                    f'&format=image/tiff&subset=E({e0:.0f},{e1:.0f})&subset=N({n0:.0f},{n1:.0f})')
-            part = fetch(url, os.path.join(cache, f'{key}_{i}_{j}.tif'), lambda d: d[:2] in (b'II', b'MM'))
+            part = fetch(url, os.path.join(cache, f'{key}_E{e0:.0f}_N{n0:.0f}_{tile}.tif'), lambda d: d[:2] in (b'II', b'MM'))
             a = tifffile.imread(part).astype(np.float32)
             # Row 0 is the north edge.
             r0 = n - (j + a.shape[0])
@@ -505,7 +509,9 @@ def main():
     # Pixel centres in local coordinates (row 0 is the north edge).
     xs = box[0] + 0.5 + np.arange(n) - e0
     zs = -(box[3] - 0.5 - np.arange(n) - n0)
-    h0 = float(np.nanmedian(dtm[n // 2 - 3:n // 2 + 3, n // 2 - 3:n // 2 + 3]))
+    # Ground height at the pilot's spot (the origin).
+    pc, pr = int(e0 - box[0]), int(box[3] - n0)
+    h0 = float(np.nanmedian(dtm[pr - 3:pr + 3, pc - 3:pc + 3]))
     ground = np.where(np.isnan(dtm), np.nanmedian(dtm), dtm) - h0
     ndsm = dsm - dtm
 

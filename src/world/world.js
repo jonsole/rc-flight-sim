@@ -504,15 +504,18 @@ export class World {
   }
 
   #runway() {
-    const g = new PlaneGeometry(RUNWAY.length, RUNWAY.width);
-    g.rotateX(-Math.PI / 2);
-    const tex = RUNWAY.style === 'cricket' ? cricketPitchTexture(RUNWAY) : runwayTexture();
-    const rw = new Mesh(g, addCloudShadows(new MeshLambertMaterial({ map: tex, polygonOffset: true, polygonOffsetFactor: -2 })));
-    // Just above the physics ground (y = 0); polygonOffset prevents z-fighting.
-    rw.position.set(RUNWAY.x, 0.002, RUNWAY.z);
-    rw.receiveShadow = true;
-    this.club.add(rw);
-    this.builtScenery.push(rw);
+    // A strip to draw, unless take-offs are just from the field's grass.
+    if (RUNWAY.style !== 'none') {
+      const g = new PlaneGeometry(RUNWAY.length, RUNWAY.width);
+      g.rotateX(-Math.PI / 2);
+      const tex = RUNWAY.style === 'cricket' ? cricketPitchTexture(RUNWAY) : runwayTexture();
+      const rw = new Mesh(g, addCloudShadows(new MeshLambertMaterial({ map: tex, polygonOffset: true, polygonOffsetFactor: -2 })));
+      // Just above the physics ground (y = 0); polygonOffset prevents z-fighting.
+      rw.position.set(RUNWAY.x, 0.002, RUNWAY.z);
+      rw.receiveShadow = true;
+      this.club.add(rw);
+      this.builtScenery.push(rw);
+    }
 
     // Pilot box (gravel pad) and safety fence line, where the club has them.
     if (PILOT_PAD) {
