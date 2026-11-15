@@ -344,9 +344,11 @@ def simplify(pts, tol=0.6):
     return a[:-1] + b[:-1]
 
 
-def buildings_from(areas, ndsm, vom, xs, zs):
-    """OSM footprints with heights measured from the LIDAR, plus large
-    structures the LIDAR shows that are not mapped yet."""
+def buildings_from(areas, ndsm, vom, xs, zs, lidar_only=False):
+    """OSM footprints with heights measured from the LIDAR. OSM is kept up
+    to date, the LIDAR is a few years old: a building OSM no longer has has
+    usually been demolished, so LIDAR-only structures are left out unless
+    `lidar_only` asks for them."""
     n = ndsm.shape[0]
     x0, z0 = xs[0] - 0.5, zs[0] - 0.5
     out = []
@@ -387,6 +389,8 @@ def buildings_from(areas, ndsm, vom, xs, zs):
         gable = len(pts) == 4 and area < 400 and top - eave > 1.2
         out.append({'pts': [(r1(x), r1(z)) for x, z in pts], 'h': r1(top), 'eave': r1(max(2.3, min(eave, top - 0.3))) if gable else r1(top),
                     'kind': t['building']})
+    if not lidar_only:
+        return out
     # Unmapped: tall, non-vegetation blobs of at least 60 m^2.
     solid = (np.nan_to_num(ndsm) > 2.5) & (np.nan_to_num(vom) < 0.5) & ~covered
     solid = ndimage.binary_opening(solid, iterations=1)
@@ -424,6 +428,8 @@ def main():
     ap.add_argument('--out', default=os.path.join(os.path.dirname(__file__), '..', 'src', 'locations'))
     ap.add_argument('--max-trees', type=int, default=3500)
     ap.add_argument('--ground-px', type=int, default=2048)
+    ap.add_argument('--lidar-buildings', action='store_true',
+                    help='also add structures the LIDAR shows that OSM does not have (they may since have been demolished)')
     args = ap.parse_args()
     site = SITES[args.site]
     box, files = download(site, args.cache)
@@ -453,7 +459,7 @@ def main():
 
     trees = find_trees(vom, xs, zs, args.max_trees)
     bushes = find_bushes(vom, xs, zs)
-    buildings = buildings_from(areas, ndsm, vom, xs, zs)
+    buildings = buildings_from(areas, ndsm, vom, xs, zs, args.lidar_buildings)
     print(f'{len(trees)} trees, {len(bushes)} bush points, {len(buildings)} buildings')
     png, img = paint_ground(areas, lines, buildings, vom, n, args.ground_px)
     img.save(os.path.join(args.cache, 'ground-preview.png'))
