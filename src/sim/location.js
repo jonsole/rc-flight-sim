@@ -61,18 +61,18 @@ const WATERBEACH = {
   load: () => import('../locations/waterbeach.json'),
   layout: {
     // The cricket pitch in the middle of the field is the runway: 28 m,
-    // heading about 101°/281°. You stand 22 m south of it, facing it.
+    // heading about 101°/281°. You stand 10 m south of its middle, facing it.
     // No pits, tables, fence or windsock: just the field.
     angle: 11.19,
-    runway: { x: 0, z: -22, length: 28.4, width: 3.05, style: 'cricket' },
+    runway: { x: 0, z: -10, length: 28.4, width: 3.05, style: 'cricket' },
     pilotPad: null,
     // The field: about 160 m east-west by 210 m north-south, long grass
     // except about 32 m round the pitch, and a mown rectangle south of it.
-    field: { x0: -62, x1: 96, z0: -129, z1: 81 },
-    flat: { x0: -62, x1: 96, z0: -129, z1: 81, fade: 40 },
+    field: { x0: -64.3, x1: 93.7, z0: -117.2, z1: 92.8 },
+    flat: { x0: -64.3, x1: 93.7, z0: -117.2, z1: 92.8, fade: 40 },
     mown: [
-      { oval: [0, -22], rx: 14.2 + 32, rz: 1.5 + 32, p: 1.7, club: true },
-      { x0: -14.4, x1: 65, z0: 29.1, z1: 73.7 },
+      { oval: [0, -10], rx: 14.2 + 32, rz: 1.5 + 32, p: 1.7, club: true },
+      { x0: -16.7, x1: 62.7, z0: 40.9, z1: 85.5 },
     ],
     hut: null,
     container: null,
@@ -83,17 +83,17 @@ const WATERBEACH = {
     fence: null,
     // Young trees along the curved path west of the pitch, grown since the survey.
     trees: [{
-      at: [[-18.9, -77.2], [-24.3, -70.1], [-29.3, -63.7], [-33.0, -57.5], [-37.6, -51.9], [-45.9, -44.4], [-53.8, -39.4]],
+      at: [[-21.2, -65.4], [-26.6, -58.3], [-31.6, -51.9], [-35.3, -45.7], [-39.9, -40.1], [-48.2, -32.6], [-56.1, -27.6]],
       h: 9, r: 3.2,
     }],
     // All deciduous round the field.
     conifers: false,
     // The east hedge's trees have grown a lot since the LIDAR (2022)...
-    treeBelts: [{ from: [116.1, -167.3], to: [95.1, 162.7], width: 22, grow: 1.4, minH: 10, spacing: 7 }],
+    treeBelts: [{ from: [113.8, -155.5], to: [92.8, 174.5], width: 22, grow: 1.4, minH: 10, spacing: 7 }],
     // ...and there is a 3 m chain-link fence behind them.
-    fences: [{ from: [121.1, -167.3], to: [100.1, 162.7], height: 3 }],
+    fences: [{ from: [118.8, -155.5], to: [97.8, 174.5], height: 3 }],
     // High bushes just behind the fence.
-    bushBelts: [{ from: [125.1, -167.3], to: [104.1, 162.7], width: 5, minH: 3.5, maxH: 5 }],
+    bushBelts: [{ from: [122.8, -155.5], to: [101.8, 174.5], width: 5, minH: 3.5, maxH: 5 }],
   },
 };
 

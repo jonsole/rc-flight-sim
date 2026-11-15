@@ -27,7 +27,7 @@ describe('Waterbeach', () => {
   it('uses the cricket pitch as the runway, turned to its real heading', () => {
     const r = terrain.RUNWAY;
     // The pitch's ends as surveyed (52.277766,0.192194 and 52.277709,0.192599).
-    const ends = [[-27.7 + 18.1, -77.1 + 52.7], [0.1 + 18.1, -71.6 + 52.7]];
+    const ends = [[-27.7 + 15.8, -77.1 + 64.5], [0.1 + 15.8, -71.6 + 64.5]];
     for (const [x, z] of ends) {
       expect(inField(x, z)).toBe(true);
       const [cx, cz] = worldToClub(x, z);
@@ -43,9 +43,9 @@ describe('Waterbeach', () => {
 
   it('has short grass on the mown oval and rectangle, long grass elsewhere on the field', () => {
     expect(terrain.surfaceAt(0, -8).name).toBe('field grass'); // in front of the pilot, in the oval
-    expect(terrain.surfaceAt(40, 50).name).toBe('field grass'); // the rectangle
-    expect(terrain.surfaceAt(-45, -100).name).toBe('rough grass');
-    expect(terrain.surfaceAt(80, 0).name).toBe('rough grass');
+    expect(terrain.surfaceAt(38, 62).name).toBe('field grass'); // the rectangle
+    expect(terrain.surfaceAt(-47, -88).name).toBe('rough grass');
+    expect(terrain.surfaceAt(78, 12).name).toBe('rough grass');
   });
 
   it('loads the LIDAR trees and keeps them off the runway', () => {
@@ -62,13 +62,13 @@ describe('Waterbeach', () => {
   it('has only broadleaf trees, a grown east belt and a solid chain-link fence behind it', () => {
     const ob = new Obstacles();
     expect(ob.trees.filter((t) => t.conifer)).toHaveLength(0);
-    const belt = ob.trees.filter((t) => t.x > 88 && t.x < 118 && t.z > -100 && t.z < 150);
+    const belt = ob.trees.filter((t) => t.x > 86 && t.x < 116 && t.z > -88 && t.z < 162);
     expect(belt.length).toBeGreaterThan(30);
     expect(Math.min(...belt.map((t) => t.h))).toBeGreaterThanOrEqual(10);
-    // Fence from (121.1, -167.3) to (100.1, 162.7): solid below 3 m, clear above.
+    // Fence from (118.8, -155.5) to (97.8, 174.5): solid below 3 m, clear above.
     const fence = ob.shapes.find((s) => s.name === 'the chain-link fence');
-    const x = (121.1 + 100.1) / 2;
-    const z = (-167.3 + 162.7) / 2;
+    const x = (118.8 + 97.8) / 2;
+    const z = (-155.5 + 174.5) / 2;
     expect(Obstacles.test(fence, x, 1.5, z)).not.toBeNull();
     expect(Obstacles.test(fence, x, 3.5, z)).toBeNull();
   });

@@ -38,7 +38,7 @@ SITES = {
     # Waterbeach (Cambridgeshire): the mown field by the old barracks.
     'waterbeach': {
         'name': 'Waterbeach',
-        'pilot': (549663.9, 266640.7),  # OSGB easting, northing of the pilot box (22 m south of the cricket pitch)
+        'pilot': (549666.2, 266652.5),  # OSGB easting, northing where the pilot stands (10 m south of the cricket pitch)
         'half': 1000,                    # metres either side of the pilot baked in
     },
 }
