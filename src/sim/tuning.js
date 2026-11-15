@@ -53,34 +53,98 @@ function shiftTail(d, axis, metres) {
   }
 }
 
-// --- Propeller ---------------------------------------------------------------
-// A different prop on the same motor. The motor gives about the same power
-// whatever it turns, so a bigger, coarser or more-bladed prop loads it more
-// and turns slower. Scaled from the model's own prop (motor.prop), so the
-// default flies exactly as before:
-//   power absorbed ∝ Bf · (P/D)^1.3 · n³ · D⁵      Bf = (blades / 2)^0.75
-//   static thrust  ∝ Bf^0.85 · (P/D)^0.6 · n² · D⁴
-//   pitch speed    = pitch × n
-// with n settling where the power absorbed matches the motor's, but at most
-// 30% above the original rpm (an unloaded motor only spins so fast).
+// --- Power system: propeller, motor, battery ----------------------------------
+// A brushless motor on a LiPo turning a prop, at full throttle:
+//   motor current   I = (V − rpm/Kv) / (R_motor + R_battery)
+//   motor torque    Q = Kt (I − I_noload),  Kt = 60 / (2π Kv)
+//   prop torque     Q = kq · n²,  kq ∝ Bf · (P/D)^1.3 · D⁵,  Bf = (blades/2)^0.75
+// It settles where the two torques meet. Static thrust ∝ Bf^0.85 · (P/D)^0.6
+// · n² · D⁴ and pitch speed = pitch × n follow. Calibrated per model from its
+// own prop, motor and battery (the rpm and current it's known to run at
+// full throttle), so the defaults fly exactly as before; the winding
+// resistance is worked out from that.
+const VCELL = 3.95; // a fresh LiPo cell under load (V)
+const MAH_GRAMS = 0.027; // LiPo weight per mAh per cell (g): 3S 1350 ≈ 110 g
 const bladeFactor = (b) => (b / 2) ** 0.75;
-function setProp(d, change) {
+
+/** The model's own full-throttle operating point and the constants behind it. */
+function calibrate(d) {
   const m = d.motor;
-  const ref = (m.propRef ??= { ...m.prop, staticThrust: m.staticThrust, pitchSpeed: m.pitchSpeed, maxRpm: m.maxRpm, discArea: m.discArea, torque: m.staticThrust * m.torqueFactor });
-  const p = (m.prop = { ...m.prop, ...change });
-  const pd = p.pitchIn / p.diameterIn;
-  const pd0 = ref.pitchIn / ref.diameterIn;
-  const dr = p.diameterIn / ref.diameterIn;
-  const load = (bladeFactor(p.blades) / bladeFactor(ref.blades)) * (pd / pd0) ** 1.3 * dr ** 5;
-  const n = Math.min(1.3, load ** (-1 / 3)); // rpm, relative to the original
-  m.staticThrust = ref.staticThrust * (bladeFactor(p.blades) / bladeFactor(ref.blades)) ** 0.85 * (pd / pd0) ** 0.6 * n * n * dr ** 4;
-  m.pitchSpeed = ref.pitchSpeed * (p.pitchIn / ref.pitchIn) * n;
-  if (ref.maxRpm) m.maxRpm = ref.maxRpm * n;
-  if (ref.discArea) m.discArea = ref.discArea * dr * dr;
-  const power = load * n ** 3; // absorbed, relative (1 unless the motor can't load up)
-  m.powerScale = power;
-  m.torqueFactor = (ref.torque * load * n * n) / m.staticThrust; // torque ∝ load · n²
+  const b = d.battery;
+  if (!m.prop || !m.kv || !m.maxRpm) return null;
+  const n0 = m.maxRpm / 60;
+  const v0 = b.cells * VCELL;
+  const emf0 = (60 * n0) / m.kv;
+  const rMotor = Math.max(0.005, (v0 - emf0) / b.maxCurrent - b.internalResistance);
+  const kt0 = 60 / (2 * Math.PI * m.kv);
+  const q0 = kt0 * (b.maxCurrent - (m.noLoadCurrent ?? 0));
+  return {
+    prop: { ...m.prop }, kv: m.kv, rMotor, cells: b.cells, capacity: b.capacity, cellR: b.internalResistance / b.cells,
+    n0, q0, kq0: q0 / (n0 * n0), thrust0: m.staticThrust, pitchSpeed0: m.pitchSpeed, discArea0: m.discArea,
+    torque0: m.staticThrust * m.torqueFactor, noLoad: m.noLoadCurrent ?? 0,
+  };
 }
+
+/** Re-solve the full-throttle operating point with the tuned prop, motor and battery. */
+function solvePower(d, ref, pw) {
+  const m = d.motor;
+  const p = pw.prop;
+  const pd = p.pitchIn / p.diameterIn;
+  const pd0 = ref.prop.pitchIn / ref.prop.diameterIn;
+  const dr = p.diameterIn / ref.prop.diameterIn;
+  const bf = bladeFactor(p.blades) / bladeFactor(ref.prop.blades);
+  const kq = ref.kq0 * bf * (pd / pd0) ** 1.3 * dr ** 5;
+  const kt = 60 / (2 * Math.PI * pw.kv);
+  const v = pw.cells * VCELL;
+  const rTot = pw.rMotor + pw.cellR * pw.cells;
+  const current = (n) => (v - (60 * n) / pw.kv) / rTot;
+  // Motor torque falls with rpm, prop torque rises: bisect for where they meet.
+  let lo = 0;
+  let hi = (v * pw.kv) / 60;
+  for (let i = 0; i < 60; i++) {
+    const n = (lo + hi) / 2;
+    if (kt * (current(n) - ref.noLoad) > kq * n * n) lo = n;
+    else hi = n;
+  }
+  const n = lo;
+  const r = n / ref.n0;
+  m.prop = { ...p };
+  m.kv = pw.kv;
+  m.maxRpm = n * 60;
+  m.staticThrust = ref.thrust0 * bf ** 0.85 * (pd / pd0) ** 0.6 * r * r * dr ** 4;
+  m.pitchSpeed = ref.pitchSpeed0 * (p.pitchIn / ref.prop.pitchIn) * r;
+  if (ref.discArea0) m.discArea = ref.discArea0 * dr * dr;
+  // The prop-strike points sit at the tips: a bigger prop reaches lower.
+  if (dr !== 1) {
+    for (const c of d.contacts) {
+      if (c.type !== 'prop') continue;
+      const [, my, mz] = m.position;
+      c.pos = [c.pos[0], my + (c.pos[1] - my) * dr, mz + (c.pos[2] - mz) * dr];
+    }
+  }
+  m.torqueFactor = (ref.torque0 * (kq * n * n) / ref.q0) / Math.max(1e-6, m.staticThrust);
+  m.resistance = pw.rMotor;
+  d.battery = { ...d.battery, cells: pw.cells, capacity: pw.capacity, internalResistance: pw.cellR * pw.cells, maxCurrent: Math.max(0.5, current(n)) };
+  // A bigger battery weighs more.
+  const dm = ((pw.cells * pw.capacity - ref.cells * ref.capacity) * MAH_GRAMS) / 1000;
+  if (dm) {
+    const k = (d.mass + dm) / d.mass;
+    d.mass += dm;
+    d.inertia = d.inertia.map((x) => x * k);
+  }
+}
+
+/** The power-system tunables: { key: (pw, value) => void } and their defaults from the calibration. */
+const POWER = {
+  propDiameter: (pw, v) => (pw.prop.diameterIn = v),
+  propPitch: (pw, v) => (pw.prop.pitchIn = v),
+  propBlades: (pw, v) => (pw.prop.blades = v),
+  kv: (pw, v) => (pw.kv = v),
+  motorResistance: (pw, v) => (pw.rMotor = v / 1000),
+  cells: (pw, v) => (pw.cells = v),
+  capacity: (pw, v) => (pw.capacity = v),
+  cellResistance: (pw, v) => (pw.cellR = v / 1000),
+};
 
 /** The settings, by group. `get` reads the default from a definition, `set` writes into a copy. */
 export const TUNABLES = [
@@ -115,12 +179,22 @@ export const TUNABLES = [
     get: (d) => (d.motor.downThrust ?? 0) / deg, set: (d, v) => (d.motor.downThrust = v * deg) },
   { group: 'Motor', key: 'rightThrust', label: 'Right-thrust', unit: '°', min: -5, max: 8, step: 0.5,
     get: (d) => (d.motor.rightThrust ?? 0) / deg, set: (d, v) => (d.motor.rightThrust = v * deg) },
-  { group: 'Propeller', key: 'propDiameter', label: 'Diameter', unit: 'in', min: 0.6, max: 1.5, rel: true, step: 0.5,
-    get: (d) => d.motor.prop?.diameterIn ?? null, set: (d, v) => setProp(d, { diameterIn: v }) },
-  { group: 'Propeller', key: 'propPitch', label: 'Pitch', unit: 'in', min: 0.5, max: 2, rel: true, step: 0.5,
-    get: (d) => d.motor.prop?.pitchIn ?? null, set: (d, v) => setProp(d, { pitchIn: v }) },
-  { group: 'Propeller', key: 'propBlades', label: 'Blades', unit: '', min: 2, max: 6, step: 1,
-    get: (d) => d.motor.prop?.blades ?? null, set: (d, v) => setProp(d, { blades: v }) },
+  { group: 'Propeller', key: 'propDiameter', label: 'Diameter', unit: 'in', min: 0.6, max: 1.5, rel: true, step: 0.5, power: true,
+    get: (d) => calibrate(d)?.prop.diameterIn ?? null },
+  { group: 'Propeller', key: 'propPitch', label: 'Pitch', unit: 'in', min: 0.5, max: 2, rel: true, step: 0.5, power: true,
+    get: (d) => calibrate(d)?.prop.pitchIn ?? null },
+  { group: 'Propeller', key: 'propBlades', label: 'Blades', unit: '', min: 2, max: 6, step: 1, power: true,
+    get: (d) => calibrate(d)?.prop.blades ?? null },
+  { group: 'Electric motor', key: 'kv', label: 'Kv', unit: 'rpm/V', min: 0.5, max: 2, rel: true, step: 10, power: true,
+    get: (d) => calibrate(d)?.kv ?? null },
+  { group: 'Electric motor', key: 'motorResistance', label: 'Winding resistance', unit: 'mΩ', min: 0.3, max: 3, rel: true, step: 1, power: true,
+    get: (d) => (calibrate(d) ? calibrate(d).rMotor * 1000 : null) },
+  { group: 'Battery', key: 'cells', label: 'Cells (S)', unit: 'S', min: 1, max: 6, step: 1, power: true,
+    get: (d) => (calibrate(d) ? d.battery.cells : null) },
+  { group: 'Battery', key: 'capacity', label: 'Capacity', unit: 'mAh', min: 0.3, max: 3, rel: true, step: 50, power: true,
+    get: (d) => (calibrate(d) ? d.battery.capacity : null) },
+  { group: 'Battery', key: 'cellResistance', label: 'Internal resistance per cell', unit: 'mΩ', min: 3, max: 60, step: 1, power: true,
+    get: (d) => (calibrate(d) ? (d.battery.internalResistance / d.battery.cells) * 1000 : null) },
   { group: 'Layout', key: 'thrustHeight', label: 'Thrust line vs wing (+ above)', unit: 'mm', min: -150, max: 150, step: 1, around: true,
     get: (d) => (d.motor.position[1] - mean(wingPanels(d), 1)) * 1000,
     set: (d, v) => {
@@ -196,14 +270,33 @@ export function saveTuning(id, values) {
   }
 }
 
-/** A copy of `def` with `values` applied (in TUNABLES order). */
+/** A copy of `def` with `values` applied (in TUNABLES order; the power system last). */
 export function tunedDef(def, values) {
   if (!values || !Object.keys(values).length) return def;
   const d = { ...def };
   for (const k of ['surfaces', 'contacts']) d[k] = def[k].map((x) => structuredClone({ ...x }));
   d.motor = { ...def.motor, prop: def.motor.prop && { ...def.motor.prop } };
+  d.battery = { ...def.battery };
   d.parasite = { ...def.parasite };
   d.inertia = [...def.inertia];
-  for (const t of TUNABLES) if (values[t.key] != null) t.set(d, Number(values[t.key]));
+  for (const t of TUNABLES) if (!t.power && values[t.key] != null) t.set(d, Number(values[t.key]));
+  const powerKeys = Object.keys(POWER).filter((k) => values[k] != null);
+  const ref = powerKeys.length ? calibrate(d) : null;
+  if (ref) {
+    const pw = { prop: { ...ref.prop }, kv: ref.kv, rMotor: ref.rMotor, cells: ref.cells, capacity: ref.capacity, cellR: ref.cellR };
+    for (const k of powerKeys) POWER[k](pw, Number(values[k]));
+    solvePower(d, ref, pw);
+  }
   return d;
+}
+
+/** The full-throttle numbers of a (tuned) model, for the Tuning tab. */
+export function powerSummary(d) {
+  const m = d.motor;
+  const b = d.battery;
+  const watts = b.maxCurrent * b.cells * VCELL;
+  return {
+    rpm: m.maxRpm, current: b.maxCurrent, watts, thrust: m.staticThrust, pitchSpeed: m.pitchSpeed,
+    batteryGrams: b.cells * b.capacity * MAH_GRAMS, fullThrottleMinutes: (b.capacity / 1000 / b.maxCurrent) * 60 * 0.8,
+  };
 }

@@ -7,7 +7,7 @@ import { formatDay } from '../world/seasons.js';
 import { LOCATIONS, LOCATION } from '../sim/location.js';
 import { QUALITY, DISTANCES } from '../world/quality.js';
 import { googleSessions } from '../world/googleTiles.js';
-import { tunablesFor, loadTuning, saveTuning, tunedDef } from '../sim/tuning.js';
+import { tunablesFor, loadTuning, saveTuning, tunedDef, powerSummary } from '../sim/tuning.js';
 
 const CH_LABEL = { roll: 'Aileron (roll)', pitch: 'Elevator (pitch)', yaw: 'Rudder (yaw)', throttle: 'Throttle' };
 
@@ -154,11 +154,10 @@ export class Panel {
       }, '↺');
       out.push(el('label', { class: changed ? 'row tuned' : 'row' },
         el('span', { class: 'lbl' }, t.label, el('small', {}, ` (default ${fmt(t, t.dflt)})`)), input, show, reset));
-      if (t.key === 'propBlades') {
-        // What this prop gives on this motor (src/sim/tuning.js setProp).
-        const m = tunedDef(entry.def, values).motor;
-        const rpm = m.maxRpm ? `, ${Math.round(m.maxRpm / 100) * 100} rpm` : '';
-        out.push(el('p', { class: 'hint' }, `With this prop: ${m.staticThrust.toFixed(1)} N static thrust, ${m.pitchSpeed.toFixed(1)} m/s pitch speed (top speed about ${Math.round(m.pitchSpeed * 3.6 * 0.85)} km/h)${rpm}, ${Math.round((m.powerScale ?? 1) * 100)}% of the original prop's power draw.`));
+      if (t.key === 'cellResistance') {
+        // What this prop, motor and battery give at full throttle (src/sim/tuning.js).
+        const p = powerSummary(tunedDef(entry.def, values));
+        out.push(el('p', { class: 'hint' }, `Full throttle on a fresh pack: ${Math.round(p.rpm / 100) * 100} rpm, ${p.current.toFixed(1)} A, ${Math.round(p.watts)} W; ${p.thrust.toFixed(1)} N static thrust, ${p.pitchSpeed.toFixed(1)} m/s pitch speed. Battery about ${Math.round(p.batteryGrams)} g (bigger packs add weight); about ${p.fullThrottleMinutes.toFixed(1)} min at full throttle.`));
       }
     }
     const fileIn = el('input', {

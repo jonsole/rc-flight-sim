@@ -244,7 +244,9 @@ export class Aircraft {
     // throttle, where the motor is lightly loaded); static thrust goes as RPM²
     // and falls off linearly to the prop's pitch speed at that RPM. Above it
     // the prop windmills and adds drag.
-    const rpmFrac = Math.pow(this.throttleActual, 0.75);
+    // A draining battery's voltage drops, and the motor's rpm with it
+    // (1 on a fresh pack: the model's figures are for a fresh one).
+    const rpmFrac = Math.pow(this.throttleActual, 0.75) * (this.battery.restFrac ?? 1);
     const thrust = Math.max(
       -0.1 * def.motor.staticThrust * rpmFrac,
       def.motor.staticThrust * (rpmFrac * rpmFrac - (rpmFrac * vAxial) / def.motor.pitchSpeed),
@@ -431,12 +433,12 @@ export class Aircraft {
 
     // --- Battery -----------------------------------------------------------
     const b = def.battery;
-    // (powerScale: a different prop loads the motor more or less: tuning.)
-    const current = b.maxCurrent * (def.motor.powerScale ?? 1) * Math.pow(this.throttleActual, 1.6);
+    const current = b.maxCurrent * Math.pow(this.throttleActual, 1.6);
     this.battery.current = current;
     this.battery.used += (current * dt * 1000) / 3600;
     const soc = Math.max(0, 1 - this.battery.used / b.capacity);
     const restCell = 3.3 + 0.9 * soc - 0.25 * Math.pow(1 - soc, 6);
+    this.battery.restFrac = restCell / 4.2;
     this.battery.voltage = b.cells * restCell - current * b.internalResistance;
   }
 

@@ -75,8 +75,11 @@ published leaves the live page on the older build.
 *Menu → Tuning* shows the flight settings of the model you're flying, with
 its defaults: all-up weight and CG position; static thrust, prop pitch
 speed (top speed), motor torque, down- and right-thrust; the propeller
-(diameter, pitch, blades: thrust, top speed, rpm and power draw follow, for
-the same motor); the layout (thrust
+(diameter, pitch, blades: shown on the 3D model too), the electric motor
+(Kv, winding resistance) and the battery (cells, capacity, internal
+resistance): the full-throttle rpm, current, thrust and top speed are
+worked out from them, a bigger pack weighs more, and thrust fades as the
+battery drains; the layout (thrust
 line height and tailplane height relative to the wing, tail arm, tailplane
 incidence); wing and tail drag, body drag; aileron, elevator and rudder throws; effective dihedral.
 Changes apply when you let go of a slider, in flight too, and are saved in

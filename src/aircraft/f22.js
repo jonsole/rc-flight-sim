@@ -20,6 +20,7 @@
 //   +x forward, +y up, +z right (right-handed).
 
 import { liftSlope } from '../sim/aero.js';
+import { propGeometry } from './prop.js';
 import { createF22Model } from './f22Model.js';
 
 const deg = Math.PI / 180;
@@ -267,6 +268,7 @@ export function buildF22(style) {
     downwashGain: style.downwashGain,
     motor: {
       prop: { diameterIn: style.prop.diameterIn, pitchIn: style.prop.pitchIn, blades: style.prop.blades },
+      kv: 2600, noLoadCurrent: 0.6, // 2204 2600Kv
       staticThrust: style.prop.staticThrust,
       pitchSpeed: style.prop.pitchSpeed,
       spoolTime: 0.05,
@@ -331,7 +333,7 @@ export function buildF22(style) {
       pod: [0.0, under + 0.012, 0],
       chase: { back: 1.4, up: 0.45 },
     },
-    createModel: () => createF22Model(geometry),
+    createModel: (opts = {}) => createF22Model(opts.prop ? { ...geometry, prop: { ...geometry.prop, ...propGeometry(opts.prop) } } : geometry),
   };
 }
 

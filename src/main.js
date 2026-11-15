@@ -163,7 +163,10 @@ function replaceModel() {
       }
     });
   }
-  model = entry.createModel();
+  // Showing the prop as tuned (Menu → Tuning), if it's been changed.
+  const tuning = loadTuning(entry.id);
+  const tunedProp = ['propDiameter', 'propPitch', 'propBlades'].some((k) => tuning[k] != null) ? tunedDef(entry.def, tuning).motor.prop : null;
+  model = entry.createModel(tunedProp ? { prop: tunedProp } : {});
   navLights = addNavLights(model, { shine: true });
   planeShadow.setModel(model, entry.def.wingSpan);
   world.scene.add(model.root);
@@ -183,10 +186,13 @@ function loadAircraft(id) {
 /** The tuning changed: rebuild the flight model, carrying on from where it is. */
 function retune() {
   const old = aircraft;
+  const oldProp = JSON.stringify(old.def.motor.prop);
   aircraft = new Aircraft(tunedDef(entry.def, loadTuning(entry.id)), { ground, wind, obstacles });
   for (const k of ['position', 'velocity', 'orientation', 'omega']) aircraft[k].copy(old[k]);
   for (const k of ['controls', 'servo', 'assistMode', 'throttleActual', 'held', 'crashed', 'crashReason', 'propBroken', 'battery', 'time']) aircraft[k] = old[k];
   for (const part of old.broken) aircraft.broken.add(part);
+  // A different prop: show it.
+  if (JSON.stringify(aircraft.def.motor.prop) !== oldProp) replaceModel();
 }
 loadAircraft(settings.aircraft);
 const osd = new OSD(document.getElementById('osd'));

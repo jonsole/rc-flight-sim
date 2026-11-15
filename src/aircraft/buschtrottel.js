@@ -17,6 +17,7 @@
 
 import { liftSlope } from '../sim/aero.js';
 import { Group } from 'three';
+import { propGeometry } from './prop.js';
 import { createBuschtrottelModel } from './buschtrottelModel.js';
 
 const deg = Math.PI / 180;
@@ -267,6 +268,7 @@ export function buildBuschtrottel(style) {
     motor: {
       // AT2308 1450Kv on 3S (~16,000 rpm unloaded), see style.prop.
       prop: { diameterIn: 8, pitchIn: style.prop.pitchIn, blades: style.prop.blades }, // as fitted (tuning reads it)
+      kv: 1450, noLoadCurrent: 0.6, // AT2308 1450Kv (tuning; winding resistance worked out from the current)
       staticThrust: style.prop.staticThrust, // N
       pitchSpeed: style.prop.pitchSpeed,     // m/s = pitch × loaded rpm
       spoolTime: 0.06,
@@ -345,8 +347,9 @@ export function buildBuschtrottel(style) {
       pod: up(high ? [0.05, L.wingY + 0.04, 0] : [0.17, 0.065, 0]),
       chase: { back: SPAN * 2.0 + 0.3, up: SPAN * 0.5 + 0.15 },
     },
-    createModel: () => {
-      const m = createBuschtrottelModel(L);
+    // opts.prop: the prop as tuned (Menu → Tuning), shown instead of the standard one.
+    createModel: (opts = {}) => {
+      const m = createBuschtrottelModel(opts.prop ? { ...L, prop: { ...L.prop, ...propGeometry(opts.prop) } } : L);
       if (cgDrop) {
         const inner = m.root;
         const outer = new Group();

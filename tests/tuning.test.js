@@ -116,25 +116,54 @@ describe('aircraft tuning: propeller', () => {
     }
   });
 
-  it('bigger prop: more thrust, slower; coarser pitch: faster, a little less static thrust; more blades: a little more thrust, slower', () => {
-    const id = 'buschtrottel-shockcub';
-    const base = motorWith(id, {});
-    const big = motorWith(id, { propDiameter: 9 });
-    expect(big.staticThrust).toBeGreaterThan(base.staticThrust * 1.1);
-    expect(big.maxRpm).toBeLessThan(base.maxRpm);
-    const coarse = motorWith(id, { propPitch: 8 });
-    expect(coarse.pitchSpeed).toBeGreaterThan(base.pitchSpeed);
-    expect(coarse.staticThrust).toBeLessThan(base.staticThrust);
-    const three = motorWith(id, { propBlades: 3 });
-    expect(three.staticThrust).toBeGreaterThan(base.staticThrust);
-    expect(three.pitchSpeed).toBeLessThan(base.pitchSpeed);
-    // Same motor power in each case.
-    for (const m of [big, coarse, three]) expect(m.powerScale).toBeCloseTo(1, 6);
+  const id = 'buschtrottel-shockcub';
+  const def = getAircraft(id).def;
+  const full = (change) => tunedDef(def, change);
+
+  it('bigger prop: more thrust and current, lower rpm; coarser: faster; more blades: a little more thrust, slower', () => {
+    const base = full({});
+    const big = full({ propDiameter: 9 });
+    expect(big.motor.staticThrust).toBeGreaterThan(base.motor.staticThrust * 1.1);
+    expect(big.motor.maxRpm).toBeLessThan(base.motor.maxRpm);
+    expect(big.battery.maxCurrent).toBeGreaterThan(base.battery.maxCurrent);
+    const coarse = full({ propPitch: 8 });
+    expect(coarse.motor.pitchSpeed).toBeGreaterThan(base.motor.pitchSpeed);
+    const three = full({ propBlades: 3 });
+    expect(three.motor.staticThrust).toBeGreaterThan(base.motor.staticThrust);
+    expect(three.motor.pitchSpeed).toBeLessThan(base.motor.pitchSpeed);
   });
 
-  it('a much smaller prop can\'t use all the power: the motor tops out', () => {
-    const tiny = motorWith('buschtrottel-shockcub', { propDiameter: 5 });
-    expect(tiny.powerScale).toBeLessThan(0.9);
-    expect(tiny.maxRpm).toBeCloseTo(getAircraft('buschtrottel-shockcub').def.motor.maxRpm * 1.3, 0);
+  it('a much smaller prop spins faster but can not use the power: less current', () => {
+    const tiny = full({ propDiameter: 5 });
+    expect(tiny.motor.maxRpm).toBeGreaterThan(def.motor.maxRpm);
+    expect(tiny.motor.maxRpm).toBeLessThan(def.motor.kv * 3 * 3.95); // never past unloaded
+    expect(tiny.battery.maxCurrent).toBeLessThan(def.battery.maxCurrent * 0.6);
+  });
+
+  it('motor and battery: more cells or Kv spin it faster and draw more; a bigger pack weighs more', () => {
+    const base = full({});
+    const fourS = full({ cells: 4 });
+    expect(fourS.motor.maxRpm).toBeGreaterThan(base.motor.maxRpm * 1.15);
+    expect(fourS.motor.staticThrust).toBeGreaterThan(base.motor.staticThrust * 1.3);
+    expect(fourS.battery.maxCurrent).toBeGreaterThan(base.battery.maxCurrent);
+    expect(fourS.mass).toBeGreaterThan(def.mass);
+    const hotKv = full({ kv: 1800 });
+    expect(hotKv.motor.maxRpm).toBeGreaterThan(base.motor.maxRpm);
+    expect(hotKv.battery.maxCurrent).toBeGreaterThan(base.battery.maxCurrent);
+    const bigPack = full({ capacity: 2700 });
+    expect((bigPack.mass - def.mass) * 1000).toBeCloseTo(3 * 1350 * 0.027, 0); // ~109 g
+    expect(bigPack.motor.staticThrust).toBeCloseTo(def.motor.staticThrust, 6);
+    expect(bigPack.battery.capacity).toBe(2700);
+  });
+
+  it('a nearly flat battery gives less thrust', () => {
+    const ac = new Aircraft(def, { ground });
+    ac.resetInAir(new Vector3(0, 100, 0), 0, 10);
+    ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 1 };
+    ac.update(0.5);
+    const fresh = ac.thrust;
+    ac.battery.used = def.battery.capacity * 0.9;
+    ac.update(0.5);
+    expect(ac.thrust).toBeLessThan(fresh * 0.85);
   });
 });
