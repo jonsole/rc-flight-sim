@@ -103,9 +103,9 @@ const WATERBEACH = {
     fences: [
       { from: [118.8, -155.5], to: [97.8, 174.5], height: 3, kind: 'chainlink' },
       // Temporary panels in front of the north trees, to the east fence...
-      { path: [[-10, -104], [40, -104], [86, -104], [115.4, -104]], height: 2, kind: 'panels' },
+      { path: [[-10, -108], [40, -108], [86, -108], [115.8, -108]], height: 2, kind: 'panels' },
       // ...and under the curved row of trees in the NE, off the north fence.
-      { path: [[86, -104], [84.5, -113], [81, -122], [76, -130], [70, -136]], height: 2, kind: 'panels' },
+      { path: [[86, -108], [84.5, -114], [81, -122], [76, -130], [70, -136]], height: 2, kind: 'panels' },
     ],
     // High bushes just behind the fence.
     bushBelts: [{ from: [122.8, -155.5], to: [101.8, 174.5], width: 5, minH: 3.5, maxH: 5 }],

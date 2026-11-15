@@ -72,9 +72,9 @@ describe('Waterbeach', () => {
     expect(Obstacles.test(fence, x, 1.5, z)).not.toBeNull();
     expect(Obstacles.test(fence, x, 3.5, z)).toBeNull();
     // Temporary 2 m panels in front of the north trees.
-    const hits = ob.near(40, -104, 1).filter((s) => s.name === 'the temporary fence');
-    expect(hits.some((s) => Obstacles.test(s, 40, 1, -104))).toBe(true);
-    expect(hits.some((s) => Obstacles.test(s, 40, 2.5, -104))).toBe(false);
+    const hits = ob.near(40, -108, 1).filter((s) => s.name === 'the temporary fence');
+    expect(hits.some((s) => Obstacles.test(s, 40, 1, -108))).toBe(true);
+    expect(hits.some((s) => Obstacles.test(s, 40, 2.5, -108))).toBe(false);
   });
 
   it('makes buildings solid, with the roof as their top', () => {
