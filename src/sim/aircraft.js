@@ -330,8 +330,11 @@ export class Aircraft {
       s.deflection = defl;
       const co = coefficients(alpha, s.foil);
       let cl = co.cl;
-      // Control deflection adds a little profile drag.
-      let cd = co.cd + 0.04 * defl * defl;
+      // Control deflection adds a little profile drag; an aileron deflected
+      // down (into the wing's pressure side) much more than one deflected up,
+      // which is where most of a model's adverse yaw comes from.
+      const aileron = s.wing && s.controls.length > 0 && s.controls.every((ct) => ct.input === 'roll');
+      let cd = co.cd + (aileron ? (defl > 0 ? 0.08 : 0.015) : 0.04) * defl * defl;
       if (s.wing && s.ge < 0.999) {
         const ar = s.foil.ar;
         cl *= liftSlope(ar / s.ge) / liftSlope(ar);

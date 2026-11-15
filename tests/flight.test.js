@@ -215,7 +215,9 @@ for (const entry of AIRCRAFT) {
         ac.step(1e-6);
         const q = 0.5 * 1.225 * 100;
         const clBeta = ac.lastForces.moment.x / (q * def.wingArea * ac.wingSpan) / beta;
-        expect(clBeta).toBeLessThan(-0.08); // rolls left, raising the right wing
+        // Rolls left, raising the right wing (less for models built near
+        // spirally neutral: def.rollStability).
+        expect(clBeta).toBeLessThan(-(def.rollStability?.minClBeta ?? 0.08));
       });
 
       it('rolls back towards level when a bank is released (hands off)', () => {
@@ -223,7 +225,7 @@ for (const entry of AIRCRAFT) {
         ac.update(3);
         ac.orientation.multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), 30 * deg));
         ac.update(10);
-        expect(Math.abs(ac.attitude().roll)).toBeLessThan(15 * deg);
+        expect(Math.abs(ac.attitude().roll)).toBeLessThan((def.rollStability?.maxBankAfterRelease ?? 15) * deg);
       });
 
       it('gets ground effect: more lift and less drag just above the ground', () => {
@@ -699,4 +701,37 @@ describe('E-flite S.E.5a on grass (like the real model)', () => {
   it('takes off safely when up elevator is held', async () => {
     expect(await noseOvers(0.35)).toBe(0);
   });
+});
+
+describe('high-wing Buschtrottel: rudder and aileron coupling', () => {
+  const trimmed = (id) => {
+    const ac = new Aircraft(getAircraft(id).def, { ground });
+    ac.assistMode = 'off';
+    ac.resetInAir(new Vector3(0, 120, 0), 0, 13);
+    ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 0.45 };
+    ac.update(3);
+    return ac;
+  };
+  for (const id of ['buschtrottel-shockcub', 'buschtrottel-highlander']) {
+    it(`${id}: full rudder for a second rolls it only moderately`, () => {
+      const ac = trimmed(id);
+      const r0 = ac.attitude().roll;
+      ac.controls.yaw = 1;
+      ac.update(1);
+      expect(Math.abs(ac.attitude().roll - r0)).toBeLessThan(30 * deg); // was 41° (too much keel effect)
+    });
+
+    it(`${id}: aileron gives adverse yaw at first (nose swings out of the roll)`, () => {
+      const ac = trimmed(id);
+      ac.controls.roll = 1;
+      let adverse = -Infinity;
+      for (let i = 0; i < 15; i++) {
+        ac.update(0.01);
+        // Body yaw rate the same sign as the roll rate is away from the roll
+        // here (as for the S.E.5a, which shows adverse yaw throughout).
+        adverse = Math.max(adverse, ac.omega.y * Math.sign(ac.omega.x));
+      }
+      expect(adverse).toBeGreaterThan(0.25);
+    });
+  }
 });
