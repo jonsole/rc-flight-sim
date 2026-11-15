@@ -11,6 +11,7 @@ import { sunPosition, moonPosition } from './sun.js';
 import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail } from './ground.js';
 import { broadleafCrown, conifer, trunk, addLeafShading, leafUniforms } from './trees.js';
+import { CROWN_SEEDS } from '../sim/treeShapes.js';
 import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes } from './props.js';
 
 const smooth = (e0, e1, x) => {
@@ -467,7 +468,7 @@ export class World {
   #trees() {
     const count = this.obstacles.trees.length;
     // A few shapes of each kind, picked per tree, so the woods don't repeat.
-    const crownGeos = [broadleafCrown(11), broadleafCrown(23), broadleafCrown(37), broadleafCrown(53), broadleafCrown(71)];
+    const crownGeos = CROWN_SEEDS.map(broadleafCrown);
     const coniferGeos = [conifer(5), conifer(17), conifer(29)];
     const trunkGeo = trunk(3);
     const leafMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })));
@@ -484,7 +485,6 @@ export class World {
     // Same layout the physics collides with (src/sim/obstacles.js).
     this.obstacles.trees.forEach((t, i) => {
       const { x, y, z, h } = t;
-      const pick = Math.floor(((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1 * 1000);
       o.rotation.set(0, t.rot, 0);
       o.position.set(x, y - 0.2, z);
       o.scale.set(t.conifer ? 0.7 : 1, h * (t.conifer ? 0.3 : 0.5), t.conifer ? 0.7 : 1);
@@ -494,14 +494,14 @@ export class World {
       // carry their own shading).
       col.setHSL(t.hue, t.sat, t.light * 1.12 + 0.02);
       if (t.conifer) {
-        const k = pick % conifers.length;
+        const k = t.pick % conifers.length;
         o.position.set(x, y + h * 0.1, z);
         o.scale.set(h * 0.22, h * 0.95, h * 0.22);
         o.updateMatrix();
         conifers[k].setMatrixAt(nCon[k], o.matrix);
         conifers[k].setColorAt(nCon[k]++, col);
       } else {
-        const k = pick % crowns.length;
+        const k = t.variant; // the shape the collisions use
         o.position.set(x, y + h * 0.62, z);
         o.scale.set(t.crownW * 1.05, h * 0.4, t.crownW * 1.05);
         o.updateMatrix();

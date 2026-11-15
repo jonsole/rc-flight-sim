@@ -9,38 +9,9 @@
 // rise from y = 0 to 1. Colours are per vertex (shading), tinted per tree.
 import { IcosahedronGeometry, ConeGeometry, CylinderGeometry, Float32BufferAttribute, Vector3 } from 'three';
 import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { rng, noise3, crownClumps, lumpScale } from '../sim/treeShapes.js';
 
 const ni = (g) => (g.index ? g.toNonIndexed() : g);
-
-function rng(seed) {
-  let s = seed;
-  return () => ((s = (s * 16807) % 2147483647) / 2147483647);
-}
-
-// Smooth 3D value noise for the lumps.
-function hash3(x, y, z) {
-  const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
-  return s - Math.floor(s);
-}
-function noise3(x, y, z) {
-  const xi = Math.floor(x);
-  const yi = Math.floor(y);
-  const zi = Math.floor(z);
-  const f = (t) => t * t * (3 - 2 * t);
-  const u = f(x - xi);
-  const v = f(y - yi);
-  const w = f(z - zi);
-  let r = 0;
-  for (let dz = 0; dz <= 1; dz++) {
-    for (let dy = 0; dy <= 1; dy++) {
-      for (let dx = 0; dx <= 1; dx++) {
-        const k = (dx ? u : 1 - u) * (dy ? v : 1 - v) * (dz ? w : 1 - w);
-        r += k * hash3(xi + dx, yi + dy, zi + dz);
-      }
-    }
-  }
-  return r;
-}
 
 function shade(geo, fn) {
   const p = geo.attributes.position;
@@ -60,31 +31,16 @@ function shade(geo, fn) {
 
 /** A billowy broadleaf crown (unit radius): distinct leaf clumps with dark gaps between them. */
 export function broadleafCrown(seed) {
-  const rnd = rng(seed);
-  const parts = [];
-  // Clumps scattered over a slightly squashed dome, more of them up top,
-  // poking out by different amounts so the outline is ragged, not round.
-  const clumps = 11 + Math.floor(rnd() * 5);
-  for (let i = 0; i < clumps; i++) {
-    const r = 0.26 + rnd() * 0.2;
-    const g = new IcosahedronGeometry(r, 2);
-    const a = rnd() * Math.PI * 2;
-    const y = Math.min(1, Math.max(-0.6, rnd() * 1.5 - 0.5)); // -0.5..1, biased upwards
-    const ring = Math.sqrt(1 - y * y);
-    const out = (1 - r) * (0.75 + rnd() * 0.35);
-    g.translate(Math.cos(a) * ring * out, y * out * 0.8, Math.sin(a) * ring * out);
-    parts.push(g);
-  }
-  parts.push(new IcosahedronGeometry(0.6, 2)); // fill the middle
+  // Clump layout shared with the collisions (src/sim/treeShapes.js).
+  const parts = crownClumps(seed).map(([x, y, z, r]) => new IcosahedronGeometry(r, 2).translate(x, y, z));
   let geo = mergeGeometries(parts.map(ni));
-  // Leafy lumps on each clump: two octaves of noise.
+  // Leafy lumps on each clump.
   const p = geo.attributes.position;
   const v = new Vector3();
   let max = 0;
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i);
-    const n = noise3(v.x * 3 + seed, v.y * 3, v.z * 3) - 0.5 + (noise3(v.x * 9, v.y * 9 + seed, v.z * 9) - 0.5) * 0.45;
-    v.multiplyScalar(1 + n * 0.32);
+    v.multiplyScalar(lumpScale(v, seed));
     p.setXYZ(i, v.x, v.y, v.z);
     max = Math.max(max, v.length());
   }
