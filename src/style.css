@@ -150,3 +150,6 @@ body.touch #dev-badge { top: auto; bottom: max(8px, env(safe-area-inset-bottom))
 #splash .touch-only { display: none; }
 body.touch #splash .touch-only { display: block; }
 body.touch #splash .keys-only { display: none; }
+/* Google's logo and map data credits, shown while its 3D tiles are on. */
+#map-credits { display: none; position: fixed; bottom: 4px; left: 50%; transform: translateX(-50%); z-index: 4; pointer-events: none; max-width: 70vw; padding: 2px 8px; border-radius: 4px; background: rgba(0,0,0,0.35); color: #fff; font: 11px/1.4 system-ui, sans-serif; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#map-credits .g-logo { height: 14px; vertical-align: middle; margin-right: 4px; }

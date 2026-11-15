@@ -306,6 +306,9 @@ export class World {
   constructor(obstacles, opts = {}) {
     this.obstacles = obstacles;
     this.quality = opts.quality ?? QUALITY.high;
+    // The ground, trees, buildings and fences drawn from the site data, which
+    // Google's photorealistic tiles replace when they're on.
+    this.builtScenery = [];
     this.viewDistance = opts.viewDistance ?? Infinity;
     this.scene = new Scene();
     this.scene.background = new Color('#9cc3e6');
@@ -497,6 +500,7 @@ export class World {
     const ground = new Mesh(geo, mat);
     ground.receiveShadow = true;
     this.scene.add(ground);
+    this.builtScenery.push(ground);
   }
 
   #runway() {
@@ -508,6 +512,7 @@ export class World {
     rw.position.set(RUNWAY.x, 0.002, RUNWAY.z);
     rw.receiveShadow = true;
     this.club.add(rw);
+    this.builtScenery.push(rw);
 
     // Pilot box (gravel pad) and safety fence line, where the club has them.
     if (PILOT_PAD) {
@@ -533,6 +538,12 @@ export class World {
     const rail = new Mesh(new BoxGeometry(fence.x1 - fence.x0, 0.04, 0.04), postMat);
     rail.position.set((fence.x0 + fence.x1) / 2, 1.0, fence.z);
     this.club.add(rail);
+  }
+
+  /** Show or hide the scenery drawn from the site data (Google tiles replace it). */
+  setBuiltSceneryVisible(visible) {
+    for (const o of this.builtScenery) o.visible = visible;
+    this.shadows?.update();
   }
 
   /** Leaf sway and wind: time in seconds, wind speed m/s and direction it blows FROM (degrees). */
@@ -623,6 +634,7 @@ export class World {
         // Cull a whole set when it's out of view (bounds of all its trees).
         m.computeBoundingSphere();
         this.scene.add(m);
+        this.builtScenery.push(m);
       }
       this.trees.trunks.push(...trunks);
       this.trees.conTrunks.push(conTrunks);
@@ -692,12 +704,17 @@ export class World {
     for (const o of [...ob.cars.map(car), ...ob.fences.map(siteFence)]) {
       shadowy(o);
       this.scene.add(o);
+      this.builtScenery.push(o);
     }
-    for (const b of bushes(this.leafMat, { detail: this.quality.bushDetail, distance: this.viewDistance })) this.scene.add(b);
+    for (const b of bushes(this.leafMat, { detail: this.quality.bushDetail, distance: this.viewDistance })) {
+      this.scene.add(b);
+      this.builtScenery.push(b);
+    }
     if (ob.buildings.length) {
       const houses = buildingsMesh(ob.buildings);
       addCloudShadows(houses.material);
       this.scene.add(houses);
+      this.builtScenery.push(houses);
     }
 
     // Flight-line table

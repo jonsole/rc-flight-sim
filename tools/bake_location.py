@@ -479,6 +479,12 @@ def buildings_from(areas, ndsm, vom, xs, zs, lidar_only=False):
     return out
 
 
+def true_north(e0, n0, to_ll, to_bng):
+    lon, lat = to_ll.transform(e0, n0)
+    e1, n1 = to_bng.transform(lon, lat + 0.01)
+    return math.degrees(math.atan2(e1 - e0, n1 - n0))
+
+
 # --- Main -----------------------------------------------------------------------------
 
 def main():
@@ -504,6 +510,7 @@ def main():
     ndsm = dsm - dtm
 
     to_bng = Transformer.from_crs(4326, 27700, always_xy=True)
+    to_ll_pt = Transformer.from_crs(27700, 4326, always_xy=True)
 
     def to_local(lon, lat):
         e, nn = to_bng.transform(lon, lat)
@@ -529,7 +536,10 @@ def main():
         'name': site['name'],
         'credits': 'Contains Environment Agency LIDAR data © Environment Agency copyright and/or database right, '
                    'licensed under the Open Government Licence v3.0. Map data © OpenStreetMap contributors (ODbL).',
-        'origin': {'easting': e0, 'northing': n0, 'height': round(h0, 2)},
+        'origin': {'easting': e0, 'northing': n0, 'height': round(h0, 2),
+                   'lat': round(to_ll_pt.transform(e0, n0)[1], 7), 'lon': round(to_ll_pt.transform(e0, n0)[0], 7),
+                   # Bearing of true north from grid north (the sim's -z), degrees.
+                   'trueNorth': round(true_north(e0, n0, to_ll_pt, to_bng), 4)},
         'size': n,
         'terrain': {'cell': cell, 'n': int(terrain.shape[0]), 'x0': float(xs[0] - 0.5 + cell / 2), 'z0': float(zs[0] - 0.5 + cell / 2),
                     'cm': b64(terrain)},

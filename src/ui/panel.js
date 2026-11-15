@@ -181,6 +181,11 @@ export class Panel {
       this.#select('Quality', 'graphics', Object.fromEntries(Object.entries(QUALITY).map(([k, q]) => [k, q.name]))),
       this.#select('Scenery distance', 'viewDistance', DISTANCES),
       el('p', { class: 'hint' }, 'Lower these if the picture is jerky. Low draws simpler trees and fewer pixels; a shorter distance leaves out far trees and brings the haze in. Changing either reloads the simulator.'),
+      ...(LOCATION.data ? [
+        this.#select('Scenery', 'scenery', { built: 'Built in (LIDAR and OpenStreetMap)', google: 'Google photorealistic 3D' }),
+        this.#text('Google Maps API key', 'googleKey', { type: 'password', placeholder: 'AIza…' }),
+        el('p', { class: 'hint' }, 'Google photorealistic 3D needs your own Google Maps Platform API key with the Map Tiles API enabled (and billing set up; Google gives a free monthly allowance). The key stays in this browser. What you fly into is still the built-in scenery, lined up with the real place. Changing these reloads the simulator.'),
+      ] : []),
     ];
   }
 

@@ -23,6 +23,7 @@ import { loadSettings, saveSettings } from './ui/settings.js';
 import { EngineSound } from './audio/engine.js';
 import { LOCATION, LOCATIONS, clubAngle, clubToWorld } from './sim/location.js';
 import { QUALITY, qualityPreset, viewDistance } from './world/quality.js';
+import { GoogleTiles } from './world/googleTiles.js';
 
 // Development builds (the /dev/ page) are badged so they're never mistaken for live.
 if (import.meta.env.VITE_CHANNEL === 'dev') {
@@ -72,6 +73,23 @@ const rig = new CameraRig(settings);
 // and the aeroplane's own shadow, drawn every frame.
 world.attachShadows(new Shadows(world.sun, { mapSize: quality.shadowMap }));
 const planeShadow = new PlaneShadow(world.scene, ground);
+
+// Google Photorealistic 3D Tiles in place of the built scenery, at real
+// sites, when chosen and a key is set (Menu → View → Graphics).
+let googleTiles = null;
+if (LOCATION.data && settings.scenery === 'google' && settings.googleKey) {
+  googleTiles = new GoogleTiles({
+    apiKey: settings.googleKey,
+    lat: LOCATION.data.origin.lat,
+    lon: LOCATION.data.origin.lon,
+    trueNorth: LOCATION.data.origin.trueNorth,
+    quality: settings.graphics,
+    creditEl: document.getElementById('map-credits'),
+    onError: (msg) => toast(`Google 3D tiles: ${msg}. Check the API key (Map Tiles API enabled, billing on).`),
+  });
+  world.scene.add(googleTiles.group);
+  world.setBuiltSceneryVisible(false);
+}
 
 let entry = null; // selected aircraft (registry entry)
 let aircraft = null; // flight model
@@ -314,7 +332,7 @@ const panel = new Panel(document.getElementById('panel'), {
     if (key === 'aircraft') selectAircraft(value);
     if (key === 'location') changeField(value);
     // The scenery is built for these once, so they take effect on a reload.
-    if (key === 'graphics' || key === 'viewDistance') reloadKeepingRoom();
+    if (key === 'graphics' || key === 'viewDistance' || key === 'scenery' || (key === 'googleKey' && settings.scenery === 'google')) reloadKeepingRoom();
     if (key === 'startMode') resetAircraft();
   },
   onReset: resetAircraft,
@@ -476,6 +494,7 @@ function frame(now) {
   const fpv = rig.mode === 'fpv';
   model.setPilotVisible(!(fpv && settings.fpvMount === 'cockpit'));
   rig.update(aircraft, dt);
+  googleTiles?.update(rig.camera, renderer, dt);
   // Other players (after the camera has moved, so their labels line up).
   rig.camera.updateMatrixWorld();
   const solid = mp.connected && !paused && !aircraft.crashed && now / 1000 > mpGraceUntil;
