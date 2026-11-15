@@ -82,10 +82,10 @@ if (LOCATION.data && settings.scenery === 'google' && settings.googleKey) {
     apiKey: settings.googleKey,
     lat: LOCATION.data.origin.lat,
     lon: LOCATION.data.origin.lon,
+    groundHeight: LOCATION.data.origin.height,
     trueNorth: LOCATION.data.origin.trueNorth,
     quality: settings.graphics,
     creditEl: document.getElementById('map-credits'),
-    onError: (msg) => toast(`Google 3D tiles: ${msg}. Check the API key (Map Tiles API enabled, billing on).`),
   });
   world.scene.add(googleTiles.group);
   world.setBuiltSceneryVisible(false);
