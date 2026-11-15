@@ -397,6 +397,7 @@ function frame(now) {
   last = now;
 
   const ctl = input.update(dt);
+  touch.setSticks(!input.gamepadName); // a plugged-in transmitter replaces the thumb sticks
   panel.tick();
 
   if (!paused) {

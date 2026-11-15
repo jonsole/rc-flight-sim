@@ -141,6 +141,9 @@ html, body { touch-action: none; -webkit-user-select: none; user-select: none; -
   min-width: 52px; height: 34px; padding: 0 10px; border-radius: 8px; font: 600 12px system-ui, sans-serif; letter-spacing: 0.04em;
   background: rgba(20,24,28,0.55); color: #fff; border: 1px solid rgba(255,255,255,0.3);
 }
+.touch-bar { transition: opacity 0.4s; }
+.touch-bar.idle { opacity: 0; pointer-events: none; }
+#touch.no-sticks .stick-zone { display: none; }
 .touch-bar button:active { background: rgba(224,160,48,0.8); color: #111; }
 body.touch #menu-btn { display: none; }
 body.touch #dev-badge { top: auto; bottom: max(8px, env(safe-area-inset-bottom)); }

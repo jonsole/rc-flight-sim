@@ -103,7 +103,13 @@ export class TouchControls {
     button('ASSIST', 'Flight assist: manual / AS3X / SAFE', () => opts.onAction('KeyG'));
     button('☰', 'Menu', () => opts.onMenu());
     this.root.append(bar);
+    this.bar = bar;
     document.body.append(this.root);
+    // The buttons fade out after a few seconds without a touch and come back
+    // on the next one (while hidden, that touch only brings them back).
+    this._idleTimer = 0;
+    window.addEventListener('pointerdown', () => this.wake(), { capture: true });
+    this.wake();
     this.setMode(2);
     this.setVisible(false);
   }
@@ -113,6 +119,18 @@ export class TouchControls {
     this.left.setHoldY(this.mode === 2);
     this.right.setHoldY(this.mode === 1);
     this.root.dataset.mode = String(this.mode);
+  }
+
+  /** Show the buttons and restart the hide timer. */
+  wake() {
+    this.bar.classList.remove('idle');
+    clearTimeout(this._idleTimer);
+    this._idleTimer = setTimeout(() => this.bar.classList.add('idle'), 4000);
+  }
+
+  /** Hide the thumb sticks (a USB transmitter is plugged in); buttons stay. */
+  setSticks(v) {
+    if (this.root.classList.contains('no-sticks') !== !v) this.root.classList.toggle('no-sticks', !v);
   }
 
   setVisible(v) {
