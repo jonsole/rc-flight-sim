@@ -156,7 +156,7 @@ export function buildBuschtrottel(style) {
     stallWidth: style.slats ? 0.035 : 0.018,
     // Slats keep lift almost constant well past the stall, so a dropping wing
     // doesn't lose lift and autorotate: it mushes and the nose drops instead.
-    stallDrop: style.slats ? 0.3 : 1.6,
+    stallDrop: style.slats ? 0.6 : 1.6,
     cd0: style.slats ? 0.036 : 0.03, // stepped foam section, exposed edges (+ slats)
     ar: AR,
     e: 0.75,
@@ -177,7 +177,9 @@ export function buildBuschtrottel(style) {
         chord: [Math.cos(L.incidence), Math.sin(L.incidence), 0],
         span: [0, side * Math.sin(L.aeroDihedral), Math.cos(L.aeroDihedral)],
         area: segSpan * CHORD,
-        foil: kfm2,
+        // No two wings are quite the same: the left tip stalls a little first,
+        // so a held stall drops a wing instead of mushing straight ahead.
+        foil: tip && side < 0 ? { ...kfm2, alphaStall: kfm2.alphaStall - 2 * deg } : kfm2,
         wing: true,
         chordLen: CHORD,
         controls: zMid >= L.ailFrom ? [{ input: 'roll', gain: -side, max: style.throws.aileron, tau: 0.45 }] : [],
@@ -265,8 +267,10 @@ export function buildBuschtrottel(style) {
       pitchSpeed: style.prop.pitchSpeed,     // m/s = pitch × loaded rpm
       spoolTime: 0.06,
       torqueFactor: 0.002, // net of slipstream swirl, which offsets part of the torque
-      // Downthrust stops the nose rising with power (as on real Cubs).
-      downThrust: 3 * deg,
+      // Downthrust stops the nose rising with power. These are overpowered
+      // (thrust above their weight), so it takes more than on a Cub: set,
+      // as builders do, until full throttle mostly adds speed.
+      downThrust: 5 * deg,
       // No right thrust: it exists to cancel prop swirl/P-factor, which aren't
       // modelled, so here it would yaw the model right in slow, powered flight.
       rightThrust: 0,

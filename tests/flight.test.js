@@ -403,11 +403,12 @@ describe('Buschtrottel leading-edge slats', () => {
   }
 
   for (const id of ['buschtrottel-shockcub', 'buschtrottel-highlander', 'buschtrottel-agro']) {
-    it(`${id} stalls straight ahead without dropping a wing`, () => {
-      expect(stallTest(id, 0)).toBeLessThan(10 * deg);
-      // With power a little motor torque may slowly roll it (more with a
-      // three-blade prop), but no wing drop.
-      expect(stallTest(id, 0.2)).toBeLessThan(20 * deg);
+    it(`${id} drops a wing in a held stall, but doesn't snap`, () => {
+      // Power off: one tip stalls first, so it falls off on a wing (the slats
+      // keep it gentle: no snap roll onto its back).
+      const roll = stallTest(id, 0);
+      expect(roll).toBeGreaterThan(20 * deg);
+      expect(roll).toBeLessThan(100 * deg);
     });
   }
 });
