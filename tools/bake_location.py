@@ -41,6 +41,12 @@ SITES = {
         'pilot': (549666.2, 266652.5),  # OSGB easting, northing where the pilot stands (10 m south of the cricket pitch)
         'half': 1000,                    # metres either side of the pilot baked in
     },
+    # Impington Village College sports field (Cambridgeshire).
+    'impington': {
+        'name': 'Impington Village College',
+        'pilot': (544587.4, 262930.1),  # middle of the playing field (provisional)
+        'half': 1000,
+    },
 }
 
 EA = 'https://environment.data.gov.uk/spatialdata'
@@ -81,10 +87,8 @@ def download(site, cache):
     box = (e0 - h, n0 - h, e0 + h, n0 + h)
     out = {}
     for key, (ds, cov) in COVERAGES.items():
-        url = (f'{EA}/{ds}/wcs?service=WCS&version=2.0.1&request=GetCoverage&coverageId={cov}'
-               f'&format=image/tiff&subset=E({box[0]:.0f},{box[2]:.0f})&subset=N({box[1]:.0f},{box[3]:.0f})')
         print(f'LIDAR {key}...')
-        out[key] = fetch(url, os.path.join(cache, f'{key}.tif'), lambda d: d[:2] in (b'II', b'MM'))
+        out[key] = fetch_mosaic(ds, cov, box, os.path.join(cache, f'{key}.tif'), cache, key)
     to_ll = Transformer.from_crs(27700, 4326, always_xy=True)
     lon0, lat0 = to_ll.transform(box[0], box[1])
     lon1, lat1 = to_ll.transform(box[2], box[3])
@@ -92,6 +96,28 @@ def download(site, cache):
     url = f'https://api.openstreetmap.org/api/0.6/map?bbox={lon0:.5f},{lat0:.5f},{lon1:.5f},{lat1:.5f}'
     out['osm'] = fetch(url, os.path.join(cache, 'osm.xml'), lambda d: b'<osm' in d[:400])
     return box, out
+
+
+def fetch_mosaic(ds, cov, box, path, cache, key, tile=500):
+    """One coverage over the box, fetched in tiles (the server times out on
+    big requests) and stitched into a single GeoTIFF-less array file."""
+    if os.path.exists(path):
+        return path
+    n = int(box[2] - box[0])
+    full = np.full((n, n), np.nan, np.float32)
+    for i in range(0, n, tile):
+        for j in range(0, n, tile):
+            e0, e1 = box[0] + i, box[0] + min(n, i + tile)
+            n0, n1 = box[1] + j, box[1] + min(n, j + tile)
+            url = (f'{EA}/{ds}/wcs?service=WCS&version=2.0.1&request=GetCoverage&coverageId={cov}'
+                   f'&format=image/tiff&subset=E({e0:.0f},{e1:.0f})&subset=N({n0:.0f},{n1:.0f})')
+            part = fetch(url, os.path.join(cache, f'{key}_{i}_{j}.tif'), lambda d: d[:2] in (b'II', b'MM'))
+            a = tifffile.imread(part).astype(np.float32)
+            # Row 0 is the north edge.
+            r0 = n - (j + a.shape[0])
+            full[r0:r0 + a.shape[0], i:i + a.shape[1]] = a
+    tifffile.imwrite(path, full)
+    return path
 
 
 def read_tif(path, n):
