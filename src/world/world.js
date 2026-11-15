@@ -14,7 +14,7 @@ import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail } from './ground.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, addLeafShading, leafUniforms } from './trees.js';
 import { CROWN_SEEDS } from '../sim/treeShapes.js';
-import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes, metalFence } from './props.js';
+import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes, siteFence } from './props.js';
 
 const smooth = (e0, e1, x) => {
   const t = MathUtils.clamp((x - e0) / (e1 - e0), 0, 1);
@@ -660,7 +660,7 @@ export class World {
       shadowy(o);
       this.club.add(o);
     }
-    for (const o of [...ob.cars.map(car), ...ob.fences.map(metalFence)]) {
+    for (const o of [...ob.cars.map(car), ...ob.fences.map(siteFence)]) {
       shadowy(o);
       this.scene.add(o);
     }

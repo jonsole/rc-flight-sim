@@ -21,6 +21,8 @@
 //                       club: true puts an oval in the club frame. Without a
 //                       list the whole field is short grass.
 //   trees               real sites: extra trees { at: [[x, z], ...], h, r } (grown since the survey)
+//   treeGrowth          real sites: areas whose trees have grown since the survey:
+//                       { x0, x1, z0, z1, grow, minH } (world frame)
 //   flat                ground forced level to y = 0 here (rectangle), fading out over `fade` m
 //   hut, container      club buildings (null for none)
 //   gazebo, table, windsock, fence   (club frame; null for none)
@@ -29,7 +31,9 @@
 //   treeBelts           real sites: tree lines grown since the LIDAR survey:
 //                       { from, to, width, grow, minH, spacing } scales trees within
 //                       width/2 of the line and fills gaps longer than `spacing`
-//   fences              tall fences: { from: [x, z], to: [x, z], height }
+//   fences              site fences: { path: [[x, z], ...] (or from/to), height,
+//                       kind: 'chainlink' (concrete posts) or 'panels' (temporary
+//                       mesh panels on wooden posts) }
 //   bushBelts           real sites: lines of tall bushes: { from, to, width, minH, maxH }
 
 const HOME = {
@@ -84,14 +88,25 @@ const WATERBEACH = {
     // Young trees along the curved path west of the pitch, grown since the survey.
     trees: [{
       at: [[-21.2, -65.4], [-26.6, -58.3], [-31.6, -51.9], [-35.3, -45.7], [-39.9, -40.1], [-48.2, -32.6], [-56.1, -27.6]],
-      h: 9, r: 3.2,
+      h: 12, r: 4.2,
     }],
+    // Trees west and south of the field have grown since the survey too.
+    treeGrowth: [
+      { x0: -180, x1: -50, z0: -140, z1: 110, grow: 1.4, minH: 10 }, // west
+      { x0: -50, x1: 140, z0: 80, z1: 190, grow: 1.4, minH: 10 }, // south
+    ],
     // All deciduous round the field.
     conifers: false,
     // The east hedge's trees have grown a lot since the LIDAR (2022)...
     treeBelts: [{ from: [113.8, -155.5], to: [92.8, 174.5], width: 22, grow: 1.4, minH: 10, spacing: 7 }],
     // ...and there is a 3 m chain-link fence behind them.
-    fences: [{ from: [118.8, -155.5], to: [97.8, 174.5], height: 3 }],
+    fences: [
+      { from: [118.8, -155.5], to: [97.8, 174.5], height: 3, kind: 'chainlink' },
+      // Temporary panels in front of the north trees, to the east fence...
+      { path: [[-10, -104], [40, -104], [86, -104], [115.4, -104]], height: 2, kind: 'panels' },
+      // ...and under the curved row of trees in the NE, off the north fence.
+      { path: [[86, -104], [84.5, -113], [81, -122], [76, -130], [70, -136]], height: 2, kind: 'panels' },
+    ],
     // High bushes just behind the fence.
     bushBelts: [{ from: [122.8, -155.5], to: [101.8, 174.5], width: 5, minH: 3.5, maxH: 5 }],
   },
