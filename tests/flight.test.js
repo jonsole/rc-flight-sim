@@ -756,3 +756,24 @@ describe('gliding: draggy foamies come down', () => {
     });
   }
 });
+
+describe('S.E.5a: full-power pull-ups', () => {
+  for (const pull of [0.5, 1]) {
+    it(`loops cleanly at full power with ${pull === 1 ? 'full' : 'half'} up elevator (AS3X), without rolling off`, () => {
+      const ac = new Aircraft(getAircraft('eflite-se5a-900').def, { ground });
+      ac.assistMode = 'as3x';
+      ac.resetInAir(new Vector3(0, 200, 0), 0, 17);
+      ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 1 };
+      ac.update(2);
+      ac.controls.pitch = pull;
+      // In a clean loop the right wing keeps pointing straight right (+z).
+      let worst = 0;
+      for (let i = 0; i < 20; i++) {
+        ac.update(0.1);
+        const w = new Vector3(0, 0, 1).applyQuaternion(ac.orientation);
+        worst = Math.max(worst, Math.acos(Math.min(1, w.z)));
+      }
+      expect(worst).toBeLessThan(20 * deg); // full up used to flick it over (98° in a second)
+    });
+  }
+});

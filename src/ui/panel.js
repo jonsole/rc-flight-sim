@@ -294,7 +294,7 @@ export class Panel {
       el('ul', {},
         el('li', {}, 'Take off into wind (the windsock tail points downwind). Open the throttle smoothly and hold a little right rudder against the swing; let the tail come up, then ease back.'),
         el('li', {}, 'It is a biplane with lots of drag: it slows down fast when you throttle back. Keep speed up on the approach and flare gently for a three-pointer.'),
-        el('li', {}, 'The 900 mm E-flite is light and quick: it reacts fast and stalls abruptly on full elevator.'),
+        el('li', {}, 'The 900 mm E-flite is light and quick: it reacts fast, and hauled back when slow it stalls abruptly and drops a wing.'),
         el('li', {}, 'Flight assist mirrors E-flite BNF receivers: AS3X damps gusts and wobbles; SAFE also levels the wings when you let go and limits bank and pitch. Switch modes in flight with G or an assigned transmitter switch.'),
         el('li', {}, 'Coordinate turns with a little rudder; rudder alone also rolls it, slowly.'),
         el('li', {}, 'Low and slow in a turn will drop a wing. Unload (release elevator) to recover.')),
