@@ -28,6 +28,11 @@ class Stick {
 
     this.zone.addEventListener('pointerdown', (e) => {
       if (this.pointer !== null) return;
+      // Only grab touches on or just around the stick, not anywhere in the
+      // big zone (a tap mid-screen mustn't slam the throttle open).
+      const r = this.base.getBoundingClientRect();
+      const radius = r.width / 2;
+      if (Math.hypot(e.clientX - (r.left + radius), e.clientY - (r.top + radius)) > radius * 1.3) return;
       this.pointer = e.pointerId;
       this.zone.setPointerCapture(e.pointerId);
       this.zone.classList.add('active');
