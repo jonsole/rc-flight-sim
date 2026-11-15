@@ -37,6 +37,22 @@ function setDihedral(def, value) {
   }
 }
 
+// Geometry relative to the wing: the wing's mean panel position and
+// incidence, and the tail surfaces (tailplane 'stab…', fin 'fin…').
+const wingPanels = (d) => d.surfaces.filter((s) => s.wing);
+const tailplane = (d) => d.surfaces.filter((s) => /^stab/.test(s.name));
+const tailSurfaces = (d) => d.surfaces.filter((s) => /^(stab|fin)/.test(s.name));
+const mean = (list, i) => list.reduce((t, s) => t + s.pos[i], 0) / list.length;
+const incidence = (s) => Math.atan2(s.chord[1], s.chord[0]);
+const meanInc = (list) => list.reduce((t, s) => t + incidence(s), 0) / list.length;
+function shiftTail(d, axis, metres) {
+  for (const s of tailSurfaces(d)) {
+    const p = [...s.pos];
+    p[axis] += metres;
+    s.pos = p;
+  }
+}
+
 /** The settings, by group. `get` reads the default from a definition, `set` writes into a copy. */
 export const TUNABLES = [
   { group: 'Weight', key: 'mass', label: 'All-up weight', unit: 'g', min: 0.5, max: 2, rel: true, step: 5,
@@ -70,6 +86,28 @@ export const TUNABLES = [
     get: (d) => (d.motor.downThrust ?? 0) / deg, set: (d, v) => (d.motor.downThrust = v * deg) },
   { group: 'Motor', key: 'rightThrust', label: 'Right-thrust', unit: '°', min: -5, max: 8, step: 0.5,
     get: (d) => (d.motor.rightThrust ?? 0) / deg, set: (d, v) => (d.motor.rightThrust = v * deg) },
+  { group: 'Layout', key: 'thrustHeight', label: 'Thrust line vs wing (+ above)', unit: 'mm', min: -150, max: 150, step: 1, around: true,
+    get: (d) => (d.motor.position[1] - mean(wingPanels(d), 1)) * 1000,
+    set: (d, v) => {
+      const p = [...d.motor.position];
+      p[1] = mean(wingPanels(d), 1) + v / 1000;
+      d.motor.position = p;
+    } },
+  { group: 'Layout', key: 'tailArm', label: 'Tail arm (wing to tailplane)', unit: 'mm', min: 0.6, max: 1.6, rel: true, step: 5,
+    get: (d) => (tailplane(d).length ? (mean(wingPanels(d), 0) - mean(tailplane(d), 0)) * 1000 : null),
+    set: (d, v) => shiftTail(d, 0, -(v / 1000 - (mean(wingPanels(d), 0) - mean(tailplane(d), 0)))) },
+  { group: 'Layout', key: 'tailHeight', label: 'Tailplane height vs wing (+ above)', unit: 'mm', min: -150, max: 150, step: 1, around: true,
+    get: (d) => (tailplane(d).length ? (mean(tailplane(d), 1) - mean(wingPanels(d), 1)) * 1000 : null),
+    set: (d, v) => shiftTail(d, 1, v / 1000 - (mean(tailplane(d), 1) - mean(wingPanels(d), 1))) },
+  { group: 'Layout', key: 'tailIncidence', label: 'Tailplane incidence vs wing', unit: '°', min: -6, max: 6, step: 0.25, around: true,
+    get: (d) => (tailplane(d).length ? (meanInc(tailplane(d)) - meanInc(wingPanels(d))) / deg : null),
+    set: (d, v) => {
+      const delta = v * deg - (meanInc(tailplane(d)) - meanInc(wingPanels(d)));
+      for (const s of tailplane(d)) {
+        const a = incidence(s) + delta;
+        s.chord = [Math.cos(a), Math.sin(a), s.chord[2] ?? 0];
+      }
+    } },
   { group: 'Drag', key: 'profileDrag', label: 'Wing and tail drag', unit: '×', min: 0.3, max: 3, step: 0.05,
     get: () => 1,
     set: (d, v) => {
@@ -92,8 +130,9 @@ export function tunablesFor(def) {
   return TUNABLES.map((t) => {
     const dflt = t.get(def);
     if (dflt == null) return null;
-    // `rel` ranges are multiples of the default.
-    const [min, max] = t.rel ? [t.min * dflt, t.max * dflt] : [t.min, t.max];
+    // `rel` ranges are multiples of the default; `around` ranges are either
+    // side of it.
+    const [min, max] = t.rel ? [t.min * dflt, t.max * dflt] : t.around ? [dflt + t.min, dflt + t.max] : [t.min, t.max];
     return { ...t, dflt, min, max };
   }).filter(Boolean);
 }

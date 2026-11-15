@@ -74,8 +74,9 @@ published leaves the live page on the older build.
 
 *Menu → Tuning* shows the flight settings of the model you're flying, with
 its defaults: all-up weight and CG position; static thrust, prop pitch
-speed (top speed), motor torque, down- and right-thrust; wing and tail
-drag, body drag; aileron, elevator and rudder throws; effective dihedral.
+speed (top speed), motor torque, down- and right-thrust; the layout (thrust
+line height and tailplane height relative to the wing, tail arm, tailplane
+incidence); wing and tail drag, body drag; aileron, elevator and rudder throws; effective dihedral.
 Changes apply when you let go of a slider, in flight too, and are saved in
 your browser per model (↺ puts one back, *Reset all* the lot). *Export*
 saves them to a file (send it in to have them built into the model) and
