@@ -452,8 +452,18 @@ export class Aircraft {
    * fast hit is a crash and a slow one leaves the model caught in the branches.
    */
   #obstacleContacts(fWorld, mBody, q, qi) {
+    // Quick checks first: the grid finds shapes nearby, then whole-aircraft
+    // bounding sphere against each shape's; only those left get the
+    // point-by-point test.
     const near = this.env.obstacles.near(this.position.x, this.position.z, this.reach, this._near);
     this.inFoliage = false;
+    const P = this.position;
+    let n = 0;
+    for (const s of near) {
+      const b = s.bound;
+      if (!b || Math.hypot(P.x - b.x, P.y - b.y, P.z - b.z) < b.r + this.reach) near[n++] = s;
+    }
+    near.length = n;
     if (!near.length) return;
     const kSolid = 2000 * this.mass;
     const cSolid = 40 * this.mass;

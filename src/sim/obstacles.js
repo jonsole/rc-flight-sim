@@ -10,7 +10,9 @@
 //   crown     foliage: a broadleaf crown's clumps, as drawn             soft
 
 import { heightAt } from './terrain.js';
-import { CROWN_SEEDS, crownShape } from './treeShapes.js';
+import { CROWN_SEEDS, crownShape, lumpScale } from './treeShapes.js';
+
+const _lp = { x: 0, y: 0, z: 0 };
 
 const CELL = 12; // spatial-hash cell size (m)
 
@@ -77,7 +79,7 @@ export class Obstacles {
         const sy = t.h * 0.4;
         this.shapes.push({
           type: 'crown', name: 'a tree', cx: t.x, cy: t.y + t.h * 0.62, cz: t.z, sx, sy,
-          cos: Math.cos(t.rot), sin: Math.sin(t.rot), clumps: crownShape(CROWN_SEEDS[t.variant]).clumps,
+          cos: Math.cos(t.rot), sin: Math.sin(t.rot), seed: CROWN_SEEDS[t.variant], ...crownShape(CROWN_SEEDS[t.variant]),
         });
       }
     }
@@ -114,6 +116,8 @@ export class Obstacles {
     this.table = { x: 6, z: 3 };
     this.shapes.push({ type: 'box', name: 'the table', min: [5, 0, 2.6], max: [7, 0.78, 3.4] });
 
+    // Bounding sphere per shape, for a quick whole-aircraft check first.
+    for (const s of this.shapes) s.bound = boundOf(s);
     // Spatial hash over each shape's horizontal footprint.
     this.grid = new Map();
     for (const s of this.shapes) {
@@ -189,12 +193,25 @@ export class Obstacles {
         const lx = (dx * s.cos - dz * s.sin) / s.sx;
         const ly = (y - s.cy) / s.sy;
         const lz = (dx * s.sin + dz * s.cos) / s.sx;
+        // 1. Outside the whole crown's bounding shell?
         if (lx * lx + ly * ly + lz * lz > 1.1) return null;
         for (const [cx, cy, cz, r] of s.clumps) {
           const ex = lx - cx;
           const ey = ly - cy;
           const ez = lz - cz;
-          if (ex * ex + ey * ey + ez * ez < r * r * 0.9) return { soft: true };
+          // 2. Outside this clump's sphere, allowing for lumps that bulge out?
+          if (ex * ex + ey * ey + ez * ez > r * r * 1.45) continue;
+          // 3. The leafy lumps exactly as drawn: the drawn surface is each
+          //    clump pushed in or out by lumpScale (in the un-normalised
+          //    crown), so undo that for this point and test the plain clump.
+          _lp.x = lx * s.norm;
+          _lp.y = ly * s.norm;
+          _lp.z = lz * s.norm;
+          const k = 1 / lumpScale(_lp, s.seed);
+          const fx = lx * k - cx;
+          const fy = ly * k - cy;
+          const fz = lz * k - cz;
+          if (fx * fx + fy * fy + fz * fz < r * r) return { soft: true };
         }
         return null;
       }
@@ -206,6 +223,25 @@ export class Obstacles {
       default:
         return null;
     }
+  }
+}
+
+function boundOf(s) {
+  switch (s.type) {
+    case 'box': {
+      const c = [0, 1, 2].map((i) => (s.min[i] + s.max[i]) / 2);
+      return { x: c[0], y: c[1], z: c[2], r: Math.hypot(s.max[0] - c[0], s.max[1] - c[1], s.max[2] - c[2]) };
+    }
+    case 'cylinder':
+      return { x: s.x, y: (s.y0 + s.y1) / 2, z: s.z, r: Math.hypot(s.r, (s.y1 - s.y0) / 2) };
+    case 'cone':
+      return { x: s.x, y: s.y0 + s.h / 2, z: s.z, r: Math.hypot(s.r, s.h / 2) };
+    case 'crown':
+      return { x: s.cx, y: s.cy, z: s.cz, r: Math.max(s.sx, s.sy) * 1.05 };
+    case 'ellipsoid':
+      return { x: s.cx, y: s.cy, z: s.cz, r: Math.max(s.rx, s.ry, s.rz) };
+    default:
+      return { x: 0, y: 0, z: 0, r: Infinity };
   }
 }
 
