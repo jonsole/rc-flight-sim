@@ -210,7 +210,7 @@ export class Obstacles {
     // Buildings at a real site.
     this.buildings = (LOCATION.data?.buildings ?? []).map(prepareBuilding);
     for (const b of this.buildings) this.shapes.push({ type: 'building', name: 'a building', b });
-    // Tall fences: a thin slab, solid like a wall.
+    // Tall fences: a thin slab, solid like a wall (no flying through chain link).
     this.fences = (L.fences ?? []).map((f) => {
       const [ax, az] = f.from;
       const [bx, bz] = f.to;
@@ -223,7 +223,7 @@ export class Obstacles {
         pts, y0: y - 0.3, eave: y + f.height, ridge: y + f.height, kind: 'fence',
         x0: Math.min(ax, bx) - 0.1, x1: Math.max(ax, bx) + 0.1, z0: Math.min(az, bz) - 0.1, z1: Math.max(az, bz) + 0.1,
       };
-      this.shapes.push({ type: 'building', name: 'the metal fence', b });
+      this.shapes.push({ type: 'building', name: 'the chain-link fence', b });
       return f;
     });
 

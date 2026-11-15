@@ -39,14 +39,14 @@ describe('Waterbeach', () => {
     expect(onRunway).toHaveLength(0);
   });
 
-  it('has only broadleaf trees, a grown east belt and a solid metal fence behind it', () => {
+  it('has only broadleaf trees, a grown east belt and a solid chain-link fence behind it', () => {
     const ob = new Obstacles();
     expect(ob.trees.filter((t) => t.conifer)).toHaveLength(0);
     const belt = ob.trees.filter((t) => t.x > 70 && t.x < 100 && t.z > -150 && t.z < 100);
     expect(belt.length).toBeGreaterThan(30);
     expect(Math.min(...belt.map((t) => t.h))).toBeGreaterThanOrEqual(10);
     // Fence from (103, -220) to (82, 110): solid below 3 m, clear above.
-    const fence = ob.shapes.find((s) => s.name === 'the metal fence');
+    const fence = ob.shapes.find((s) => s.name === 'the chain-link fence');
     const x = 103 + (82 - 103) * 0.5;
     const z = -220 + 330 * 0.5;
     expect(Obstacles.test(fence, x, 1.5, z)).not.toBeNull();

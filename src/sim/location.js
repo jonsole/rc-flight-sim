@@ -67,7 +67,7 @@ const WATERBEACH = {
     conifers: false,
     // The east hedge's trees have grown a lot since the LIDAR (2022)...
     treeBelts: [{ from: [98, -220], to: [77, 110], width: 22, grow: 1.4, minH: 10, spacing: 7 }],
-    // ...and there is a 3 m metal fence behind them.
+    // ...and there is a 3 m chain-link fence behind them.
     fences: [{ from: [103, -220], to: [82, 110], height: 3 }],
   },
 };
