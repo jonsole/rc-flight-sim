@@ -90,9 +90,12 @@ function layout(style) {
   return {
     style,
     span: 0.9,
-    // From the plan: 220 mm constant chord, CG 62 mm behind the LE.
+    // From the plan: 220 mm constant chord, CG 62 mm behind the LE. Flown
+    // further back (76 mm, ~35%, about a 10% static margin like the other
+    // models): at the plan CG it was so nose-heavy it pulled itself out of
+    // every dive even with down elevator held.
     chord: high ? 0.22 : 0.24,
-    wingLeX: high ? 0.062 : 0.07,  // CG ≈ 28% chord
+    wingLeX: high ? 0.076 : 0.07,
     incidence: 2 * deg,
     wingY: high ? 0.094 : -0.065,  // underside of the wing at the root
     dihedral: (high ? 0 : 5) * deg, // as built (what you see); high wing: none
@@ -229,7 +232,9 @@ export function buildBuschtrottel(style) {
     },
     {
       name: 'fuselage-plan',
-      pos: [-0.12, 0, 0],
+      // A fuselage's lift acts ahead of the CG (it's slightly destabilising),
+      // not behind it like a tail.
+      pos: [0.03, 0, 0],
       chord: [1, 0, 0],
       span: [0, 0, 1],
       area: 0.045,
@@ -248,7 +253,7 @@ export function buildBuschtrottel(style) {
     name: style.name,
     mass: style.mass,
     inertia: [0.010, 0.020, 0.012], // roll, yaw, pitch (estimated)
-    parasite: { x: style.mount === 'low' ? 0.010 : 0.009, y: 0.03, z: 0.04 },
+    parasite: { x: style.mount === 'low' ? 0.0075 : 0.0065, y: 0.03, z: 0.04 },
     surfaces: [...wing, ...tail, fin, ...body],
     wingAspectRatio: AR,
     wingArea: SPAN * CHORD,
@@ -362,9 +367,9 @@ export const BUSCHTROTTEL_SHOCKCUB = buildBuschtrottel({
   fullSpanAilerons: true,
   tail: 'round',
   slats: true,
-  throws: { aileron: 22 * deg, elevator: 20 * deg }, // full-span ailerons
+  throws: { aileron: 22 * deg, elevator: 17 * deg }, // full-span ailerons; less elevator with the CG further back
   mass: 0.45,
-  tailIncidence: 3 * deg,
+  tailIncidence: 4 * deg,
   rollTrim: 0,
   // From photos of the real one: yellow, no stripe, black nose back to the
   // cabin, grey painted windscreen and side windows, dark blue ailerons (and
@@ -385,9 +390,9 @@ export const BUSCHTROTTEL_HIGHLANDER = buildBuschtrottel({
   fullSpanAilerons: true,
   tail: 'square',
   slats: true,
-  throws: { aileron: 22 * deg, elevator: 20 * deg }, // full-span ailerons
+  throws: { aileron: 22 * deg, elevator: 17 * deg }, // full-span ailerons; less elevator with the CG further back
   mass: 0.45,
-  tailIncidence: 3 * deg,
+  tailIncidence: 4 * deg,
   rollTrim: 0,
   colors: { main: '#efefea', accent: '#c62828', wing: '#efefea', tail: '#c62828' },
 });
@@ -402,7 +407,7 @@ export const BUSCHTROTTEL_AGRO = buildBuschtrottel({
   lowTail: true,
   // Full-span ailerons are already powerful; the big plan tailplane needs
   // less elevator throw.
-  throws: { aileron: 22 * deg, elevator: 16 * deg },
+  throws: { aileron: 22 * deg, elevator: 15 * deg },
   tail: 'square',
   slats: true,
   mass: 0.46,
