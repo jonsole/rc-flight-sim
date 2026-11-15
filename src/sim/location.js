@@ -17,6 +17,7 @@
 //                       { from, to, width, grow, minH, spacing } scales trees within
 //                       width/2 of the line and fills gaps longer than `spacing`
 //   fences              tall fences: { from: [x, z], to: [x, z], height }
+//   bushBelts           real sites: lines of tall bushes: { from, to, width, minH, maxH }
 
 const HOME = {
   id: 'home',
@@ -69,6 +70,8 @@ const WATERBEACH = {
     treeBelts: [{ from: [98, -220], to: [77, 110], width: 22, grow: 1.4, minH: 10, spacing: 7 }],
     // ...and there is a 3 m chain-link fence behind them.
     fences: [{ from: [103, -220], to: [82, 110], height: 3 }],
+    // High bushes just behind the fence.
+    bushBelts: [{ from: [107, -220], to: [86, 110], width: 5, minH: 3.5, maxH: 5 }],
   },
 };
 

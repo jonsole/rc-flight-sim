@@ -317,7 +317,20 @@ export function bushes(material) {
 /** Hedges and shrubs at a real site: the LIDAR's 1-3 m vegetation. */
 function realBushes(material) {
   const rnd = rng(78);
-  const pts = LOCATION.data.bushes;
+  const pts = [...LOCATION.data.bushes];
+  // Belts of tall bushes from the site layout: two staggered rows, 2.5 m apart.
+  for (const b of LOCATION.layout.bushBelts ?? []) {
+    const [ax, az] = b.from;
+    const [bx, bz] = b.to;
+    const len = Math.hypot(bx - ax, bz - az);
+    const [ux, uz] = [(bx - ax) / len, (bz - az) / len];
+    for (let s = 0; s <= len; s += 2.5) {
+      for (const row of [-0.25, 0.25]) {
+        const off = row * b.width + (rnd() - 0.5) * 1.2;
+        pts.push(ax + ux * (s + row * 2.5) - uz * off, az + uz * (s + row * 2.5) + ux * off, b.minH + rnd() * (b.maxH - b.minH));
+      }
+    }
+  }
   const n = pts.length / 3;
   const shapes = [broadleafCrown(101), broadleafCrown(131)];
   const meshes = shapes.map((s) => new InstancedMesh(s, material, n));
