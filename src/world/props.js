@@ -8,7 +8,6 @@ import {
   Float32BufferAttribute, Shape, ShapeGeometry, ExtrudeGeometry, Vector2, Vector3, Matrix4,
 } from 'three';
 import { heightAt } from '../sim/terrain.js';
-import { LOCATION } from '../sim/location.js';
 import { broadleafCrown, blobCrown } from './trees.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
@@ -283,93 +282,56 @@ export function gravelTexture() {
 }
 
 /**
- * Bushes along the edge of the field, in front of the tree line.
+ * The bushes and hedges (src/sim/obstacles.js makeBushes, with edits).
  * `detail` is the crown detail (src/world/quality.js); bushes further than
- * `distance` from the pilot are left out.
+ * `distance` from the pilot are left out. Each bush drawn remembers where
+ * (b.drawn), so the editor can move and resize it on the spot.
  */
-export function bushes(material, { detail = 1, distance = Infinity } = {}) {
-  if (LOCATION.data) return realBushes(material, detail, distance);
-  const rnd = rng(77);
-  const shapes = bushShapes(detail);
-  const n = 260;
-  const meshes = shapes.map((s) => new InstancedMesh(s, material, n));
-  const counts = shapes.map(() => 0);
-  const o = new Object3D();
+export function bushes(material, list, { detail = 1, nearDetail = 1, nearRadius = 0, distance = Infinity } = {}) {
+  // Leafy close to the pilot (where they're seen up close), simpler beyond.
+  const sets = [
+    { shapes: bushShapes(nearDetail), test: (d) => d <= nearRadius },
+    { shapes: bushShapes(detail), test: (d) => d > nearRadius && d <= distance },
+  ];
+  const m4 = new Matrix4();
   const col = new Color();
-  for (let i = 0; i < n; i++) {
-    const a = rnd() * Math.PI * 2;
-    const r = 150 + rnd() * 22;
-    const x = Math.cos(a) * r * 1.3;
-    let z = Math.sin(a) * r - 40;
-    if (z > 20 && Math.abs(x) < 60) z += 80; // keep the view behind the pilot open
-    const size = 0.6 + rnd() * 0.9;
-    o.position.set(x, heightAt(x, z) + size * 0.55, z);
-    o.rotation.set(0, rnd() * Math.PI * 2, 0);
-    o.scale.set(size * (1 + rnd() * 0.6), size * 0.75, size * (1 + rnd() * 0.6));
-    o.updateMatrix();
-    const k = i % shapes.length;
-    meshes[k].setMatrixAt(counts[k], o.matrix);
-    col.setHSL(0.25 + rnd() * 0.05, 0.38 + rnd() * 0.12, 0.13 + rnd() * 0.05);
-    meshes[k].setColorAt(counts[k]++, col);
+  const out = [];
+  for (const set of sets) {
+    const meshes = set.shapes.map((s) => new InstancedMesh(s, material, Math.max(1, list.length)));
+    const counts = meshes.map(() => 0);
+    for (const b of list) {
+      if (!set.test(Math.hypot(b.x, b.z))) continue;
+      const k = b.shape;
+      bushMatrix(b, m4);
+      meshes[k].setMatrixAt(counts[k], m4);
+      col.setHSL(...b.tint);
+      meshes[k].setColorAt(counts[k], col);
+      b.drawn = [meshes[k], counts[k]++];
+    }
+    meshes.forEach((m, k) => {
+      m.count = counts[k];
+      m.receiveShadow = true;
+      m.castShadow = true;
+      m.computeBoundingSphere();
+      if (m.count) out.push(m);
+    });
   }
-  meshes.forEach((m, k) => {
-    m.count = counts[k];
-    m.receiveShadow = true;
-  });
-  return meshes;
+  return out;
+}
+
+const _bushO = new Object3D();
+/** A bush's matrix: the crown shape sat on the ground, h tall and 2w wide. */
+export function bushMatrix(b, out) {
+  _bushO.position.set(b.x, heightAt(b.x, b.z) + b.h * 0.5, b.z);
+  _bushO.rotation.set(0, b.turn, 0);
+  _bushO.scale.set(b.w, b.h * 0.55, b.w);
+  _bushO.updateMatrix();
+  return out.copy(_bushO.matrix);
 }
 
 /** Two bush shapes at a quality's detail (a number, or 'blob'). */
 function bushShapes(detail) {
   return detail === 'blob' ? [blobCrown(101), blobCrown(131)] : [broadleafCrown(101, detail), broadleafCrown(131, detail)];
-}
-
-/** Hedges and shrubs at a real site: the LIDAR's 1-3 m vegetation. */
-function realBushes(material, detail, distance) {
-  const rnd = rng(78);
-  const pts = [...LOCATION.data.bushes];
-  // Belts of tall bushes from the site layout: two staggered rows, 2.5 m apart.
-  for (const b of LOCATION.layout.bushBelts ?? []) {
-    const [ax, az] = b.from;
-    const [bx, bz] = b.to;
-    const len = Math.hypot(bx - ax, bz - az);
-    const [ux, uz] = [(bx - ax) / len, (bz - az) / len];
-    for (let s = 0; s <= len; s += 2.5) {
-      for (const row of [-0.25, 0.25]) {
-        const off = row * b.width + (rnd() - 0.5) * 1.2;
-        pts.push(ax + ux * (s + row * 2.5) - uz * off, az + uz * (s + row * 2.5) + ux * off, b.minH + rnd() * (b.maxH - b.minH));
-      }
-    }
-  }
-  const n = pts.length / 3;
-  const shapes = bushShapes(detail);
-  const meshes = shapes.map((s) => new InstancedMesh(s, material, n));
-  const counts = shapes.map(() => 0);
-  const o = new Object3D();
-  const col = new Color();
-  for (let i = 0; i < pts.length; i += 3) {
-    const x = pts[i] + (rnd() - 0.5) * 1.5;
-    const z = pts[i + 1] + (rnd() - 0.5) * 1.5;
-    const h = pts[i + 2];
-    const w = 1.5 + rnd() * 0.8; // half-width: neighbours (3 m apart) overlap into a hedge
-    const turn = rnd() * Math.PI * 2;
-    const tint = [0.24 + rnd() * 0.05, 0.36 + rnd() * 0.12, 0.13 + rnd() * 0.05];
-    if (Math.hypot(x, z) > distance) continue;
-    o.position.set(x, heightAt(x, z) + h * 0.5, z);
-    o.rotation.set(0, turn, 0);
-    o.scale.set(w, h * 0.55, w);
-    o.updateMatrix();
-    const k = (i / 3) % shapes.length;
-    meshes[k].setMatrixAt(counts[k], o.matrix);
-    col.setHSL(...tint);
-    meshes[k].setColorAt(counts[k]++, col);
-  }
-  meshes.forEach((m, k) => {
-    m.count = counts[k];
-    m.receiveShadow = true;
-    m.castShadow = true;
-  });
-  return meshes;
 }
 
 /**

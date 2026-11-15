@@ -1,3 +1,5 @@
+import { flightLineMiddle } from './edits.js';
+
 // Where you fly. The made-up club field is drawn from code; real sites come
 // from a baked data file (tools/bake_location.py): LIDAR terrain, trees and
 // buildings, and a ground colour map from OpenStreetMap.
@@ -187,6 +189,15 @@ export function worldToClub(x, z) {
   const c = Math.cos(a);
   const s = Math.sin(a);
   return [x * c + z * s, -x * s + z * c];
+}
+
+/**
+ * Where pilots stand (world x, z): the middle of the flight line set in the
+ * editor, else the site's origin. Your own pilot-position setting is added
+ * to this.
+ */
+export function pilotSpot() {
+  return flightLineMiddle() ?? [0, 0];
 }
 
 /** Is (x, z) on short-cut grass? */

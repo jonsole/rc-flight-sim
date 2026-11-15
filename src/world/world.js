@@ -15,7 +15,7 @@ import { addGroundDetail } from './ground.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
 import { QUALITY } from './quality.js';
 import { CROWN_SEEDS, crownOf } from '../sim/treeShapes.js';
-import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes, siteFence } from './props.js';
+import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes, bushMatrix, siteFence } from './props.js';
 
 const smooth = (e0, e1, x) => {
   const t = MathUtils.clamp((x - e0) / (e1 - e0), 0, 1);
@@ -599,6 +599,12 @@ export class World {
     const before = this.scene.children.length;
     this.#trees();
     const ob = this.obstacles;
+    const q = this.quality;
+    const near = { nearDetail: q.nearDetail === 2 ? 1 : 0, nearRadius: Math.min(q.nearRadius, 250) };
+    for (const m of bushes(this.leafMat, ob.bushes, { detail: q.bushDetail, ...near, distance: this.viewDistance })) {
+      m.userData.kind = 'bush';
+      this.scene.add(m);
+    }
     if (ob.buildings.length) {
       const houses = buildingsMesh(ob.buildings);
       addCloudShadows(houses.material);
@@ -631,8 +637,25 @@ export class World {
       o.traverse((m) => m.geometry?.dispose());
     }
     this.#site();
+    this.placeWindsock();
     if (this.googleMode) this.setGoogleMode(true);
     if (this.shadows) this.shadows.dirty = true;
+  }
+
+  /** Put the windsock where the obstacles say (edited), or hide it. */
+  placeWindsock() {
+    const at = this.obstacles.windsock;
+    this.windsockGroup.visible = !!at;
+    if (at) this.windsockGroup.position.set(at.x, heightAt(at.x, at.z), at.z);
+  }
+
+  /** Redraw one bush as `spec` changes it (editor, before committing). */
+  moveBushDrawing(b, spec) {
+    if (!b.drawn) return;
+    const [m, i] = b.drawn;
+    m.setMatrixAt(i, bushMatrix({ ...b, ...spec }, _trunkM));
+    m.instanceMatrix.needsUpdate = true;
+    m.frustumCulled = false;
   }
 
   /**
@@ -763,9 +786,8 @@ export class World {
     sock.add(sockMesh);
     ws.add(sock);
     // (Still worked out where a site has none: it's just not shown.)
-    const wsAt = this.obstacles.windsock;
-    ws.position.set(wsAt?.x ?? 0, 0, wsAt?.z ?? 0);
-    ws.visible = !!wsAt;
+    this.windsockGroup = ws;
+    this.placeWindsock();
     this.scene.add(ws);
     this.windsock = sock;
     this.sockMesh = sockMesh;
@@ -795,11 +817,6 @@ export class World {
       o.userData.kind = 'car';
       this.scene.add(o);
       this.builtScenery.push(o);
-    }
-    for (const b of bushes(this.leafMat, { detail: this.quality.bushDetail, distance: this.viewDistance })) {
-      b.userData.kind = 'bush';
-      this.scene.add(b);
-      this.builtScenery.push(b);
     }
 
     // Flight-line table

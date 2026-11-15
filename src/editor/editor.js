@@ -8,7 +8,10 @@
 // (or Alt + drag) to look; wheel to move forward and back; click to select
 // or place; Delete removes the selection; Ctrl+Z undoes; Esc finishes a
 // fence, clears the selection, then leaves the editor.
-import { Raycaster, Vector2, Vector3, Box3, Box3Helper, Object3D, Color, BufferGeometry, Line, LineBasicMaterial, Float32BufferAttribute } from 'three';
+import {
+  Raycaster, Vector2, Vector3, Box3, Box3Helper, Object3D, Color, BufferGeometry, Line, LineBasicMaterial, Float32BufferAttribute,
+  Mesh, CylinderGeometry, MeshBasicMaterial,
+} from 'three';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { heightAt } from '../sim/terrain.js';
 import { LOCATION } from '../sim/location.js';
@@ -16,8 +19,11 @@ import { EDITS, saveEdits, replaceEdits, emptyEdits, editCount } from '../sim/ed
 import { insideFootprint } from '../sim/buildings.js';
 import { crownOf } from '../sim/treeShapes.js';
 import { buildingsMesh } from '../world/buildings.js';
+import { pilotSpot } from '../sim/location.js';
 
 const SPEED = 15; // m/s, x4 with Shift
+// Where each kind's edits are kept (src/sim/edits.js).
+const GROUP = { tree: 'trees', bush: 'bushes', building: 'buildings', fence: 'fences' };
 
 function el(tag, attrs = {}, ...children) {
   const e = document.createElement(tag);
@@ -72,6 +78,10 @@ export class Editor {
     this.highlight = new Box3Helper(new Box3(), new Color('#ffd400'));
     this.fenceLine = new Line(new BufferGeometry(), new LineBasicMaterial({ color: '#ffd400' }));
     this.fenceLine.frustumCulled = false;
+    // Where pilots stand: the flight line, and a post at its middle.
+    this.flightLine = new Line(new BufferGeometry(), new LineBasicMaterial({ color: '#4fd1ff' }));
+    this.flightLine.frustumCulled = false;
+    this.pilotMarker = new Mesh(new CylinderGeometry(0.25, 0.25, 1.8, 12).translate(0, 0.9, 0), new MeshBasicMaterial({ color: '#4fd1ff' }));
 
     this.#ui();
     this.#listen();
@@ -89,7 +99,8 @@ export class Editor {
     c.fov = 60;
     c.updateProjectionMatrix();
     const s = this.world.scene;
-    s.add(this.proxy, this.gizmoHelper, this.highlight, this.fenceLine);
+    s.add(this.proxy, this.gizmoHelper, this.highlight, this.fenceLine, this.flightLine, this.pilotMarker);
+    this.#drawFlightLine();
     this.#select(null);
     this.setTool('select');
     this.root.style.display = 'block';
@@ -103,7 +114,7 @@ export class Editor {
     this.#finishFence(false);
     this.#select(null);
     const s = this.world.scene;
-    s.remove(this.proxy, this.gizmoHelper, this.highlight, this.fenceLine);
+    s.remove(this.proxy, this.gizmoHelper, this.highlight, this.fenceLine, this.flightLine, this.pilotMarker);
     this.root.style.display = 'none';
     this.onExit();
   }
@@ -228,17 +239,35 @@ export class Editor {
       this.#select({ kind: 'tree', id: `new:${EDITS.trees.added.length - 1}` });
       return;
     }
-    if (this.tool === 'fence') {
+    if (this.tool === 'bush') {
+      const g = this.#groundAt(e);
+      if (!g) return;
+      this.#commit(() => EDITS.bushes.added.push({ x: round(g.x), z: round(g.z), h: 2, w: 1.6 }));
+      this.#select({ kind: 'bush', id: `new:${EDITS.bushes.added.length - 1}` });
+      return;
+    }
+    if (this.tool === 'windsock') {
+      const g = this.#groundAt(e);
+      if (!g) return;
+      this.#commit(() => (EDITS.site.windsock = { x: round(g.x), z: round(g.z) }));
+      this.setTool('select');
+      this.#select({ kind: 'windsock' });
+      return;
+    }
+    if (this.tool === 'fence' || this.tool === 'hedge' || this.tool === 'flightline') {
       const g = this.#groundAt(e);
       if (!g) return;
       this.fencePts.push([round(g.x), round(g.z)]);
       this.#drawFenceLine();
+      // A flight line is just its two ends.
+      if (this.tool === 'flightline' && this.fencePts.length === 2) this.#finishFence(true);
       this.#status();
       return;
     }
     // Select: the nearest site object under the pointer.
     this._ray.setFromCamera(this.#pointer(e), this.camera);
-    const hits = this._ray.intersectObjects(this.world.siteObjects, true).filter((h) => h.object.userData.kind);
+    const pickable = [...this.world.siteObjects, ...(this.obstacles.windsock ? [this.world.windsockGroup] : [])];
+    const hits = this._ray.intersectObjects(pickable, true).filter((h) => h.object.userData.kind || h.object.parent?.userData.kind === 'windsock' || isIn(h.object, this.world.windsockGroup));
     const hit = hits[0];
     if (!hit) {
       this.#select(null);
@@ -246,7 +275,24 @@ export class Editor {
     }
     const p = hit.point;
     const ob = this.obstacles;
-    const kind = hit.object.userData.kind;
+    const kind = isIn(hit.object, this.world.windsockGroup) ? 'windsock' : hit.object.userData.kind;
+    if (kind === 'windsock') {
+      this.#select({ kind: 'windsock' });
+      return;
+    }
+    if (kind === 'bush') {
+      let best = null;
+      let bd = Infinity;
+      for (const b of ob.bushes) {
+        const d = Math.hypot(b.x - p.x, b.z - p.z) - b.w;
+        if (d < bd) {
+          bd = d;
+          best = b;
+        }
+      }
+      this.#select(best ? { kind: 'bush', id: best.id } : null);
+      return;
+    }
     if (kind === 'tree') {
       let best = null;
       let bd = Infinity;
@@ -295,7 +341,9 @@ export class Editor {
     if (!s) return null;
     const ob = this.obstacles;
     if (s.kind === 'tree') return ob.trees.find((t) => t.id === s.id) ?? null;
+    if (s.kind === 'bush') return ob.bushes.find((b) => b.id === s.id) ?? null;
     if (s.kind === 'building') return ob.buildings.find((b) => b.index === s.id) ?? null;
+    if (s.kind === 'windsock') return ob.windsock;
     return ob.fences.find((f) => f.index === s.id) ?? null;
   }
 
@@ -321,6 +369,12 @@ export class Editor {
       const r = crownOf(o).radius;
       const y = heightAt(o.x, o.z);
       box.set(new Vector3(o.x - r, y, o.z - r), new Vector3(o.x + r, y + o.h, o.z + r));
+    } else if (kind === 'bush') {
+      const y = heightAt(o.x, o.z);
+      box.set(new Vector3(o.x - o.w, y, o.z - o.w), new Vector3(o.x + o.w, y + o.h, o.z + o.w));
+    } else if (kind === 'windsock') {
+      const y = heightAt(o.x, o.z);
+      box.set(new Vector3(o.x - 0.6, y, o.z - 0.6), new Vector3(o.x + 0.6, y + o.height + 0.3, o.z + 0.6));
     } else if (kind === 'building') {
       box.set(new Vector3(o.x0, o.y0, o.z0), new Vector3(o.x1, o.ridge, o.z1));
     } else {
@@ -345,6 +399,14 @@ export class Editor {
     this.#boxFor('tree', p, this.highlight.box);
   }
 
+  /** Bush: redraw it with `spec` changed, and box it. */
+  #previewBush(spec) {
+    const o = this.#current();
+    if (!o || this.selected.kind !== 'bush') return;
+    this.world.moveBushDrawing(o, spec);
+    this.#boxFor('bush', { ...o, ...spec }, this.highlight.box);
+  }
+
   #dragStart() {
     this.dragFrom = this.proxy.position.clone();
     this.boxFrom = this.highlight.box.clone();
@@ -364,7 +426,11 @@ export class Editor {
     const o = this.#current();
     if (!o) return;
     if (this.selected.kind === 'tree') this.#previewTree({ x: o.x + dx, z: o.z + dz });
-    else {
+    else if (this.selected.kind === 'bush') this.#previewBush({ x: o.x + dx, z: o.z + dz });
+    else if (this.selected.kind === 'windsock') {
+      this.world.windsockGroup.position.set(o.x + dx, heightAt(o.x + dx, o.z + dz), o.z + dz);
+      this.highlight.box.copy(this.boxFrom).translate(new Vector3(dx, 0, dz));
+    } else {
       this.dragObj?.position.set(dx, 0, dz);
       this.highlight.box.copy(this.boxFrom).translate(new Vector3(dx, 0, dz));
     }
@@ -394,6 +460,7 @@ export class Editor {
     this.world.rebuildSite();
     this.onRebuilt();
     this.#select(this.selected);
+    this.#drawFlightLine();
     this.#status();
   }
 
@@ -407,7 +474,7 @@ export class Editor {
   /** The edit record for the selection: an added item, or the changes to a baked one. */
   #record(create = true) {
     const s = this.selected;
-    const group = EDITS[`${s.kind}s`];
+    const group = EDITS[GROUP[s.kind]];
     if (typeof s.id === 'string' && s.id.startsWith('new:')) return group.added[Number(s.id.slice(4))];
     if (!group.changed[s.id] && create) group.changed[s.id] = {};
     return group.changed[s.id];
@@ -427,9 +494,13 @@ export class Editor {
     const dz = round(this.proxy.position.z - this.dragFrom.z);
     if (!dx && !dz) return;
     const s = this.selected;
+    if (s.kind === 'windsock') {
+      this.#commit(() => (EDITS.site.windsock = { x: round(o.x + dx), z: round(o.z + dz) }));
+      return;
+    }
     this.#commit(() => {
       const r = this.#record();
-      if (s.kind === 'tree') Object.assign(r, { x: round(o.x + dx), z: round(o.z + dz) });
+      if (s.kind === 'tree' || s.kind === 'bush') Object.assign(r, { x: round(o.x + dx), z: round(o.z + dz) });
       else if (s.kind === 'building') Object.assign(r, { dx: round((r.dx ?? 0) + dx), dz: round((r.dz ?? 0) + dz) });
       else r.path = o.path.map(([x, z]) => [round(x + dx), round(z + dz)]);
     });
@@ -438,8 +509,13 @@ export class Editor {
   #delete() {
     const s = this.selected;
     if (!s) return;
+    if (s.kind === 'windsock') {
+      this.#commit(() => (EDITS.site.windsock = false));
+      this.#select(null);
+      return;
+    }
     this.#commit(() => {
-      const group = EDITS[`${s.kind}s`];
+      const group = EDITS[GROUP[s.kind]];
       if (typeof s.id === 'string' && s.id.startsWith('new:')) group.added.splice(Number(s.id.slice(4)), 1);
       else {
         group.removed.push(s.id);
@@ -462,10 +538,40 @@ export class Editor {
     this.fencePts = [];
     this.#drawFenceLine();
     if (keep && pts.length >= 2) {
-      this.#commit(() => EDITS.fences.added.push({ path: pts, height: 2, kind: 'panels' }));
-      this.#select({ kind: 'fence', id: `new:${EDITS.fences.added.length - 1}` });
+      if (this.tool === 'hedge') {
+        // A row of bushes every 2.5 m along the line.
+        this.#commit(() => {
+          for (let i = 1; i < pts.length; i++) {
+            const [ax, az] = pts[i - 1];
+            const [bx, bz] = pts[i];
+            const len = Math.hypot(bx - ax, bz - az);
+            for (let d = i === 1 ? 0 : 2.5; d <= len; d += 2.5) {
+              const t = len ? d / len : 0;
+              EDITS.bushes.added.push({ x: round(ax + (bx - ax) * t), z: round(az + (bz - az) * t), h: 2, w: 1.6 });
+            }
+          }
+        });
+      } else if (this.tool === 'flightline') {
+        this.#commit(() => (EDITS.site.flightLine = pts.slice(0, 2)));
+        this.setTool('select');
+      } else {
+        this.#commit(() => EDITS.fences.added.push({ path: pts, height: 2, kind: 'panels' }));
+        this.#select({ kind: 'fence', id: `new:${EDITS.fences.added.length - 1}` });
+      }
     }
     this.#status();
+  }
+
+  /** The flight line (where pilots stand) and the pilot's spot, while editing. */
+  #drawFlightLine() {
+    const fl = EDITS.site.flightLine;
+    const g = this.flightLine.geometry;
+    const pts = fl ? fl.flatMap(([x, z]) => [x, heightAt(x, z) + 0.15, z]) : [];
+    g.setAttribute('position', new Float32BufferAttribute(pts, 3));
+    g.computeBoundingSphere();
+    this.flightLine.visible = !!fl;
+    const [px, pz] = pilotSpot();
+    this.pilotMarker.position.set(px, heightAt(px, pz), pz);
   }
 
   // --- Panels -------------------------------------------------------------------
@@ -480,7 +586,11 @@ export class Editor {
         el('strong', {}, 'Scenery editor'),
         tool('select', 'Select', 'Click a tree, building or fence'),
         tool('tree', '+ Tree', 'Click the ground to plant a tree'),
+        tool('bush', '+ Bush', 'Click the ground to plant a bush'),
+        tool('hedge', '+ Hedge', 'Click points along the ground for a row of bushes, then Enter'),
         tool('fence', '+ Fence', 'Click points along the ground, then Enter'),
+        tool('flightline', 'Flight line', 'Click the two ends of the line pilots stand along'),
+        tool('windsock', 'Windsock', 'Click the ground to put the windsock there'),
         el('button', { onclick: () => this.#undo(), title: 'Ctrl+Z' }, 'Undo'),
         el('button', { onclick: () => this.#export(), title: 'Save your edits to a file' }, 'Export'),
         el('button', { onclick: () => fileIn.click(), title: 'Load edits from a file' }, 'Import'),
@@ -501,7 +611,13 @@ export class Editor {
     const n = editCount();
     let hint = 'Click a tree, building or fence to select it.';
     if (this.tool === 'tree') hint = 'Click the ground to plant a tree.';
-    if (this.tool === 'fence') hint = this.fencePts.length ? `${this.fencePts.length} point(s): click more, Enter to finish, Esc to cancel.` : 'Click points along the ground for a new fence.';
+    if (this.tool === 'bush') hint = 'Click the ground to plant a bush.';
+    if (this.tool === 'windsock') hint = 'Click the ground to put the windsock there.';
+    if (this.tool === 'flightline') hint = this.fencePts.length ? 'Now click the other end of the flight line.' : 'Click one end of the line pilots stand along (you stand at its middle).';
+    if (this.tool === 'fence' || this.tool === 'hedge') {
+      const what = this.tool === 'fence' ? 'a new fence' : 'a hedge (a bush every 2.5 m)';
+      hint = this.fencePts.length ? `${this.fencePts.length} point(s): click more, Enter to finish, Esc to cancel.` : `Click points along the ground for ${what}.`;
+    }
     this.statusEl.textContent = `${LOCATION.name}: ${n} edit${n === 1 ? '' : 's'} (saved in this browser). ${hint}`;
   }
 
@@ -549,6 +665,14 @@ export class Editor {
         el('option', { value: 'broadleaf', selected: !o.conifer }, 'Broadleaf'),
         el('option', { value: 'conifer', selected: o.conifer }, 'Conifer'));
       rows.push(el('label', { class: 'ed-row' }, el('span', {}, 'Type'), sel));
+    } else if (s.kind === 'bush') {
+      const live = { h: o.h, w: o.w };
+      const show = (change) => this.#previewBush(Object.assign(live, change));
+      rows.push(el('h4', {}, 'Bush'));
+      rows.push(slider('Height', o.h, 0.3, 6, 0.1, 'm', (v) => this.#set({ h: v }), (v) => show({ h: v })));
+      rows.push(slider('Width', o.w * 2, 0.5, 10, 0.1, 'm', (v) => this.#set({ w: v / 2 }), (v) => show({ w: v / 2 })));
+    } else if (s.kind === 'windsock') {
+      rows.push(el('h4', {}, 'Windsock'));
     } else if (s.kind === 'building') {
       // Height above its lowest corner (prepareBuilding sinks y0 0.3 m below it).
       rows.push(el('h4', {}, `Building (${o.kind === 'yes' ? 'building' : o.kind})`));
@@ -598,6 +722,12 @@ export class Editor {
 }
 
 const round = (v) => Math.round(v * 10) / 10;
+
+/** Is `o` (a picked mesh) part of `root`? */
+function isIn(o, root) {
+  for (let p = o; p; p = p.parent) if (p === root) return true;
+  return false;
+}
 const round3 = (v) => Math.round(v * 1000) / 1000;
 
 function segDist(px, pz, [ax, az], [bx, bz]) {

@@ -1,5 +1,7 @@
 // Camera modes: line-of-sight (pilot on the ground), FPV, and chase.
 import { PerspectiveCamera, Vector3, Quaternion, MathUtils } from 'three';
+import { pilotSpot } from '../sim/location.js';
+import { heightAt } from '../sim/terrain.js';
 
 export const CAMERA_MODES = ['los', 'fpv', 'chase'];
 export const CAMERA_LABELS = { los: 'Line of sight', fpv: 'FPV', chase: 'Chase' };
@@ -51,9 +53,13 @@ export class CameraRig {
     this.camera.aspect = aspect;
   }
 
+  /** Your eye: at the site's flight line (pilotSpot), moved by your pilot-position setting. */
   pilotEye() {
     const s = this.settings;
-    return new Vector3(s.pilotX, 1.7, s.pilotZ);
+    const [px, pz] = pilotSpot();
+    const x = px + s.pilotX;
+    const z = pz + s.pilotZ;
+    return new Vector3(x, heightAt(x, z) + 1.7, z);
   }
 
   update(aircraft, dt) {

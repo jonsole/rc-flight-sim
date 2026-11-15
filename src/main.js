@@ -21,7 +21,7 @@ import { OSD } from './ui/osd.js';
 import { Panel } from './ui/panel.js';
 import { loadSettings, saveSettings } from './ui/settings.js';
 import { EngineSound } from './audio/engine.js';
-import { LOCATION, LOCATIONS, clubAngle, clubToWorld } from './sim/location.js';
+import { LOCATION, LOCATIONS, clubAngle, clubToWorld, pilotSpot } from './sim/location.js';
 import { QUALITY, qualityPreset, viewDistance } from './world/quality.js';
 import { GoogleTiles } from './world/googleTiles.js';
 import { loadEdits } from './sim/edits.js';
@@ -117,7 +117,10 @@ const editor = new Editor({
   camera: rig.camera,
   canvas,
   root: document.getElementById('editor'),
-  onRebuilt: () => wind.setTrees(obstacles.trees),
+  onRebuilt: () => {
+    wind.setTrees(obstacles.trees);
+    windsockPos.set(obstacles.windsock?.x ?? 0, obstacles.windsock?.height ?? 5, obstacles.windsock?.z ?? 0);
+  },
   setGoogle: googleAvailable() ? (on) => showGoogle(on) : null,
   setGoogleOpacity: (v) => googleTiles?.setOpacity(v),
   onExit: () => {
@@ -242,8 +245,9 @@ function resetAircraft() {
   } else if (entry.def.handLaunch) {
     // In the pilot's right hand at the flight line, half a metre ahead,
     // pointing along the runway into wind.
-    const hx = settings.pilotX + lane * 3 + Math.cos(heading) * 0.5 + Math.sin(heading) * 0.3;
-    const hz = settings.pilotZ - Math.sin(heading) * 0.5 + Math.cos(heading) * 0.3;
+    const [px, pz] = pilotSpot();
+    const hx = px + settings.pilotX + lane * 3 + Math.cos(heading) * 0.5 + Math.sin(heading) * 0.3;
+    const hz = pz + settings.pilotZ - Math.sin(heading) * 0.5 + Math.cos(heading) * 0.3;
     aircraft.resetHandLaunch(hx, hz, heading);
   } else {
     const [gx, gz] = clubToWorld(RUNWAY.x - dir * run, RUNWAY.z + lane * 4);

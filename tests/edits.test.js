@@ -2,7 +2,7 @@
 // trees are gone, resized ones are as big as drawn, and added trees and
 // fences are solid; buildings move and change height.
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { setLocation } from '../src/sim/location.js';
+import { setLocation, pilotSpot } from '../src/sim/location.js';
 import { EDITS, replaceEdits, emptyEdits, editCount } from '../src/sim/edits.js';
 import data from '../src/locations/waterbeach.json';
 
@@ -53,5 +53,34 @@ describe('scenery edits', () => {
     expect(b2.ridge - (b2.y0 + 0.3)).toBeCloseTo(20, 0);
     EDITS.buildings.removed.push(b.index);
     expect(new Obstacles().buildings.find((x) => x.index === b.index)).toBeUndefined();
+  });
+
+  it('plants, resizes and deletes bushes, which catch a model like foliage', () => {
+    const before = new Obstacles();
+    const first = before.bushes[0];
+    EDITS.bushes.added.push({ x: 20, z: -50, h: 3, w: 2 });
+    EDITS.bushes.changed[first.id] = { h: 5 };
+    let ob = new Obstacles();
+    expect(ob.bushes.length).toBe(before.bushes.length + 1);
+    expect(ob.bushes.find((b) => b.id === first.id).h).toBe(5);
+    const hit = hitsAt(ob, 20, 1.5, -50, 'a bush');
+    expect(hit.length).toBe(1);
+    expect(Obstacles.test(hit[0], 20, 1.5, -50).soft).toBe(true);
+    EDITS.bushes.removed.push(first.id);
+    ob = new Obstacles();
+    expect(ob.bushes.find((b) => b.id === first.id)).toBeUndefined();
+  });
+
+  it('places and removes the windsock, and moves where pilots stand', () => {
+    expect(new Obstacles().windsock).toBeNull(); // Barrack Field has none
+    EDITS.site.windsock = { x: -20, z: -30 };
+    let ob = new Obstacles();
+    expect(ob.windsock).toMatchObject({ x: -20, z: -30 });
+    expect(hitsAt(ob, -20, 2, -30, 'the windsock pole').length).toBe(1);
+    EDITS.site.windsock = false;
+    expect(new Obstacles().windsock).toBeNull();
+    expect(pilotSpot()).toEqual([0, 0]);
+    EDITS.site.flightLine = [[-10, 5], [10, 7]];
+    expect(pilotSpot()).toEqual([0, 6]);
   });
 });

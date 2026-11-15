@@ -17,7 +17,7 @@ import { heightAt } from './terrain.js';
 import { CROWN_SEEDS, crownShape, lumpScale, crownOf } from './treeShapes.js';
 import { LOCATION, clubAngle, clubToWorld } from './location.js';
 import { prepareBuilding, roofAt, insideFootprint, nearestWall } from './buildings.js';
-import { applyTreeEdits, applyBuildingEdits, applyFenceEdits } from './edits.js';
+import { EDITS, applyTreeEdits, applyBushEdits, applyBuildingEdits, applyFenceEdits, treeId } from './edits.js';
 
 const _lp = { x: 0, y: 0, z: 0 };
 
@@ -149,6 +149,65 @@ function makeTrees() {
   return trees;
 }
 
+/**
+ * Bushes and hedges: { id, x, z, h (height), w (half-width), turn, tint
+ * [h, s, l], shape (0/1) }. Real sites: the LIDAR's 1-3 m vegetation (on a
+ * 3 m grid, so neighbours overlap into hedges) and the layout's bush belts;
+ * the made-up field: a ring in front of the tree line.
+ */
+function makeBushes() {
+  let rnd = 78;
+  const rand = () => ((rnd = (rnd * 16807) % 2147483647) / 2147483647);
+  const out = [];
+  const add = (x, z, h, w) => out.push({
+    id: treeId(x, z), x, z, h, w, turn: rand() * Math.PI * 2,
+    tint: [0.24 + rand() * 0.05, 0.36 + rand() * 0.12, 0.13 + rand() * 0.05], shape: out.length % 2,
+  });
+  if (LOCATION.data) {
+    const p = LOCATION.data.bushes;
+    for (let i = 0; i < p.length; i += 3) add(p[i] + (rand() - 0.5) * 1.5, p[i + 1] + (rand() - 0.5) * 1.5, p[i + 2], 1.5 + rand() * 0.8);
+    // Belts of tall bushes from the site layout: two staggered rows, 2.5 m apart.
+    for (const b of LOCATION.layout.bushBelts ?? []) {
+      const [ax, az] = b.from;
+      const [bx, bz] = b.to;
+      const len = Math.hypot(bx - ax, bz - az);
+      const [ux, uz] = [(bx - ax) / len, (bz - az) / len];
+      for (let s = 0; s <= len; s += 2.5) {
+        for (const row of [-0.25, 0.25]) {
+          const off = row * b.width + (rand() - 0.5) * 1.2;
+          add(ax + ux * (s + row * 2.5) - uz * off, az + uz * (s + row * 2.5) + ux * off, b.minH + rand() * (b.maxH - b.minH), 1.5 + rand() * 0.8);
+        }
+      }
+    }
+  } else {
+    for (let i = 0; i < 260; i++) {
+      const a = rand() * Math.PI * 2;
+      const r = 150 + rand() * 22;
+      const x = Math.cos(a) * r * 1.3;
+      let z = Math.sin(a) * r - 40;
+      if (z > 20 && Math.abs(x) < 60) z += 80; // keep the view behind the pilot open
+      const size = 0.6 + rand() * 0.9;
+      add(x, z, size * 1.4, size * 1.3);
+    }
+  }
+  return out;
+}
+
+/** A whole bush from an edited or added one ({ x, z, h, w }). */
+function editedBush(spec, orig) {
+  const k = hashId(spec.id);
+  return {
+    id: spec.id,
+    x: spec.x ?? orig.x,
+    z: spec.z ?? orig.z,
+    h: spec.h ?? orig?.h ?? 2,
+    w: spec.w ?? orig?.w ?? 1.6,
+    turn: orig?.turn ?? k * Math.PI * 2,
+    tint: orig?.tint ?? [0.25, 0.42, 0.15],
+    shape: orig?.shape ?? (k < 0.5 ? 0 : 1),
+  };
+}
+
 /** A whole tree from an edited or added one ({ x, z, h, r, conifer }), keeping what it can of `orig`. */
 function editedTree(spec, orig) {
   let rnd = Math.floor(hashId(spec.id) * 2147483646) + 1;
@@ -233,9 +292,15 @@ export class Obstacles {
       club.push({ type: 'box', name: 'the pits table', min: [gz.x - 1, 0, gz.z + 0.2], max: [gz.x + 1, 0.75, gz.z + 1] });
     }
     // Windsock pole (kept in world coordinates: it swings with the wind).
+    // Placed in the editor (world frame), or taken away (false), or the site's own.
     const ws = L.windsock;
+    const placed = EDITS.site.windsock;
     this.windsock = null;
-    if (ws) {
+    if (placed) {
+      this.windsock = { height: 5, x: placed.x, z: placed.z };
+      const y = heightAt(placed.x, placed.z);
+      this.shapes.push({ type: 'cylinder', name: 'the windsock pole', x: placed.x, z: placed.z, r: 0.05, y0: y - 0.2, y1: y + 5 });
+    } else if (ws && placed !== false) {
       const [wsx, wsz] = clubToWorld(ws.x, ws.z);
       this.windsock = { ...ws, x: wsx, z: wsz };
       club.push({ type: 'cylinder', name: 'the windsock pole', x: ws.x, z: ws.z, r: 0.05, y0: 0, y1: ws.height });
@@ -258,6 +323,12 @@ export class Obstacles {
     for (const c of this.cars) {
       const y = heightAt(c.x, c.z);
       this.shapes.push({ type: 'box', name: 'a car', min: [c.x - 0.9, y, c.z - 2.1], max: [c.x + 0.9, y + 1.45, c.z + 2.1] });
+    }
+    // Bushes and hedges: soft, like foliage (they catch a model).
+    this.bushes = applyBushEdits(makeBushes(), editedBush);
+    for (const b of this.bushes) {
+      const y = heightAt(b.x, b.z);
+      this.shapes.push({ type: 'ellipsoid', name: 'a bush', cx: b.x, cy: y + b.h * 0.5, cz: b.z, rx: b.w * 0.9, ry: b.h * 0.5, rz: b.w * 0.9 });
     }
     // Buildings at a real site.
     this.buildings = applyBuildingEdits(LOCATION.data?.buildings ?? []).map((b) => ({ ...prepareBuilding(b), index: b.index }));

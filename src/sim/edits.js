@@ -8,11 +8,15 @@
 //   trees      `x,z` of where the tree was before any edit (0.1 m)
 //   buildings  index in the site's baked building list
 //   fences     index in the site layout's fence list
+//   bushes     `x,z` like trees
 //
 // {
-//   trees:     { removed: [id], changed: { id: { x, z, h, r, conifer } }, added: [{ x, z, h, r, conifer }] },
+//   trees:     { removed: [id], changed: { id: { x, z, h, r, conifer, base } }, added: [{ x, z, h, r, conifer }] },
+//   bushes:    { removed: [id], changed: { id: { x, z, h, w } }, added: [{ x, z, h, w }] },
 //   buildings: { removed: [i], changed: { i: { dx, dz, h } } },
 //   fences:    { removed: [i], changed: { i: { path, height, kind } }, added: [{ path, height, kind }] },
+//   site:      { flightLine: [[x, z], [x, z]] (where pilots stand: its middle),
+//                windsock: { x, z } | false (none) }
 // }
 
 const KEY = (site) => `rcsim.edits.${site}`;
@@ -20,8 +24,10 @@ const KEY = (site) => `rcsim.edits.${site}`;
 export function emptyEdits() {
   return {
     trees: { removed: [], changed: {}, added: [] },
+    bushes: { removed: [], changed: {}, added: [] },
     buildings: { removed: [], changed: {} },
     fences: { removed: [], changed: {}, added: [] },
+    site: {},
   };
 }
 
@@ -62,6 +68,8 @@ export function replaceEdits(e) {
 
 export function editCount(e = EDITS) {
   return e.trees.removed.length + Object.keys(e.trees.changed).length + e.trees.added.length
+    + e.bushes.removed.length + Object.keys(e.bushes.changed).length + e.bushes.added.length
+    + Object.keys(e.site).length
     + e.buildings.removed.length + Object.keys(e.buildings.changed).length
     + e.fences.removed.length + Object.keys(e.fences.changed).length + e.fences.added.length;
 }
@@ -84,6 +92,27 @@ export function applyTreeEdits(trees, make) {
   }
   added.forEach((a, i) => out.push(make({ ...a, id: `new:${i}` }, null)));
   return out;
+}
+
+/** Bushes ({ id, x, z, h, w, ... }) with the edits applied; `make(spec, orig)` builds an added one. */
+export function applyBushEdits(bushes, make) {
+  const { removed, changed, added } = EDITS.bushes;
+  const gone = new Set(removed);
+  const out = [];
+  for (const b of bushes) {
+    if (gone.has(b.id)) continue;
+    const c = changed[b.id];
+    out.push(c ? make({ ...c, id: b.id }, b) : b);
+  }
+  added.forEach((a, i) => out.push(make({ ...a, id: `new:${i}` }, null)));
+  return out;
+}
+
+/** Where pilots stand: the middle of the site's flight line, if one is set. */
+export function flightLineMiddle() {
+  const fl = EDITS.site.flightLine;
+  if (!fl) return null;
+  return [(fl[0][0] + fl[1][0]) / 2, (fl[0][1] + fl[1][1]) / 2];
 }
 
 /** Baked buildings ({ pts, h, eave }) with the edits applied; each gets `index`. */

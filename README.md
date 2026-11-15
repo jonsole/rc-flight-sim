@@ -98,10 +98,13 @@ field.
 
 Press **E** (or *Menu → Flying → Edit scenery*) to fix up a field: fly
 around with W A S D, Q / E (down / up), Shift (faster), right-drag to look
-and the wheel to zoom. Click a tree, building or fence to select it, drag
-its arrows to move it, and set its size or type in the panel (Delete
-removes it); *+ Tree* plants trees where you click, *+ Fence* draws a fence
-through the points you click (Enter finishes). Ctrl+Z undoes. Every change
+and the wheel to zoom. Click a tree, bush, building, fence or the windsock to
+select it, drag its arrows to move it, and set its size or type in the
+panel (Delete removes it); *+ Tree* and *+ Bush* plant where you click,
+*+ Hedge* plants a bush every 2.5 m and *+ Fence* draws a fence through the
+points you click (Enter finishes); *Flight line* is the line pilots stand
+along (click its two ends: you stand at its middle, plus your own pilot
+position setting) and *Windsock* puts the windsock where you click. Ctrl+Z undoes. Every change
 also changes what you fly into. Edits are saved in your browser for that
 field; *Export* saves them to a file (send it in to have them built into
 the field for everyone) and *Import* loads one. With Google photorealistic
