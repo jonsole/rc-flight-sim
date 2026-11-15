@@ -3,6 +3,8 @@ import { CHANNELS, rawInput } from '../input/input.js';
 import { CAMERA_LABELS } from '../view/cameras.js';
 import { AIRCRAFT, getAircraft } from '../aircraft/index.js';
 import { formatHours } from '../world/sun.js';
+import { LOCATIONS, LOCATION } from '../sim/location.js';
+import { QUALITY, DISTANCES } from '../world/quality.js';
 
 const CH_LABEL = { roll: 'Aileron (roll)', pitch: 'Elevator (pitch)', yaw: 'Rudder (yaw)', throttle: 'Throttle' };
 
@@ -93,6 +95,8 @@ export class Panel {
     return [
       this.#select('Aircraft', 'aircraft', Object.fromEntries(AIRCRAFT.map((a) => [a.id, a.name]))),
       el('p', { class: 'hint' }, getAircraft(this.settings.aircraft).summary),
+      this.#select('Flying field', 'location', Object.fromEntries(LOCATIONS.map((l) => [l.id, l.name]))),
+      el('p', { class: 'hint' }, `${LOCATION.summary} Changing field reloads the simulator.`),
       this.#select('Flight assist', 'assist', { off: 'Off (manual)', as3x: 'AS3X (gyro stabilised)', safe: 'SAFE (self-levelling, angle limits)' }),
       this.#select('Start position', 'startMode', { runway: 'On the runway', air: 'In the air (30 m)' }),
       this.#select('Camera', 'cameraMode', CAMERA_LABELS),
@@ -173,6 +177,10 @@ export class Panel {
       this.#select('Auto-zoom', 'losZoom', { 0: 'Off', 1: 'Gentle', 2: 'Strong' }),
       this.#range('Pilot position (left/right)', 'pilotX', -60, 60, 1, (v) => `${v} m`),
       this.#range('Pilot position (fwd/back)', 'pilotZ', -10, 30, 1, (v) => `${v} m`),
+      el('h3', {}, 'Graphics'),
+      this.#select('Quality', 'graphics', Object.fromEntries(Object.entries(QUALITY).map(([k, q]) => [k, q.name]))),
+      this.#select('Scenery distance', 'viewDistance', DISTANCES),
+      el('p', { class: 'hint' }, 'Lower these if the picture is jerky. Low draws simpler trees and fewer pixels; a shorter distance leaves out far trees and brings the haze in. Changing either reloads the simulator.'),
     ];
   }
 
@@ -284,6 +292,7 @@ export class Panel {
         el('li', {}, 'Line of sight: you stand at the flight line like a real RC pilot. Auto-zoom keeps the model visible at distance.'),
         el('li', {}, "FPV: from the pilot's seat looking past the guns and the radiator, or a top-wing camera pod. Adjust uptilt and FOV under View."),
         el('li', {}, 'Chase: a follow camera, handy for learning.')),
+      ...(LOCATION.data ? [el('h3', {}, `${LOCATION.name} scenery`), el('p', { class: 'hint' }, LOCATION.data.credits)] : []),
     ];
   }
 

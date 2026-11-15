@@ -8,16 +8,118 @@
 //   ellipsoid foliage: { cx, cy, cz, rx, ry, rz }                     soft
 //   cone      foliage: { x, z, r (base radius), y0 (base), h }        soft
 //   crown     foliage: a broadleaf crown's clumps, as drawn             soft
+//   building  footprint polygon with a flat or pitched roof            solid
+//
+// Placement comes from the site (src/sim/location.js): at a real site the
+// trees and buildings are the baked LIDAR ones.
 
 import { heightAt } from './terrain.js';
 import { CROWN_SEEDS, crownShape, lumpScale } from './treeShapes.js';
+import { LOCATION, clubAngle, clubToWorld } from './location.js';
+import { prepareBuilding, roofAt, insideFootprint, nearestWall } from './buildings.js';
 
 const _lp = { x: 0, y: 0, z: 0 };
 
 const CELL = 12; // spatial-hash cell size (m)
 
+/** Leaf colours, and for broadleaves the crown radius, for a new tree. */
+function dressTree(tree, rand, crownW) {
+  if (tree.conifer) {
+    tree.hue = 0.3 + rand() * 0.04;
+    tree.sat = 0.35;
+    tree.light = 0.16 + rand() * 0.06;
+  } else {
+    tree.crownW = crownW ?? tree.h * (0.28 + rand() * 0.12);
+    tree.hue = 0.22 + rand() * 0.07;
+    tree.sat = 0.4 + rand() * 0.15;
+    tree.light = 0.2 + rand() * 0.1;
+  }
+  return tree;
+}
+
+/** Trees at a real site: the LIDAR ones, then made-up woods far beyond. */
+function realTrees() {
+  const d = LOCATION.data;
+  const trees = [];
+  let rnd = 4242;
+  const rand = () => ((rnd = (rnd * 16807) % 2147483647) / 2147483647);
+  const L = LOCATION.layout;
+  const t = d.trees;
+  const raw = [];
+  for (let i = 0; i < t.length; i += 4) raw.push({ x: t[i], z: t[i + 1], h: t[i + 2], r: t[i + 3] });
+  for (const g of L.treeGrowth ?? []) {
+    for (const t of raw) {
+      if (t.x < g.x0 || t.x > g.x1 || t.z < g.z0 || t.z > g.z1) continue;
+      t.h = Math.max(g.minH, t.h * g.grow);
+      t.r = Math.max(t.r * g.grow, t.h * 0.3);
+    }
+  }
+  for (const belt of L.treeBelts ?? []) growBelt(raw, belt, rand);
+  for (const group of L.trees ?? []) {
+    for (const [x, z] of group.at) raw.push({ x, z, h: group.h * (0.9 + rand() * 0.2), r: group.r * (0.9 + rand() * 0.2) });
+  }
+  for (const { x, z, h, r } of raw) {
+    // Narrow for its height: probably a conifer (or a Lombardy poplar).
+    const conifer = L.conifers !== false && r < h * 0.17 && h > 8;
+    trees.push(dressTree({ x, y: heightAt(x, z), z, h, conifer, rot: rand() * Math.PI * 2 }, rand, Math.max(1.2, r)));
+  }
+  // Clumps of woodland on the skyline, outside the baked area.
+  const half = d.size / 2;
+  for (let c = 0; c < 40; c++) {
+    const a = rand() * Math.PI * 2;
+    const r = half + 150 + rand() * 1600;
+    const cx = Math.cos(a) * r;
+    const cz = Math.sin(a) * r;
+    const n = 6 + Math.floor(rand() * 18);
+    for (let i = 0; i < n; i++) {
+      const x = cx + (rand() - 0.5) * 120;
+      const z = cz + (rand() - 0.5) * 60;
+      if (Math.max(Math.abs(x), Math.abs(z)) < half + 60) continue;
+      const h = 10 + rand() * 10;
+      const conifer = L.conifers !== false && rand() < 0.15;
+      trees.push(dressTree({ x, y: heightAt(x, z), z, h, conifer, rot: rand() * Math.PI * 2 }, rand));
+    }
+  }
+  return trees;
+}
+
+/**
+ * A tree line that has grown since the survey: its trees taller and wider,
+ * and new ones in the gaps, so it reads as one belt.
+ */
+function growBelt(trees, belt, rand) {
+  const [ax, az] = belt.from;
+  const [bx, bz] = belt.to;
+  const len = Math.hypot(bx - ax, bz - az);
+  const ux = (bx - ax) / len;
+  const uz = (bz - az) / len;
+  const along = [];
+  for (const t of trees) {
+    const s = (t.x - ax) * ux + (t.z - az) * uz;
+    const off = -(t.x - ax) * uz + (t.z - az) * ux;
+    if (s < 0 || s > len || Math.abs(off) > belt.width / 2) continue;
+    t.h = Math.max(belt.minH, t.h * belt.grow);
+    t.r = Math.max(t.r * belt.grow, t.h * 0.3);
+    along.push({ s, off });
+  }
+  along.sort((p, q) => p.s - q.s);
+  // Fill the gaps (including either end) with trees like their neighbours.
+  const stops = [{ s: -belt.spacing / 2, off: 0 }, ...along, { s: len + belt.spacing / 2, off: 0 }];
+  for (let i = 1; i < stops.length; i++) {
+    const gap = stops[i].s - stops[i - 1].s;
+    const n = Math.floor(gap / belt.spacing);
+    for (let k = 1; k <= n; k++) {
+      const s = stops[i - 1].s + (gap * k) / (n + 1);
+      const off = (rand() - 0.5) * belt.width * 0.4;
+      const h = belt.minH + rand() * belt.minH * 0.5;
+      trees.push({ x: ax + ux * s - uz * off, z: az + uz * s + ux * off, h, r: h * (0.3 + rand() * 0.1) });
+    }
+  }
+}
+
 /** Deterministic tree layout (tree lines around the field and woods beyond). */
 function makeTrees() {
+  if (LOCATION.data) return realTrees();
   const trees = [];
   let rnd = 12345;
   const rand = () => ((rnd = (rnd * 16807) % 2147483647) / 2147483647);
@@ -41,18 +143,7 @@ function makeTrees() {
     const h = 9 + rand() * 12;
     const conifer = rand() < 0.3;
     const rot = rand() * Math.PI * 2;
-    const tree = { x, y, z, h, conifer, rot };
-    if (conifer) {
-      tree.hue = 0.3 + rand() * 0.04;
-      tree.sat = 0.35;
-      tree.light = 0.16 + rand() * 0.06;
-    } else {
-      tree.crownW = h * (0.28 + rand() * 0.12);
-      tree.hue = 0.22 + rand() * 0.07;
-      tree.sat = 0.4 + rand() * 0.15;
-      tree.light = 0.2 + rand() * 0.1;
-    }
-    trees.push(tree);
+    trees.push(dressTree({ x, y, z, h, conifer, rot }, rand));
   }
   return trees;
 }
@@ -83,38 +174,86 @@ export class Obstacles {
         });
       }
     }
+    const L = LOCATION.layout;
+    // The club's own things, laid out in the club frame (src/sim/location.js)
+    // and turned into the world below. Drawn in that frame by the world.
+    const club = [];
     // Clubhouse behind the pilot: walls, pitched roof (eaves to ridge).
-    this.hut = { x: -24, z: 26, w: 10, d: 6, wall: 2.8, ridge: 4.3 };
-    this.shapes.push({ type: 'box', name: 'the clubhouse', min: [-29, 0, 23], max: [-19, 2.8, 29] });
-    this.shapes.push({ type: 'box', name: 'the clubhouse roof', min: [-29.4, 2.7, 22.6], max: [-18.6, 3.55, 29.4] });
-    this.shapes.push({ type: 'box', name: 'the clubhouse roof', min: [-29.4, 3.5, 24.6], max: [-18.6, 4.3, 27.4] });
-    // Shipping container (20 ft) beside it.
-    this.container = { x: -11.5, z: 27, l: 6.06, w: 2.44, h: 2.59 };
-    this.shapes.push({ type: 'box', name: 'the container', min: [-14.53, 0, 25.78], max: [-8.47, 2.59, 28.22] });
-    // Cars in the car park by the clubhouse, nose to the field.
-    this.cars = [
-      { x: -43, z: 29, color: '#b8202a' },
-      { x: -39.5, z: 29.4, color: '#c9ccd0' },
-      { x: -36, z: 28.8, color: '#284f8f' },
-    ];
-    for (const c of this.cars) this.shapes.push({ type: 'box', name: 'a car', min: [c.x - 0.9, 0, c.z - 2.1], max: [c.x + 0.9, 1.45, c.z + 2.1] });
-    // Pop-up gazebo in the pits, behind the safety fence.
-    this.gazebo = { x: 12, z: 12, size: 3, h: 2.5 };
-    for (const [dx, dz] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5]]) {
-      this.shapes.push({ type: 'cylinder', name: 'the gazebo', x: 12 + dx, z: 12 + dz, r: 0.03, y0: 0, y1: 2.2 });
+    this.hut = L.hut;
+    if (L.hut) {
+      const { x, z, w, d, wall, ridge } = L.hut;
+      const [x0, x1, z0, z1] = [x - w / 2, x + w / 2, z - d / 2, z + d / 2];
+      club.push({ type: 'box', name: 'the clubhouse', min: [x0, 0, z0], max: [x1, wall, z1] });
+      club.push({ type: 'box', name: 'the clubhouse roof', min: [x0 - 0.4, wall - 0.1, z0 - 0.4], max: [x1 + 0.4, wall + 0.75, z1 + 0.4] });
+      club.push({ type: 'box', name: 'the clubhouse roof', min: [x0 - 0.4, wall + 0.7, z0 + 1.6], max: [x1 + 0.4, ridge, z1 - 1.6] });
     }
-    this.shapes.push({ type: 'box', name: 'the gazebo', min: [10.4, 2.1, 10.4], max: [13.6, 2.7, 13.6] });
-    this.shapes.push({ type: 'box', name: 'the pits table', min: [11, 0, 12.2], max: [13, 0.75, 13] });
-    // Windsock pole.
-    this.windsock = { x: -35, z: -42, height: 5 };
-    this.shapes.push({ type: 'cylinder', name: 'the windsock pole', x: -35, z: -42, r: 0.05, y0: 0, y1: 5 });
-    // Safety fence: posts and the top rail along z = 6.
-    this.fence = { z: 6, posts: Array.from({ length: 40 }, (_, i) => -100 + i * 5.1), height: 1.1, railY: 1.0 };
-    for (const px of this.fence.posts) this.shapes.push({ type: 'cylinder', name: 'the fence', x: px, z: 6, r: 0.04, y0: 0, y1: 1.1 });
-    this.shapes.push({ type: 'box', name: 'the fence', min: [-100, 0.98, 5.98], max: [100, 1.02, 6.02] });
+    // Shipping container (20 ft) beside it.
+    this.container = L.container;
+    if (L.container) {
+      const c = L.container;
+      club.push({ type: 'box', name: 'the container', min: [c.x - c.l / 2, 0, c.z - c.w / 2], max: [c.x + c.l / 2, c.h, c.z + c.w / 2] });
+    }
+    // Pop-up gazebo in the pits, behind the safety fence.
+    this.gazebo = L.gazebo;
+    const gz = L.gazebo;
+    if (gz) {
+      for (const [dx, dz] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5]]) {
+        club.push({ type: 'cylinder', name: 'the gazebo', x: gz.x + dx, z: gz.z + dz, r: 0.03, y0: 0, y1: 2.2 });
+      }
+      club.push({ type: 'box', name: 'the gazebo', min: [gz.x - 1.6, 2.1, gz.z - 1.6], max: [gz.x + 1.6, 2.7, gz.z + 1.6] });
+      club.push({ type: 'box', name: 'the pits table', min: [gz.x - 1, 0, gz.z + 0.2], max: [gz.x + 1, 0.75, gz.z + 1] });
+    }
+    // Windsock pole (kept in world coordinates: it swings with the wind).
+    const ws = L.windsock;
+    this.windsock = null;
+    if (ws) {
+      const [wsx, wsz] = clubToWorld(ws.x, ws.z);
+      this.windsock = { ...ws, x: wsx, z: wsz };
+      club.push({ type: 'cylinder', name: 'the windsock pole', x: ws.x, z: ws.z, r: 0.05, y0: 0, y1: ws.height });
+    }
+    // Safety fence: posts and the top rail.
+    const f = L.fence;
+    this.fence = null;
+    if (f) {
+      const nPosts = Math.round((f.x1 - f.x0) / 5.1) + 1;
+      this.fence = { z: f.z, posts: Array.from({ length: nPosts }, (_, i) => f.x0 + i * 5.1), height: 1.1, railY: 1.0, x0: f.x0, x1: f.x1 };
+      for (const px of this.fence.posts) club.push({ type: 'cylinder', name: 'the fence', x: px, z: f.z, r: 0.04, y0: 0, y1: 1.1 });
+      club.push({ type: 'box', name: 'the fence', min: [f.x0, 0.98, f.z - 0.02], max: [f.x1, 1.02, f.z + 0.02] });
+    }
     // Flight-line table.
-    this.table = { x: 6, z: 3 };
-    this.shapes.push({ type: 'box', name: 'the table', min: [5, 0, 2.6], max: [7, 0.78, 3.4] });
+    this.table = L.table;
+    if (L.table) club.push({ type: 'box', name: 'the table', min: [L.table.x - 1, 0, L.table.z - 0.4], max: [L.table.x + 1, 0.78, L.table.z + 0.4] });
+    for (const sh of club) this.shapes.push(clubShapeToWorld(sh));
+    // Cars in the car park, nose to the field (world frame).
+    this.cars = L.cars;
+    for (const c of this.cars) {
+      const y = heightAt(c.x, c.z);
+      this.shapes.push({ type: 'box', name: 'a car', min: [c.x - 0.9, y, c.z - 2.1], max: [c.x + 0.9, y + 1.45, c.z + 2.1] });
+    }
+    // Buildings at a real site.
+    this.buildings = (LOCATION.data?.buildings ?? []).map(prepareBuilding);
+    for (const b of this.buildings) this.shapes.push({ type: 'building', name: 'a building', b });
+    // Site fences: thin slabs along each stretch, solid like a wall (no
+    // flying through chain link or mesh panels).
+    this.fences = (L.fences ?? []).map((f) => {
+      const path = f.path ?? [f.from, f.to];
+      const name = f.kind === 'panels' ? 'the temporary fence' : 'the chain-link fence';
+      for (let i = 1; i < path.length; i++) {
+        const [ax, az] = path[i - 1];
+        const [bx, bz] = path[i];
+        const len = Math.hypot(bx - ax, bz - az);
+        const nx = (-(bz - az) / len) * 0.05;
+        const nz = ((bx - ax) / len) * 0.05;
+        const y = Math.min(heightAt(ax, az), heightAt(bx, bz));
+        const pts = [[ax - nx, az - nz], [bx - nx, bz - nz], [bx + nx, bz + nz], [ax + nx, az + nz]];
+        const b = {
+          pts, y0: y - 0.3, eave: y + f.height, ridge: y + f.height, kind: 'fence',
+          x0: Math.min(ax, bx) - 0.1, x1: Math.max(ax, bx) + 0.1, z0: Math.min(az, bz) - 0.1, z1: Math.max(az, bz) + 0.1,
+        };
+        this.shapes.push({ type: 'building', name, b });
+      }
+      return { ...f, path };
+    });
 
     // Bounding sphere per shape, for a quick whole-aircraft check first.
     for (const s of this.shapes) s.bound = boundOf(s);
@@ -215,6 +354,15 @@ export class Obstacles {
         }
         return null;
       }
+      case 'building': {
+        const b = s.b;
+        if (y < b.y0 || y > b.ridge || !insideFootprint(b, x, z)) return null;
+        const top = roofAt(b, x, z) - y;
+        if (top < 0) return null;
+        const w = nearestWall(b, x, z);
+        if (top < w.d) return { depth: top, nx: 0, ny: 1, nz: 0 };
+        return { depth: w.d, nx: w.nx, ny: 0, nz: w.nz };
+      }
       case 'cone': {
         const t = (y - s.y0) / s.h;
         if (t < 0 || t > 1) return null;
@@ -224,6 +372,27 @@ export class Obstacles {
         return null;
     }
   }
+}
+
+/** A club-frame shape in world coordinates: boxes become turned slabs. */
+function clubShapeToWorld(s) {
+  if (!clubAngle()) return s;
+  if (s.type === 'cylinder') {
+    const [x, z] = clubToWorld(s.x, s.z);
+    return { ...s, x, z };
+  }
+  if (s.type === 'box') {
+    const [x0, y0, z0] = s.min;
+    const [x1, y1, z1] = s.max;
+    const pts = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]].map(([x, z]) => clubToWorld(x, z));
+    const b = {
+      pts, y0, eave: y1, ridge: y1, kind: 'club',
+      x0: Math.min(...pts.map((p) => p[0])), x1: Math.max(...pts.map((p) => p[0])),
+      z0: Math.min(...pts.map((p) => p[1])), z1: Math.max(...pts.map((p) => p[1])),
+    };
+    return { type: 'building', name: s.name, b };
+  }
+  return s;
 }
 
 function boundOf(s) {
@@ -240,6 +409,11 @@ function boundOf(s) {
       return { x: s.cx, y: s.cy, z: s.cz, r: Math.max(s.sx, s.sy) * 1.05 };
     case 'ellipsoid':
       return { x: s.cx, y: s.cy, z: s.cz, r: Math.max(s.rx, s.ry, s.rz) };
+    case 'building': {
+      const b = s.b;
+      const c = [(b.x0 + b.x1) / 2, (b.y0 + b.ridge) / 2, (b.z0 + b.z1) / 2];
+      return { x: c[0], y: c[1], z: c[2], r: Math.hypot(b.x1 - c[0], b.ridge - c[1], b.z1 - c[2]) };
+    }
     default:
       return { x: 0, y: 0, z: 0, r: Infinity };
   }
@@ -256,6 +430,8 @@ function footprint(s) {
       return [s.cx - s.sx, s.cz - s.sx, s.cx + s.sx, s.cz + s.sx];
     case 'ellipsoid':
       return [s.cx - s.rx, s.cz - s.rz, s.cx + s.rx, s.cz + s.rz];
+    case 'building':
+      return [s.b.x0, s.b.z0, s.b.x1, s.b.z1];
     default:
       return [0, 0, 0, 0];
   }

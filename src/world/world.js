@@ -6,13 +6,16 @@ import {
   MeshBasicMaterial, ShaderMaterial, SphereGeometry, BackSide, MeshLambertMaterial,
 } from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
-import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY } from '../sim/terrain.js';
+import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY, PILOT_PAD } from '../sim/terrain.js';
+import { buildingsMesh } from './buildings.js';
+import { clubAngle } from '../sim/location.js';
 import { sunPosition, moonPosition } from './sun.js';
 import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail } from './ground.js';
-import { broadleafCrown, conifer, trunk, coniferTrunk, addLeafShading, leafUniforms } from './trees.js';
+import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
+import { QUALITY } from './quality.js';
 import { CROWN_SEEDS } from '../sim/treeShapes.js';
-import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes } from './props.js';
+import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes, siteFence } from './props.js';
 
 const smooth = (e0, e1, x) => {
   const t = MathUtils.clamp((x - e0) / (e1 - e0), 0, 1);
@@ -234,14 +237,81 @@ function runwayTexture() {
   return t;
 }
 
+function cricketPitchTexture(r) {
+  // A rolled cricket pitch, lengthwise along the canvas: pale, dry, worn
+  // grass, darker roller bands, scuffed ends where bowlers land, and the
+  // white creases (bowling crease at each end, popping crease 1.22 m in
+  // front of it, return creases along the sides).
+  const ppm = 64; // pixels per metre
+  const W = Math.round(r.length * ppm);
+  const H = Math.round(r.width * ppm);
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext('2d');
+  let seed = 23;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  ctx.fillStyle = '#a7a467';
+  ctx.fillRect(0, 0, W, H);
+  // Roller bands along the pitch.
+  for (let i = 0; i < 4; i++) {
+    ctx.fillStyle = i % 2 ? 'rgba(90,100,40,0.10)' : 'rgba(255,250,210,0.06)';
+    ctx.fillRect(0, (i * H) / 4, W, H / 4 + 1);
+  }
+  for (let i = 0; i < 40000; i++) {
+    const l = 45 + rnd() * 25;
+    ctx.fillStyle = `hsla(${50 + rnd() * 25}, ${25 + rnd() * 20}%, ${l}%, 0.35)`;
+    ctx.fillRect(rnd() * W, rnd() * H, 1 + rnd() * 3, 1);
+  }
+  // Bare, scuffed patches where the ball lands and the bowlers run in.
+  const crease = (r.length - 20.12) / 2; // bowling creases 20.12 m apart
+  for (const end of [0, 1]) {
+    for (let i = 0; i < 60; i++) {
+      const d = crease + 1.5 + rnd() * 5;
+      const x = (end ? r.length - d : d) * ppm;
+      const y = H / 2 + (rnd() - 0.5) * H * 0.7;
+      const rad = 4 + rnd() * 14;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+      g.addColorStop(0, 'rgba(150,125,85,0.45)');
+      g.addColorStop(1, 'rgba(150,125,85,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+    }
+  }
+  // Creases, 5 cm white lines.
+  ctx.fillStyle = 'rgba(245,245,238,0.95)';
+  const lw = 0.05 * ppm;
+  for (const end of [0, 1]) {
+    const bowl = end ? r.length - crease : crease;
+    const pop = end ? bowl - 1.22 : bowl + 1.22;
+    ctx.fillRect(bowl * ppm - lw / 2, H / 2 - 1.32 * ppm, lw, 2.64 * ppm);
+    ctx.fillRect(pop * ppm - lw / 2, 0, lw, H);
+    // Return creases: 1.32 m either side of the middle, from the popping
+    // crease back 2.44 m towards the end of the pitch.
+    const x0 = end ? pop : pop - 2.44;
+    for (const side of [-1, 1]) ctx.fillRect(x0 * ppm, H / 2 + side * 1.32 * ppm - lw / 2, 2.44 * ppm, lw);
+  }
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
 export class World {
   /** @param {import('../sim/obstacles.js').Obstacles} obstacles */
+  /**
+   * @param {{ quality?: object, viewDistance?: number }} opts  graphics preset
+   *   (src/world/quality.js) and how far scenery is drawn (m)
+   */
   constructor(obstacles, opts = {}) {
     this.obstacles = obstacles;
+    this.quality = opts.quality ?? QUALITY.high;
+    this.viewDistance = opts.viewDistance ?? Infinity;
     this.scene = new Scene();
     this.scene.background = new Color('#9cc3e6');
     // Exponential haze: distant hills fade into the colour of the horizon.
-    this.scene.fog = new FogExp2('#c3d5e8', 0.00028);
+    // A shorter scenery distance closes the haze in to match.
+    this.scene.fog = new FogExp2('#c3d5e8', Math.max(0.00028, 1.3 / (opts.viewDistance ?? Infinity)));
     this.sunDir = new Vector3(); // the sun, even below the horizon
     this.lightDir = new Vector3(); // where the main light comes from (sun, or moon at night)
     this.moonDir = new Vector3();
@@ -253,6 +323,10 @@ export class World {
     this.scene.add(this.clouds.mesh);
     this.#lights();
     this.#terrain();
+    // The club's own things (runway, pad, fence, pits) in the club frame.
+    this.club = new Group();
+    this.club.rotation.y = -clubAngle();
+    this.scene.add(this.club);
     this.#runway();
     this.#trees();
     this.#props();
@@ -428,33 +502,37 @@ export class World {
   #runway() {
     const g = new PlaneGeometry(RUNWAY.length, RUNWAY.width);
     g.rotateX(-Math.PI / 2);
-    const rw = new Mesh(g, addCloudShadows(new MeshLambertMaterial({ map: runwayTexture(), polygonOffset: true, polygonOffsetFactor: -2 })));
+    const tex = RUNWAY.style === 'cricket' ? cricketPitchTexture(RUNWAY) : runwayTexture();
+    const rw = new Mesh(g, addCloudShadows(new MeshLambertMaterial({ map: tex, polygonOffset: true, polygonOffsetFactor: -2 })));
     // Just above the physics ground (y = 0); polygonOffset prevents z-fighting.
     rw.position.set(RUNWAY.x, 0.002, RUNWAY.z);
     rw.receiveShadow = true;
-    this.scene.add(rw);
+    this.club.add(rw);
 
-    // Pilot box (gravel pad) and safety fence line
-    const pad = new Mesh(new PlaneGeometry(6, 4), addCloudShadows(new MeshLambertMaterial({ map: gravelTexture(), polygonOffset: true, polygonOffsetFactor: -2 })));
-    pad.rotation.x = -Math.PI / 2;
-    pad.position.set(0, 0.002, 0.5);
-    pad.receiveShadow = true;
-    this.scene.add(pad);
-
+    // Pilot box (gravel pad) and safety fence line, where the club has them.
+    if (PILOT_PAD) {
+      const pad = new Mesh(new PlaneGeometry(PILOT_PAD.length, PILOT_PAD.width), addCloudShadows(new MeshLambertMaterial({ map: gravelTexture(), polygonOffset: true, polygonOffsetFactor: -2 })));
+      pad.rotation.x = -Math.PI / 2;
+      pad.position.set(PILOT_PAD.x, 0.002, PILOT_PAD.z);
+      pad.receiveShadow = true;
+      this.club.add(pad);
+    }
+    const fence = this.obstacles.fence;
+    if (!fence) return;
     const postGeo = new CylinderGeometry(0.04, 0.04, 1.1, 6);
     const postMat = new MeshStandardMaterial({ color: '#6b5b45' });
-    const posts = new InstancedMesh(postGeo, postMat, 40);
+    const posts = new InstancedMesh(postGeo, postMat, fence.posts.length);
     const o = new Object3D();
-    for (let i = 0; i < 40; i++) {
-      o.position.set(-100 + i * 5.1, 0.55, 6);
+    fence.posts.forEach((x, i) => {
+      o.position.set(x, 0.55, fence.z);
       o.updateMatrix();
       posts.setMatrixAt(i, o.matrix);
-    }
+    });
     posts.castShadow = true;
-    this.scene.add(posts);
-    const rail = new Mesh(new BoxGeometry(200, 0.04, 0.04), postMat);
-    rail.position.set(0, 1.0, 6);
-    this.scene.add(rail);
+    this.club.add(posts);
+    const rail = new Mesh(new BoxGeometry(fence.x1 - fence.x0, 0.04, 0.04), postMat);
+    rail.position.set((fence.x0 + fence.x1) / 2, 1.0, fence.z);
+    this.club.add(rail);
   }
 
   /** Leaf sway and wind: time in seconds, wind speed m/s and direction it blows FROM (degrees). */
@@ -466,70 +544,91 @@ export class World {
   }
 
   #trees() {
-    const count = this.obstacles.trees.length;
-    // A few shapes of each kind, picked per tree, so the woods don't repeat.
-    const crownGeos = CROWN_SEEDS.map(broadleafCrown);
-    const coniferGeos = [conifer(5), conifer(17), conifer(29)];
-    const trunkGeos = [trunk(3), trunk(41), trunk(67)];
+    // Full-detail crowns near the pilot, simple ones further out, none
+    // beyond the scenery distance (src/world/quality.js). Same layout and
+    // crown shapes the physics collides with (src/sim/obstacles.js).
+    const q = this.quality;
+    const near = [];
+    const far = [];
+    for (const t of this.obstacles.trees) {
+      const d = Math.hypot(t.x, t.z);
+      if (d > this.viewDistance) continue;
+      (d <= q.nearRadius ? near : far).push(t);
+    }
     const leafMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })));
     this.leafMat = leafMat;
     const barkMat = addCloudShadows(new MeshLambertMaterial({ color: '#5a4632', vertexColors: true }));
-    const mk = (geo, mat) => new InstancedMesh(geo, mat, count);
-    const trunks = trunkGeos.map((g) => mk(g, barkMat));
-    const conTrunks = mk(coniferTrunk(), barkMat);
-    const nTrunk = trunks.map(() => 0);
-    let nConTrunk = 0;
-    const crowns = crownGeos.map((g) => mk(g, leafMat));
     // Conifers are open tiers of boughs: double-sided so their undersides show.
     const needleMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true, side: DoubleSide })));
     needleMat.defines = { CONIFER: '' };
-    const conifers = coniferGeos.map((g) => mk(g, needleMat));
-    const nCrown = crowns.map(() => 0);
-    const nCon = conifers.map(() => 0);
-    const o = new Object3D();
-    const col = new Color();
-    // Same layout the physics collides with (src/sim/obstacles.js).
-    this.obstacles.trees.forEach((t, i) => {
-      const { x, y, z, h } = t;
-      o.rotation.set(0, t.rot, 0);
-      // Trunks are drawn for a 1-unit tree, so scale them by its height.
-      o.position.set(x, y - 0.15, z);
-      o.scale.setScalar(h);
-      o.updateMatrix();
-      if (t.conifer) conTrunks.setMatrixAt(nConTrunk++, o.matrix);
-      else {
-        const k = t.pick % trunks.length;
-        trunks[k].setMatrixAt(nTrunk[k]++, o.matrix);
-      }
-      // Leaf colour per tree, a little brighter than before (the shapes
-      // carry their own shading).
-      col.setHSL(t.hue, t.sat, t.light * 1.12 + 0.02);
-      if (t.conifer) {
-        const k = t.pick % conifers.length;
-        o.position.set(x, y + h * 0.1, z);
-        o.scale.set(h * 0.22, h * 0.95, h * 0.22);
+    const conTrunk = coniferTrunk();
+    const sets = [
+      { trees: near, crowns: CROWN_SEEDS.map((s) => broadleafCrown(s, q.nearDetail)), trunks: [trunk(3), trunk(41), trunk(67)], conifers: [conifer(5), conifer(17), conifer(29)] },
+      { trees: far, crowns: CROWN_SEEDS.map((s) => (q.farDetail === 'blob' ? blobCrown(s) : broadleafCrown(s, q.farDetail))), trunks: [simpleTrunk()], conifers: [conifer(5)] },
+    ];
+    this.trees = { trunks: [], conTrunks: [], crowns: [], conifers: [] };
+    for (const set of sets) {
+      if (!set.trees.length) continue;
+      const count = set.trees.length;
+      const mk = (geo, mat) => new InstancedMesh(geo, mat, count);
+      const trunks = set.trunks.map((g) => mk(g, barkMat));
+      const conTrunks = mk(conTrunk, barkMat);
+      const crowns = set.crowns.map((g) => mk(g, leafMat));
+      const conifers = set.conifers.map((g) => mk(g, needleMat));
+      const nTrunk = trunks.map(() => 0);
+      const nCrown = crowns.map(() => 0);
+      const nCon = conifers.map(() => 0);
+      let nConTrunk = 0;
+      const o = new Object3D();
+      const col = new Color();
+      for (const t of set.trees) {
+        const { x, y, z, h } = t;
+        o.rotation.set(0, t.rot, 0);
+        // Trunks are drawn for a 1-unit tree, so scale them by its height.
+        o.position.set(x, y - 0.15, z);
+        o.scale.setScalar(h);
         o.updateMatrix();
-        conifers[k].setMatrixAt(nCon[k], o.matrix);
-        conifers[k].setColorAt(nCon[k]++, col);
-      } else {
-        const k = t.variant; // the shape the collisions use
-        o.position.set(x, y + h * 0.62, z);
-        o.scale.set(t.crownW * 1.05, h * 0.4, t.crownW * 1.05);
-        o.updateMatrix();
-        crowns[k].setMatrixAt(nCrown[k], o.matrix);
-        crowns[k].setColorAt(nCrown[k]++, col);
+        if (t.conifer) conTrunks.setMatrixAt(nConTrunk++, o.matrix);
+        else {
+          const k = t.pick % trunks.length;
+          trunks[k].setMatrixAt(nTrunk[k]++, o.matrix);
+        }
+        // Leaf colour per tree, a little brighter than before (the shapes
+        // carry their own shading).
+        col.setHSL(t.hue, t.sat, t.light * 1.12 + 0.02);
+        if (t.conifer) {
+          const k = t.pick % conifers.length;
+          o.position.set(x, y + h * 0.1, z);
+          o.scale.set(h * 0.22, h * 0.95, h * 0.22);
+          o.updateMatrix();
+          conifers[k].setMatrixAt(nCon[k], o.matrix);
+          conifers[k].setColorAt(nCon[k]++, col);
+        } else {
+          const k = t.variant; // the shape the collisions use
+          o.position.set(x, y + h * 0.62, z);
+          o.scale.set(t.crownW * 1.05, h * 0.4, t.crownW * 1.05);
+          o.updateMatrix();
+          crowns[k].setMatrixAt(nCrown[k], o.matrix);
+          crowns[k].setColorAt(nCrown[k]++, col);
+        }
       }
-    });
-    crowns.forEach((m, k) => (m.count = nCrown[k]));
-    conifers.forEach((m, k) => (m.count = nCon[k]));
-    trunks.forEach((m, k) => (m.count = nTrunk[k]));
-    conTrunks.count = nConTrunk;
-    for (const m of [...trunks, conTrunks, ...crowns, ...conifers]) {
-      m.castShadow = true;
-      m.receiveShadow = true;
-      this.scene.add(m);
+      crowns.forEach((m, k) => (m.count = nCrown[k]));
+      conifers.forEach((m, k) => (m.count = nCon[k]));
+      trunks.forEach((m, k) => (m.count = nTrunk[k]));
+      conTrunks.count = nConTrunk;
+      for (const m of [...trunks, conTrunks, ...crowns, ...conifers]) {
+        if (!m.count) continue;
+        m.castShadow = true;
+        m.receiveShadow = true;
+        // Cull a whole set when it's out of view (bounds of all its trees).
+        m.computeBoundingSphere();
+        this.scene.add(m);
+      }
+      this.trees.trunks.push(...trunks);
+      this.trees.conTrunks.push(conTrunks);
+      this.trees.crowns.push(...crowns);
+      this.trees.conifers.push(...conifers);
     }
-    this.trees = { trunks, conTrunks, crowns, conifers };
   }
 
   #props() {
@@ -562,9 +661,14 @@ export class World {
     sockMesh.castShadow = true;
     sock.add(sockMesh);
     ws.add(sock);
-    ws.position.set(-35, 0, -42);
+    // (Still worked out where a site has none: it's just not shown.)
+    const wsAt = this.obstacles.windsock;
+    ws.position.set(wsAt?.x ?? 0, 0, wsAt?.z ?? 0);
+    ws.visible = !!wsAt;
     this.scene.add(ws);
     this.windsock = sock;
+    this.sockMesh = sockMesh;
+    this.sockState = { yaw: 0, yawRate: 0, droop: 1.5, flutter: 0 };
 
     // Club scenery (placement and collisions from src/sim/obstacles.js).
     const ob = this.obstacles;
@@ -577,33 +681,71 @@ export class World {
         m.material.userData.clouds = true;
       }
     });
-    for (const o of [clubhouse(ob.hut), shippingContainer(ob.container), gazebo(ob.gazebo), ...ob.cars.map(car)]) {
+    // Pits and club buildings in the club frame; cars and site fences in the world.
+    const clubThings = ob.gazebo ? [gazebo(ob.gazebo)] : [];
+    if (ob.hut) clubThings.push(clubhouse(ob.hut));
+    if (ob.container) clubThings.push(shippingContainer(ob.container));
+    for (const o of clubThings) {
+      shadowy(o);
+      this.club.add(o);
+    }
+    for (const o of [...ob.cars.map(car), ...ob.fences.map(siteFence)]) {
       shadowy(o);
       this.scene.add(o);
     }
-    for (const b of bushes(this.leafMat)) this.scene.add(b);
+    for (const b of bushes(this.leafMat, { detail: this.quality.bushDetail, distance: this.viewDistance })) this.scene.add(b);
+    if (ob.buildings.length) {
+      const houses = buildingsMesh(ob.buildings);
+      addCloudShadows(houses.material);
+      this.scene.add(houses);
+    }
 
     // Flight-line table
+    if (!ob.table) return;
+    const tx = ob.table.x;
+    const tz = ob.table.z;
     const table = new Mesh(new BoxGeometry(2, 0.06, 0.8), new MeshStandardMaterial({ color: '#c8c8c8' }));
-    table.position.set(6, 0.75, 3);
+    table.position.set(tx, 0.75, tz);
     table.castShadow = true;
-    this.scene.add(table);
+    this.club.add(table);
     for (const dx of [-0.9, 0.9]) {
       for (const dz of [-0.3, 0.3]) {
         const leg = new Mesh(new CylinderGeometry(0.02, 0.02, 0.75), table.material);
-        leg.position.set(6 + dx, 0.375, 3 + dz);
-        this.scene.add(leg);
+        leg.position.set(tx + dx, 0.375, tz + dz);
+        this.club.add(leg);
       }
     }
   }
 
-  /** Point the windsock with the wind (world velocity vector). */
-  updateWindsock(wind) {
+  /**
+   * Swing the windsock with the wind (world velocity vector). It has some
+   * weight: it turns towards the wind faster the stronger it blows (in calm
+   * air it stays where it was), fills out from about 1 m/s, is straight out
+   * by about 7 m/s, and hangs limp down the pole when there's no wind.
+   */
+  updateWindsock(wind, dt, t = 0) {
+    const st = this.sockState;
+    dt = Math.min(dt, 0.05);
     const speed = Math.hypot(wind.x, wind.z);
     // Sock tail points downwind (sock geometry extends along -x).
-    const yaw = Math.atan2(wind.z, -wind.x);
-    this.windsock.rotation.set(0, yaw, 0);
-    const droop = Math.max(0, 1 - speed / 7) * 1.2;
-    this.windsock.rotateZ(droop);
+    const target = Math.atan2(wind.z, -wind.x);
+    let diff = target - st.yaw;
+    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    // Aerodynamic pull grows with speed²; damping keeps it from spinning.
+    const fill = Math.min(1, Math.max(0, (speed - 0.5) / 6.5)); // 0 limp .. 1 full
+    st.yawRate += (diff * speed * speed * 0.6 * fill - st.yawRate * (1.5 + 2 * speed)) * dt;
+    st.yaw += st.yawRate * dt;
+    // Droop: hanging straight down when limp, horizontal when full.
+    const droopTarget = 1.5 * (1 - fill) ** 1.4;
+    // Falls under gravity quickly, lifts as fast as the wind fills it.
+    const k = droopTarget > st.droop ? 1.6 : 0.8 + speed * 0.4;
+    st.droop += (droopTarget - st.droop) * Math.min(1, k * dt);
+    // A little flapping of the fabric in a breeze.
+    const flap = fill * (1 - fill * 0.6) * 0.06 * Math.sin(t * (4 + speed)) ;
+    this.windsock.rotation.set(0, st.yaw, 0);
+    this.windsock.rotateZ(st.droop + flap);
+    // Limp fabric folds up thinner.
+    const r = 0.55 + 0.45 * Math.min(1, fill * 1.6);
+    this.sockMesh.scale.set(1, r, r);
   }
 }

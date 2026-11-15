@@ -21,6 +21,8 @@ import { OSD } from './ui/osd.js';
 import { Panel } from './ui/panel.js';
 import { loadSettings, saveSettings } from './ui/settings.js';
 import { EngineSound } from './audio/engine.js';
+import { LOCATION, LOCATIONS, clubAngle, clubToWorld } from './sim/location.js';
+import { QUALITY, qualityPreset, viewDistance } from './world/quality.js';
 
 // Development builds (the /dev/ page) are badged so they're never mistaken for live.
 if (import.meta.env.VITE_CHANNEL === 'dev') {
@@ -44,9 +46,14 @@ saveSettings(settings);
 // --- Renderer ----------------------------------------------------------------
 const canvas = document.getElementById('view');
 const renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-// Phones and tablets: cap the resolution a little lower to keep the frame rate up.
+// Graphics quality and scenery distance: on first run, low on phones and
+// tablets, medium elsewhere (Menu → View → Graphics).
 const TOUCH_DEVICE = isTouchDevice();
-const MAX_DPR = TOUCH_DEVICE ? 1.5 : 2;
+if (!settings.graphics) settings.graphics = TOUCH_DEVICE ? 'low' : 'medium';
+if (settings.viewDistance === '' || settings.viewDistance == null) settings.viewDistance = TOUCH_DEVICE ? '1000' : '2000';
+saveSettings(settings);
+const quality = qualityPreset(settings);
+const MAX_DPR = quality.pixelRatio;
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_DPR));
 renderer.outputColorSpace = SRGBColorSpace;
 renderer.toneMapping = ACESFilmicToneMapping;
@@ -56,13 +63,14 @@ renderer.shadowMap.type = PCFSoftShadowMap;
 
 // --- Simulation ----------------------------------------------------------------
 const obstacles = new Obstacles();
-const world = new World(obstacles, { lowDetail: TOUCH_DEVICE });
+const world = new World(obstacles, { quality, viewDistance: viewDistance(settings) });
 const wind = new Wind();
+wind.setTrees(obstacles.trees); // trees shelter the field and stir up the air behind them
 const input = new Input();
 const rig = new CameraRig(settings);
 // Scenery shadows (redrawn only when the sun moves; smaller map on phones),
 // and the aeroplane's own shadow, drawn every frame.
-world.attachShadows(new Shadows(world.sun, { mapSize: TOUCH_DEVICE ? 2048 : 4096 }));
+world.attachShadows(new Shadows(world.sun, { mapSize: quality.shadowMap }));
 const planeShadow = new PlaneShadow(world.scene, ground);
 
 let entry = null; // selected aircraft (registry entry)
@@ -150,17 +158,20 @@ function applySettings() {
 function resetAircraft() {
   // Put the model back together if anything broke off.
   if (aircraft.broken.size || debris.items.length) replaceModel();
-  // Take off into wind along the runway.
-  const windFromEast = Math.sin((settings.windDir * Math.PI) / 180) > 0; // wind from E half
-  const dir = windFromEast ? 1 : -1; // fly towards the wind (+x = east)
-  const heading = dir > 0 ? 0 : Math.PI;
-  const startX = RUNWAY.x - dir * 40;
+  // Take off into wind along the runway (which may be turned: the club frame).
+  const A = clubAngle();
+  const windRad = (settings.windDir * Math.PI) / 180;
+  const dir = Math.sin(windRad - A) > 0 ? 1 : -1; // +1: wind from the runway's +x end
+  const heading = (dir > 0 ? 0 : Math.PI) - A;
+  // Start a little in from the downwind end (40 m on a long runway).
+  const run = Math.min(40, RUNWAY.length / 2 - 3);
   // In multiplayer, each player starts in their own lane so nobody spawns
   // inside someone else's aeroplane.
   const lane = mp.connected ? ((mp.myId - 1) % 4) - 1.5 : 0;
   mpGraceUntil = performance.now() / 1000 + 3;
   if (settings.startMode === 'air') {
-    aircraft.resetInAir(new Vector3(startX + dir * 40, 30 + lane * 4, RUNWAY.z - 10 + lane * 8), heading, 14);
+    const [ax, az] = clubToWorld(RUNWAY.x, RUNWAY.z - 10 + lane * 8);
+    aircraft.resetInAir(new Vector3(ax, 30 + lane * 4, az), heading, 14);
     input.kb.throttle = 0.5;
   } else if (entry.def.handLaunch) {
     // In the pilot's right hand at the flight line, half a metre ahead,
@@ -169,7 +180,8 @@ function resetAircraft() {
     const hz = settings.pilotZ - Math.sin(heading) * 0.5 + Math.cos(heading) * 0.3;
     aircraft.resetHandLaunch(hx, hz, heading);
   } else {
-    aircraft.resetOnGround(startX, RUNWAY.z + lane * 4, heading);
+    const [gx, gz] = clubToWorld(RUNWAY.x - dir * run, RUNWAY.z + lane * 4);
+    aircraft.resetOnGround(gx, gz, heading);
   }
   osd.reset();
   rig.chaseInit = false;
@@ -221,7 +233,8 @@ function openChat() {
 }
 function mpConnect() {
   if (!settings.mpRoom) return;
-  mp.connect(mpServer(), settings.mpRoom, settings.mpName, entry.id);
+  mp.connect(mpServer(), fieldRoom(settings.mpRoom), settings.mpName, entry.id);
+  mp.baseRoom = settings.mpRoom;
 }
 mp.onEvent = (type, p, m) => {
   if (type === 'chat') {
@@ -251,6 +264,25 @@ mp.onEvent = (type, p, m) => {
   mpBadge.textContent = `Room ${mp.room} · ${mp.peers.size + 1} ${mp.peers.size ? 'pilots' : 'pilot'}`;
   if (panel?.visible && panel.tab === 'mp') panel.render();
 };
+/** Reload at another flying field (keeping any invite room). */
+function changeField(id) {
+  if (id === LOCATION.id) return;
+  settings.location = id;
+  reloadKeepingRoom(id);
+}
+
+/** Reload the page (at `field`), staying in any multiplayer room. */
+function reloadKeepingRoom(field = LOCATION.id) {
+  saveSettings(settings);
+  const q = new URLSearchParams(location.search);
+  q.set('field', field);
+  if (mp.connected) q.set('room', mp.baseRoom ?? settings.mpRoom);
+  location.search = q.toString();
+}
+// Players only meet others at the same field: the room on the server is
+// the code plus the field (none for the made-up field).
+const fieldRoom = (room) => (LOCATION.data ? `${room.slice(0, 20)}-${LOCATION.id.slice(0, 3).toUpperCase()}` : room);
+
 function newRoomCode() {
   const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   return Array.from({ length: 5 }, () => a[Math.floor(Math.random() * a.length)]).join('');
@@ -262,7 +294,7 @@ const panel = new Panel(document.getElementById('panel'), {
   mp,
   defaultServer: DEFAULT_MP_SERVER,
   newRoomCode,
-  inviteLink: () => `${location.origin}${location.pathname}?room=${encodeURIComponent(mp.room)}`,
+  inviteLink: () => `${location.origin}${location.pathname}?room=${encodeURIComponent(mp.baseRoom ?? mp.room)}${LOCATION.data ? `&field=${LOCATION.id}` : ''}`,
   onMpConnect: () => {
     mpConnect();
     panel.render();
@@ -280,6 +312,9 @@ const panel = new Panel(document.getElementById('panel'), {
     applySettings();
     saveSettings(settings);
     if (key === 'aircraft') selectAircraft(value);
+    if (key === 'location') changeField(value);
+    // The scenery is built for these once, so they take effect on a reload.
+    if (key === 'graphics' || key === 'viewDistance') reloadKeepingRoom();
     if (key === 'startMode') resetAircraft();
   },
   onReset: resetAircraft,
@@ -356,6 +391,17 @@ const splashSelect = document.getElementById('splash-aircraft');
 const splashSummary = document.getElementById('splash-summary');
 for (const a of AIRCRAFT) splashSelect.append(new Option(a.name, a.id));
 splashSelect.addEventListener('change', (e) => selectAircraft(e.target.value));
+const splashField = document.getElementById('splash-field');
+for (const l of LOCATIONS) splashField.append(new Option(l.name, l.id));
+splashField.value = LOCATION.id;
+splashField.addEventListener('change', (e) => changeField(e.target.value));
+const splashGraphics = document.getElementById('splash-graphics');
+for (const [k, q] of Object.entries(QUALITY)) splashGraphics.append(new Option(q.name, k));
+splashGraphics.value = settings.graphics;
+splashGraphics.addEventListener('change', (e) => {
+  settings.graphics = e.target.value;
+  reloadKeepingRoom();
+});
 function updateSplash() {
   if (!splashSelect.isConnected) return;
   splashSelect.value = entry.id;
@@ -389,11 +435,13 @@ paused = true; // until the splash is dismissed
 // --- Main loop -------------------------------------------------------------------
 let last = performance.now();
 const windTmp = new Vector3();
+const windsockPos = new Vector3(obstacles.windsock?.x ?? 0, obstacles.windsock?.height ?? 5, obstacles.windsock?.z ?? 0);
 let rssi = 99;
 
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.05, (now - last) / 1000);
+  // (The first frame's timestamp can be just before `last`.)
+  const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
   last = now;
 
   const ctl = input.update(dt);
@@ -447,7 +495,7 @@ function frame(now) {
   world.updateShadows();
   world.updateTrees(now / 1000, wind.speed + wind.gust.length() * 0.5, wind.directionDeg);
   planeShadow.update(renderer, aircraft.position, world.lightDir, shadowDark);
-  world.updateWindsock(wind.at(new Vector3(-35, 5, -42), 0, windTmp));
+  world.updateWindsock(wind.at(windsockPos, 0, windTmp), dt, now / 1000);
   if (!paused) world.updateClouds(dt, windTmp);
 
   const eye = rig.pilotEye();
@@ -482,6 +530,7 @@ window.sim = {
     return entry;
   },
   world,
+  renderer,
   rig,
   mp,
   input,
