@@ -10,7 +10,7 @@ import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY } from '..
 import { sunPosition, moonPosition } from './sun.js';
 import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail } from './ground.js';
-import { broadleafCrown, conifer, trunk, addLeafShading, leafUniforms } from './trees.js';
+import { broadleafCrown, conifer, trunk, coniferTrunk, addLeafShading, leafUniforms } from './trees.js';
 import { CROWN_SEEDS } from '../sim/treeShapes.js';
 import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes } from './props.js';
 
@@ -470,14 +470,20 @@ export class World {
     // A few shapes of each kind, picked per tree, so the woods don't repeat.
     const crownGeos = CROWN_SEEDS.map(broadleafCrown);
     const coniferGeos = [conifer(5), conifer(17), conifer(29)];
-    const trunkGeo = trunk(3);
+    const trunkGeos = [trunk(3), trunk(41), trunk(67)];
     const leafMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })));
     this.leafMat = leafMat;
     const barkMat = addCloudShadows(new MeshLambertMaterial({ color: '#5a4632', vertexColors: true }));
     const mk = (geo, mat) => new InstancedMesh(geo, mat, count);
-    const trunks = mk(trunkGeo, barkMat);
+    const trunks = trunkGeos.map((g) => mk(g, barkMat));
+    const conTrunks = mk(coniferTrunk(), barkMat);
+    const nTrunk = trunks.map(() => 0);
+    let nConTrunk = 0;
     const crowns = crownGeos.map((g) => mk(g, leafMat));
-    const conifers = coniferGeos.map((g) => mk(g, leafMat));
+    // Conifers are open tiers of boughs: double-sided so their undersides show.
+    const needleMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true, side: DoubleSide })));
+    needleMat.defines = { CONIFER: '' };
+    const conifers = coniferGeos.map((g) => mk(g, needleMat));
     const nCrown = crowns.map(() => 0);
     const nCon = conifers.map(() => 0);
     const o = new Object3D();
@@ -486,10 +492,15 @@ export class World {
     this.obstacles.trees.forEach((t, i) => {
       const { x, y, z, h } = t;
       o.rotation.set(0, t.rot, 0);
-      o.position.set(x, y - 0.2, z);
-      o.scale.set(t.conifer ? 0.7 : 1, h * (t.conifer ? 0.3 : 0.5), t.conifer ? 0.7 : 1);
+      // Trunks are drawn for a 1-unit tree, so scale them by its height.
+      o.position.set(x, y - 0.15, z);
+      o.scale.setScalar(h);
       o.updateMatrix();
-      trunks.setMatrixAt(i, o.matrix);
+      if (t.conifer) conTrunks.setMatrixAt(nConTrunk++, o.matrix);
+      else {
+        const k = t.pick % trunks.length;
+        trunks[k].setMatrixAt(nTrunk[k]++, o.matrix);
+      }
       // Leaf colour per tree, a little brighter than before (the shapes
       // carry their own shading).
       col.setHSL(t.hue, t.sat, t.light * 1.12 + 0.02);
@@ -511,12 +522,14 @@ export class World {
     });
     crowns.forEach((m, k) => (m.count = nCrown[k]));
     conifers.forEach((m, k) => (m.count = nCon[k]));
-    for (const m of [trunks, ...crowns, ...conifers]) {
+    trunks.forEach((m, k) => (m.count = nTrunk[k]));
+    conTrunks.count = nConTrunk;
+    for (const m of [...trunks, conTrunks, ...crowns, ...conifers]) {
       m.castShadow = true;
       m.receiveShadow = true;
       this.scene.add(m);
     }
-    this.trees = { trunks, crowns, conifers };
+    this.trees = { trunks, conTrunks, crowns, conifers };
   }
 
   #props() {

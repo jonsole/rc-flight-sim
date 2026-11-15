@@ -67,8 +67,8 @@ export class Obstacles {
     });
     this.shapes = [];
     for (const t of this.trees) {
-      // Trunk (solid). Rendered as a 0.25-0.4 m tapered cylinder.
-      this.shapes.push({ type: 'cylinder', name: 'a tree trunk', x: t.x, z: t.z, r: 0.33, y0: t.y - 0.2, y1: t.y - 0.2 + t.h * 0.45 });
+      // Trunk (solid): drawn tapering from 0.024 h to under 0.01 h across.
+      this.shapes.push({ type: 'cylinder', name: 'a tree trunk', x: t.x, z: t.z, r: t.h * (t.conifer ? 0.014 : 0.019), y0: t.y - 0.2, y1: t.y + t.h * (t.conifer ? 0.2 : 0.42) });
       if (t.conifer) {
         // As drawn: 0.22 h base radius, from 0.1 h up, 0.95 h tall.
         this.shapes.push({ type: 'cone', name: 'a tree', x: t.x, z: t.z, r: t.h * 0.22, y0: t.y + t.h * 0.1, h: t.h * 0.95 });
