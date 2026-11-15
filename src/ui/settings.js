@@ -29,8 +29,9 @@ export const DEFAULT_SETTINGS = {
   windDir: 270,
   turbulence: 0.3,
   timeOfDay: 14,         // hours, local solar time
+  dayOfYear: 172,        // time of year (21 Jun): the sun, and the trees and grass
   cloudCover: 0.35,      // 0 clear .. 1 overcast
-  useClock: false,       // follow the computer's clock instead
+  useClock: false,       // follow the computer's clock (time and date) instead
   // Misc
   volume: 0.6,
   showHud: true,

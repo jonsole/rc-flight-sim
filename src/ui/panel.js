@@ -3,6 +3,7 @@ import { CHANNELS, rawInput } from '../input/input.js';
 import { CAMERA_LABELS } from '../view/cameras.js';
 import { AIRCRAFT, getAircraft } from '../aircraft/index.js';
 import { formatHours } from '../world/sun.js';
+import { formatDay } from '../world/seasons.js';
 import { LOCATIONS, LOCATION } from '../sim/location.js';
 import { QUALITY, DISTANCES } from '../world/quality.js';
 import { googleSessions } from '../world/googleTiles.js';
@@ -203,7 +204,8 @@ export class Panel {
       this.#range('Wind from', 'windDir', 0, 359, 5, compass),
       this.#range('Turbulence', 'turbulence', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.#range('Time of day', 'timeOfDay', 0, 24, 0.25, formatHours),
-      this.#check('Use my clock', 'useClock'),
+      this.#range('Time of year', 'dayOfYear', 1, 365, 1, formatDay),
+      this.#check('Use my clock (time and date)', 'useClock'),
       this.#range('Cloud cover', 'cloudCover', 0, 1, 0.05, (v) => (v < 0.05 ? 'Clear' : v > 0.85 ? 'Overcast' : `${Math.round(v * 100)}%`)),
       el('p', { class: 'hint' }, 'You stand at the flight line facing north; the runway runs east–west in front of you.'),
     ];

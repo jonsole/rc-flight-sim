@@ -204,7 +204,9 @@ let touchSeen = false; // a real finger touched the screen (auto-enables the sti
 function applyTime() {
   const now = new Date();
   const hours = settings.useClock ? clockHours(now) : Number(settings.timeOfDay);
-  world.setTime(hours, dayOfYear(now));
+  const day = settings.useClock ? dayOfYear(now) : Number(settings.dayOfYear);
+  world.setTime(hours, day);
+  world.setSeason(day);
   renderer.toneMappingExposure = world.exposure;
 }
 let clockTimer = 0;
