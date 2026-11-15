@@ -480,7 +480,10 @@ export class World {
     const nTrunk = trunks.map(() => 0);
     let nConTrunk = 0;
     const crowns = crownGeos.map((g) => mk(g, leafMat));
-    const conifers = coniferGeos.map((g) => mk(g, leafMat));
+    // Conifers are open tiers of boughs: double-sided so their undersides show.
+    const needleMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true, side: DoubleSide })));
+    needleMat.defines = { CONIFER: '' };
+    const conifers = coniferGeos.map((g) => mk(g, needleMat));
     const nCrown = crowns.map(() => 0);
     const nCon = conifers.map(() => 0);
     const o = new Object3D();

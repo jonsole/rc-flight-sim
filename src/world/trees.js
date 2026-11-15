@@ -65,36 +65,57 @@ export function broadleafCrown(seed) {
   return geo;
 }
 
-/** A conifer: stacked tiers, radius 1 at the base, height 1. */
+/**
+ * A conifer, radius 1 at the base and 1 tall: many overlapping tiers of
+ * drooping boughs with uneven, star-shaped edges (bough tips), getting
+ * narrower towards a thin spire. Drawn double-sided so the undersides of the
+ * boughs show from below.
+ */
 export function conifer(seed) {
   const rnd = rng(seed);
   const parts = [];
-  const tiers = 4;
+  const tiers = 7 + Math.floor(rnd() * 2);
+  const SIDES = 14;
   for (let i = 0; i < tiers; i++) {
     const t = i / tiers;
-    const r = (1 - t * 0.78) * (0.95 + rnd() * 0.1);
-    const h = 0.42 - t * 0.05;
-    const g = new ConeGeometry(r, h, 11, 1, true);
-    // Ragged lower edge.
+    const r = (1 - t * 0.86) * (0.9 + rnd() * 0.14);
+    const h = 0.24 - t * 0.09;
+    const g = new ConeGeometry(r, h, SIDES, 2, true);
     const p = g.attributes.position;
+    const phase = rnd() * 10;
     for (let k = 0; k < p.count; k++) {
-      if (p.getY(k) < 0) p.setY(k, p.getY(k) - rnd() * 0.06);
+      const y = p.getY(k);
+      const x = p.getX(k);
+      const z = p.getZ(k);
+      const rim = (h / 2 - y) / h; // 0 at the tip, 1 at the rim
+      if (rim < 0.01) continue;
+      // Bough tips: the rim pokes out and in, and droops between them.
+      const a = Math.atan2(z, x);
+      const lobe = noise3(Math.cos(a) * 2.2 + phase, Math.sin(a) * 2.2, i * 3.7);
+      const s = 1 + (lobe - 0.5) * 0.32 * rim;
+      p.setXYZ(k, x * s, y - rim * rim * (0.02 + (1 - lobe) * 0.05), z * s);
     }
-    g.translate(0, t * 0.62 + h / 2, 0);
+    // Each tier a little off-centre and turned, so they don't line up.
+    g.rotateY(rnd() * Math.PI);
+    g.translate((rnd() - 0.5) * 0.04 * r, 0.05 + t * 0.8 + h / 2, (rnd() - 0.5) * 0.04 * r);
     parts.push(ni(g));
   }
+  // Thin spire.
+  parts.push(ni(new ConeGeometry(0.07, 0.16, 7, 1, true).translate(0, 0.05 + 0.8 + 0.08, 0)));
   let geo = mergeGeometries(parts);
-  const box = { min: 0, max: 0 };
-  const p = geo.attributes.position;
-  for (let i = 0; i < p.count; i++) box.max = Math.max(box.max, p.getY(i));
-  geo.translate(0, 0.04, 0);
-  geo.scale(1, 1 / (box.max + 0.04), 1);
+  let top = 0;
+  const pp = geo.attributes.position;
+  for (let i = 0; i < pp.count; i++) top = Math.max(top, pp.getY(i));
+  geo.scale(1, 1 / top, 1);
   geo.deleteAttribute('normal');
   geo.deleteAttribute('uv');
   geo = mergeVertices(geo, 1e-4);
   geo.computeVertexNormals();
   geo = shade(geo, (pos) => {
-    const k = 0.55 + 0.5 * pos.y;
+    // Darker low down and deep inside each tier, lighter bough tips.
+    const rr = Math.hypot(pos.x, pos.z);
+    const outer = rr / Math.max(0.08, 1 - pos.y * 0.86);
+    const k = (0.5 + 0.45 * pos.y) * (0.7 + 0.4 * Math.min(1, outer)) * (0.9 + 0.2 * noise3(pos.x * 9, pos.y * 9, pos.z * 9));
     return [k * 0.92, k, k * 0.95];
   });
   return geo;
@@ -212,8 +233,12 @@ export function addLeafShading(material) {
             vec3 org = instanceMatrix[3].xyz;
             float ph = org.x * 0.05 + org.z * 0.07; // gusts roll across the woods
             float gust = 0.45 + 0.4 * sin(uLeafTime * 0.9 - ph) + 0.15 * sin(uLeafTime * 2.1 - ph * 1.6);
-            float bend = smoothstep(-1.0, 1.0, position.y);
-            bend *= bend;
+            #ifdef CONIFER
+              float bend = position.y * position.y; // shapes stand on y = 0, 1 tall
+            #else
+              float bend = smoothstep(-1.0, 1.0, position.y); // crowns centred on 0
+              bend *= bend;
+            #endif
             // Metres at the top of the tree, along the wind.
             float metres = k * gust * 0.11 * min(hgt, 8.0) * bend;
             // Small leafy flutter on top.
