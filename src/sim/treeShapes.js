@@ -74,17 +74,24 @@ export function crownShape(seed) {
   const clumps = crownClumps(seed);
   // Same vertices and lumps the drawn crown uses, to find its size.
   let max = 0;
+  let lo = Infinity;
+  let hi = -Infinity;
   const v = new Vector3();
   for (const [x, y, z, r] of clumps) {
     const g = new IcosahedronGeometry(r, 2).translate(x, y, z);
     const p = g.attributes.position;
     for (let i = 0; i < p.count; i++) {
       v.fromBufferAttribute(p, i);
-      max = Math.max(max, v.length() * lumpScale(v, seed));
+      const k = lumpScale(v, seed);
+      max = Math.max(max, v.length() * k);
+      lo = Math.min(lo, v.y * k);
+      hi = Math.max(hi, v.y * k);
     }
     g.dispose();
   }
-  const shape = { clumps: clumps.map(([x, y, z, r]) => [x / max, y / max, z / max, r / max]), norm: max };
+  // lo / hi: how far the leaves really reach down and up in the unit crown
+  // (about -0.55 and +0.7: the clumps don't fill the unit sphere).
+  const shape = { clumps: clumps.map(([x, y, z, r]) => [x / max, y / max, z / max, r / max]), norm: max, lo: lo / max, hi: hi / max };
   cache.set(seed, shape);
   return shape;
 }
@@ -93,7 +100,7 @@ export function crownShape(seed) {
 // collisions (src/sim/obstacles.js), the wind and the editor.
 //   base     fraction of the height where the canopy starts (editable)
 //   crownW   broadleaf: crown radius; conifer: radius of the bottom boughs
-export const DEFAULT_BASE = { broadleaf: 0.1, conifer: 0.06 };
+export const DEFAULT_BASE = { broadleaf: 0.18, conifer: 0.06 };
 
 /**
  * Broadleaf: { cy, sx, sy } (crown centre height, horizontal and vertical
@@ -106,6 +113,9 @@ export function crownOf(t) {
     const r = t.crownW ?? t.h * 0.22;
     return { base, radius: r, r, y0: t.y + t.h * base, ch: t.h * (1.05 - base) };
   }
-  const sy = (t.h * (1.02 - base)) / 2;
-  return { base, radius: t.crownW, sx: t.crownW * 1.05, sy, cy: t.y + t.h * base + sy };
+  // Stretch the crown so its leaves run exactly from the canopy start to the
+  // top of the tree (each shape reaches its own lo..hi of the unit crown).
+  const { lo, hi } = t.variant != null ? crownShape(CROWN_SEEDS[t.variant]) : { lo: -0.55, hi: 0.7 };
+  const sy = (t.h * (1 - base)) / (hi - lo);
+  return { base, radius: t.crownW, sx: t.crownW * 1.05, sy, cy: t.y + t.h * base - lo * sy };
 }

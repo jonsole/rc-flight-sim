@@ -78,21 +78,34 @@ const rig = new CameraRig(settings);
 world.attachShadows(new Shadows(world.sun, { mapSize: quality.shadowMap }));
 const planeShadow = new PlaneShadow(world.scene, ground);
 
-// Google Photorealistic 3D Tiles in place of the built scenery, at real
-// sites, when chosen and a key is set (Menu → View → Graphics).
+// Google Photorealistic 3D Tiles in place of the built ground and buildings,
+// at real sites, with a key set (Menu → View → Graphics, or O to switch).
+// Google bills per session (one root tileset request, good for 3 hours), so
+// the tiles only start when first wanted, and switching them off just hides
+// them: switching back on is free.
 let googleTiles = null;
-if (LOCATION.data && settings.scenery === 'google' && settings.googleKey) {
-  googleTiles = new GoogleTiles({
-    apiKey: settings.googleKey,
-    lat: LOCATION.data.origin.lat,
-    lon: LOCATION.data.origin.lon,
-    groundHeight: LOCATION.data.origin.height,
-    trueNorth: LOCATION.data.origin.trueNorth,
-    quality: settings.graphics,
-    creditEl: document.getElementById('map-credits'),
-  });
-  world.scene.add(googleTiles.group);
-  world.setGoogleMode(true);
+const googleAvailable = () => !!(LOCATION.data && settings.googleKey);
+function showGoogle(on) {
+  if (on && !googleTiles && googleAvailable()) {
+    googleTiles = new GoogleTiles({
+      apiKey: settings.googleKey,
+      lat: LOCATION.data.origin.lat,
+      lon: LOCATION.data.origin.lon,
+      groundHeight: LOCATION.data.origin.height,
+      trueNorth: LOCATION.data.origin.trueNorth,
+      quality: settings.graphics,
+      creditEl: document.getElementById('map-credits'),
+    });
+    world.scene.add(googleTiles.group);
+  }
+  googleTiles?.setVisible(on);
+  world.setGoogleMode(on && !!googleTiles);
+}
+/** The scenery the settings ask for (not while editing: the editor has its own switch). */
+function applyScenery() {
+  if (editor?.active) return;
+  googleTiles?.setOpacity(1);
+  showGoogle(settings.scenery === 'google');
 }
 
 // Scenery editor (E, or Menu → Flying → Edit scenery). It shows the built
@@ -105,32 +118,23 @@ const editor = new Editor({
   canvas,
   root: document.getElementById('editor'),
   onRebuilt: () => wind.setTrees(obstacles.trees),
-  setGoogle: googleTiles ? (on) => {
-    googleTiles.group.visible = on;
-    world.setGoogleMode(on);
-  } : null,
-  setGoogleOpacity: googleTiles ? (v) => googleTiles.setOpacity(v) : null,
+  setGoogle: googleAvailable() ? (on) => showGoogle(on) : null,
+  setGoogleOpacity: (v) => googleTiles?.setOpacity(v),
   onExit: () => {
-    if (googleTiles) {
-      googleTiles.group.visible = true;
-      googleTiles.setOpacity(1);
-      world.setGoogleMode(true);
-    }
+    applyScenery();
     document.getElementById('menu-btn').style.display = '';
     rig.setMode(rig.mode);
     rig.resize(window.innerWidth / window.innerHeight);
     paused = pausedBeforeEdit;
   },
 });
+applyScenery();
 function openEditor() {
   if (editor.active) return;
   setMenu(false);
   pausedBeforeEdit = false;
   paused = true;
-  if (googleTiles) {
-    googleTiles.group.visible = false;
-    world.setGoogleMode(false);
-  }
+  showGoogle(false);
   document.getElementById('menu-btn').style.display = 'none';
   editor.open();
 }
@@ -376,7 +380,14 @@ const panel = new Panel(document.getElementById('panel'), {
     if (key === 'aircraft') selectAircraft(value);
     if (key === 'location') changeField(value);
     // The scenery is built for these once, so they take effect on a reload.
-    if (key === 'graphics' || key === 'viewDistance' || key === 'scenery' || (key === 'googleKey' && settings.scenery === 'google')) reloadKeepingRoom();
+    if (key === 'graphics' || key === 'viewDistance') reloadKeepingRoom();
+    if (key === 'googleKey' && googleTiles) {
+      // A new key needs a new session.
+      world.scene.remove(googleTiles.group);
+      googleTiles.dispose();
+      googleTiles = null;
+    }
+    if (key === 'scenery' || key === 'googleKey') applyScenery();
     if (key === 'startMode') resetAircraft();
   },
   onReset: resetAircraft,
@@ -439,6 +450,15 @@ input.onAction = (code) => {
       break;
     case 'KeyE':
       openEditor();
+      break;
+    case 'KeyO':
+      // Google photorealistic scenery on / off.
+      if (googleAvailable()) {
+        settings.scenery = settings.scenery === 'google' ? 'built' : 'google';
+        saveSettings(settings);
+        applyScenery();
+        if (panel.visible) panel.render();
+      }
       break;
     case 'Enter':
     case 'NumpadEnter':
@@ -544,7 +564,7 @@ function frame(now) {
   model.setPilotVisible(!(fpv && settings.fpvMount === 'cockpit'));
   if (editor.active) editor.update(dt);
   else rig.update(aircraft, dt);
-  googleTiles?.update(rig.camera, renderer, dt);
+  if (googleTiles?.visible) googleTiles.update(rig.camera, renderer, dt);
   // Other players (after the camera has moved, so their labels line up).
   rig.camera.updateMatrixWorld();
   const solid = mp.connected && !paused && !aircraft.crashed && now / 1000 > mpGraceUntil;

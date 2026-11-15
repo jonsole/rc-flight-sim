@@ -44,10 +44,16 @@ export class GoogleTiles {
       lat: MathUtils.degToRad(lat), lon: MathUtils.degToRad(lon), height: groundHeight + GEOID_UK_EAST, recenter: true,
     }));
     tiles.errorTarget = ERROR_TARGET[quality] ?? ERROR_TARGET.medium;
+    // Something failed: ask Google why (only then: each root request is a
+    // billable Google session, so there's no separate check up front).
     tiles.addEventListener('load-error', (e) => {
-      if (!this.error) this.#showError(`Google 3D tiles: ${String(e?.error?.message ?? e?.error ?? 'load error')}`);
+      if (this.error || this.checking) return;
+      this.checking = true;
+      this.#showError(`Google 3D tiles: ${String(e?.error?.message ?? e?.error ?? 'load error')}`);
+      this.#checkKey(apiKey);
     });
-    this.#checkKey(apiKey);
+    // Each root tileset load starts a Google session (what Google bills).
+    tiles.addEventListener('load-root-tileset', () => countGoogleSession());
     // See-through tiles (editor): applied to each tile as it loads.
     this.opacity = 1;
     tiles.addEventListener('load-model', ({ scene }) => this.#fade(scene));
@@ -99,7 +105,7 @@ export class GoogleTiles {
   async #checkKey(apiKey) {
     try {
       const r = await fetch(`${ROOT_URL}?key=${encodeURIComponent(apiKey)}`);
-      if (r.ok) return;
+      if (r.ok) return; // the key is fine: keep the error the tiles gave
       let why = '';
       try {
         why = (await r.json())?.error?.message ?? '';
@@ -131,6 +137,14 @@ export class GoogleTiles {
     this.creditEl.style.display = 'block';
   }
 
+  /** Show or hide the tiles (hidden: nothing loads, the session is kept). */
+  setVisible(v) {
+    this.visible = v;
+    this.group.visible = v;
+    if (v && this.lastCredits) this.creditEl.style.display = 'block';
+    if (!v && !this.error) this.creditEl.style.display = 'none';
+  }
+
   /** How solid the tiles are, 0 (invisible) to 1. */
   setOpacity(v) {
     this.opacity = v;
@@ -152,5 +166,30 @@ export class GoogleTiles {
   dispose() {
     this.tiles.dispose();
     this.creditEl.style.display = 'none';
+  }
+}
+
+// Google sessions started from this browser, per calendar month: shown in
+// the menu so you can keep an eye on your allowance.
+const SESSIONS_KEY = 'rcsim.googleSessions';
+
+export function googleSessions() {
+  const month = new Date().toISOString().slice(0, 7);
+  try {
+    const s = JSON.parse(localStorage.getItem(SESSIONS_KEY));
+    if (s?.month === month) return s;
+  } catch {
+    /* none, or storage blocked */
+  }
+  return { month, count: 0 };
+}
+
+function countGoogleSession() {
+  const s = googleSessions();
+  s.count++;
+  try {
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(s));
+  } catch {
+    /* storage blocked */
   }
 }

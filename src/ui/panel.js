@@ -5,6 +5,7 @@ import { AIRCRAFT, getAircraft } from '../aircraft/index.js';
 import { formatHours } from '../world/sun.js';
 import { LOCATIONS, LOCATION } from '../sim/location.js';
 import { QUALITY, DISTANCES } from '../world/quality.js';
+import { googleSessions } from '../world/googleTiles.js';
 
 const CH_LABEL = { roll: 'Aileron (roll)', pitch: 'Elevator (pitch)', yaw: 'Rudder (yaw)', throttle: 'Throttle' };
 
@@ -186,7 +187,8 @@ export class Panel {
       ...(LOCATION.data ? [
         this.#select('Scenery', 'scenery', { built: 'Built in (LIDAR and OpenStreetMap)', google: 'Google photorealistic 3D' }),
         this.#text('Google Maps API key', 'googleKey', { type: 'password', placeholder: 'AIza…' }),
-        el('p', { class: 'hint' }, 'Google photorealistic 3D needs your own Google Maps Platform API key with the Map Tiles API enabled (and billing set up; Google gives a free monthly allowance). The key stays in this browser. What you fly into is still the built-in scenery, lined up with the real place. Changing these reloads the simulator.'),
+        el('p', { class: 'hint' }, 'Google photorealistic 3D needs your own Google Maps Platform API key with the Map Tiles API enabled (and billing set up). The key stays in this browser. Google\'s tiles replace the ground and buildings; the trees, hedges and fences stay, and are what you fly into. Press O to switch them on and off in flight.'),
+        el('p', { class: 'hint' }, `Google bills per session: each page load that shows the tiles starts one (good for 3 hours); switching off and on again doesn't. Sessions started from this browser this month: ${googleSessions().count}. Tip: leave the tiles off while reloading a lot, and set a daily cap on root tileset requests in the Google Cloud console.`),
       ] : []),
     ];
   }
