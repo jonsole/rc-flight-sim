@@ -390,6 +390,7 @@ paused = true; // until the splash is dismissed
 // --- Main loop -------------------------------------------------------------------
 let last = performance.now();
 const windTmp = new Vector3();
+const windsockPos = new Vector3(-35, 5, -42);
 let rssi = 99;
 
 function frame(now) {
@@ -448,7 +449,7 @@ function frame(now) {
   world.updateShadows();
   world.updateTrees(now / 1000, wind.speed + wind.gust.length() * 0.5, wind.directionDeg);
   planeShadow.update(renderer, aircraft.position, world.lightDir, shadowDark);
-  world.updateWindsock(wind.at(new Vector3(-35, 5, -42), 0, windTmp));
+  world.updateWindsock(wind.at(windsockPos, 0, windTmp), dt, now / 1000);
   if (!paused) world.updateClouds(dt, windTmp);
 
   const eye = rig.pilotEye();

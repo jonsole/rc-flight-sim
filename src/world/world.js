@@ -565,6 +565,8 @@ export class World {
     ws.position.set(-35, 0, -42);
     this.scene.add(ws);
     this.windsock = sock;
+    this.sockMesh = sockMesh;
+    this.sockState = { yaw: 0, yawRate: 0, droop: 1.5, flutter: 0 };
 
     // Club scenery (placement and collisions from src/sim/obstacles.js).
     const ob = this.obstacles;
@@ -597,13 +599,35 @@ export class World {
     }
   }
 
-  /** Point the windsock with the wind (world velocity vector). */
-  updateWindsock(wind) {
+  /**
+   * Swing the windsock with the wind (world velocity vector). It has some
+   * weight: it turns towards the wind faster the stronger it blows (in calm
+   * air it stays where it was), fills out from about 1 m/s, is straight out
+   * by about 7 m/s, and hangs limp down the pole when there's no wind.
+   */
+  updateWindsock(wind, dt, t = 0) {
+    const st = this.sockState;
+    dt = Math.min(dt, 0.05);
     const speed = Math.hypot(wind.x, wind.z);
     // Sock tail points downwind (sock geometry extends along -x).
-    const yaw = Math.atan2(wind.z, -wind.x);
-    this.windsock.rotation.set(0, yaw, 0);
-    const droop = Math.max(0, 1 - speed / 7) * 1.2;
-    this.windsock.rotateZ(droop);
+    const target = Math.atan2(wind.z, -wind.x);
+    let diff = target - st.yaw;
+    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    // Aerodynamic pull grows with speed²; damping keeps it from spinning.
+    const fill = Math.min(1, Math.max(0, (speed - 0.5) / 6.5)); // 0 limp .. 1 full
+    st.yawRate += (diff * speed * speed * 0.6 * fill - st.yawRate * (1.5 + 2 * speed)) * dt;
+    st.yaw += st.yawRate * dt;
+    // Droop: hanging straight down when limp, horizontal when full.
+    const droopTarget = 1.5 * (1 - fill) ** 1.4;
+    // Falls under gravity quickly, lifts as fast as the wind fills it.
+    const k = droopTarget > st.droop ? 1.6 : 0.8 + speed * 0.4;
+    st.droop += (droopTarget - st.droop) * Math.min(1, k * dt);
+    // A little flapping of the fabric in a breeze.
+    const flap = fill * (1 - fill * 0.6) * 0.06 * Math.sin(t * (4 + speed)) ;
+    this.windsock.rotation.set(0, st.yaw, 0);
+    this.windsock.rotateZ(st.droop + flap);
+    // Limp fabric folds up thinner.
+    const r = 0.55 + 0.45 * Math.min(1, fill * 1.6);
+    this.sockMesh.scale.set(1, r, r);
   }
 }

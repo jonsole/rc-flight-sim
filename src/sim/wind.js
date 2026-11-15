@@ -116,7 +116,8 @@ export class Wind {
     this._t += dt;
     // Ornstein–Uhlenbeck process per axis: the broad gusts in open air.
     const tau = 2.5;
-    const sigma = this.turbulence * (0.6 + this.speed * 0.35);
+    // In proportion to the wind: calm air is calm.
+    const sigma = this.turbulence * this.speed * 0.4;
     const a = Math.exp(-dt / tau);
     const b = sigma * Math.sqrt(1 - a * a);
     this.gust.x = this.gust.x * a + b * gauss();
