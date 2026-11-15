@@ -22,6 +22,7 @@ import { Panel } from './ui/panel.js';
 import { loadSettings, saveSettings } from './ui/settings.js';
 import { EngineSound } from './audio/engine.js';
 import { LOCATION, LOCATIONS, clubAngle, clubToWorld } from './sim/location.js';
+import { QUALITY, qualityPreset, viewDistance } from './world/quality.js';
 
 // Development builds (the /dev/ page) are badged so they're never mistaken for live.
 if (import.meta.env.VITE_CHANNEL === 'dev') {
@@ -45,9 +46,14 @@ saveSettings(settings);
 // --- Renderer ----------------------------------------------------------------
 const canvas = document.getElementById('view');
 const renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-// Phones and tablets: cap the resolution a little lower to keep the frame rate up.
+// Graphics quality and scenery distance: on first run, low on phones and
+// tablets, medium elsewhere (Menu → View → Graphics).
 const TOUCH_DEVICE = isTouchDevice();
-const MAX_DPR = TOUCH_DEVICE ? 1.5 : 2;
+if (!settings.graphics) settings.graphics = TOUCH_DEVICE ? 'low' : 'medium';
+if (settings.viewDistance === '' || settings.viewDistance == null) settings.viewDistance = TOUCH_DEVICE ? '1000' : '2000';
+saveSettings(settings);
+const quality = qualityPreset(settings);
+const MAX_DPR = quality.pixelRatio;
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_DPR));
 renderer.outputColorSpace = SRGBColorSpace;
 renderer.toneMapping = ACESFilmicToneMapping;
@@ -57,14 +63,14 @@ renderer.shadowMap.type = PCFSoftShadowMap;
 
 // --- Simulation ----------------------------------------------------------------
 const obstacles = new Obstacles();
-const world = new World(obstacles, { lowDetail: TOUCH_DEVICE });
+const world = new World(obstacles, { quality, viewDistance: viewDistance(settings) });
 const wind = new Wind();
 wind.setTrees(obstacles.trees); // trees shelter the field and stir up the air behind them
 const input = new Input();
 const rig = new CameraRig(settings);
 // Scenery shadows (redrawn only when the sun moves; smaller map on phones),
 // and the aeroplane's own shadow, drawn every frame.
-world.attachShadows(new Shadows(world.sun, { mapSize: TOUCH_DEVICE ? 2048 : 4096 }));
+world.attachShadows(new Shadows(world.sun, { mapSize: quality.shadowMap }));
 const planeShadow = new PlaneShadow(world.scene, ground);
 
 let entry = null; // selected aircraft (registry entry)
@@ -262,9 +268,14 @@ mp.onEvent = (type, p, m) => {
 function changeField(id) {
   if (id === LOCATION.id) return;
   settings.location = id;
+  reloadKeepingRoom(id);
+}
+
+/** Reload the page (at `field`), staying in any multiplayer room. */
+function reloadKeepingRoom(field = LOCATION.id) {
   saveSettings(settings);
   const q = new URLSearchParams(location.search);
-  q.set('field', id);
+  q.set('field', field);
   if (mp.connected) q.set('room', mp.baseRoom ?? settings.mpRoom);
   location.search = q.toString();
 }
@@ -302,6 +313,8 @@ const panel = new Panel(document.getElementById('panel'), {
     saveSettings(settings);
     if (key === 'aircraft') selectAircraft(value);
     if (key === 'location') changeField(value);
+    // The scenery is built for these once, so they take effect on a reload.
+    if (key === 'graphics' || key === 'viewDistance') reloadKeepingRoom();
     if (key === 'startMode') resetAircraft();
   },
   onReset: resetAircraft,
@@ -382,6 +395,13 @@ const splashField = document.getElementById('splash-field');
 for (const l of LOCATIONS) splashField.append(new Option(l.name, l.id));
 splashField.value = LOCATION.id;
 splashField.addEventListener('change', (e) => changeField(e.target.value));
+const splashGraphics = document.getElementById('splash-graphics');
+for (const [k, q] of Object.entries(QUALITY)) splashGraphics.append(new Option(q.name, k));
+splashGraphics.value = settings.graphics;
+splashGraphics.addEventListener('change', (e) => {
+  settings.graphics = e.target.value;
+  reloadKeepingRoom();
+});
 function updateSplash() {
   if (!splashSelect.isConnected) return;
   splashSelect.value = entry.id;
@@ -510,6 +530,7 @@ window.sim = {
     return entry;
   },
   world,
+  renderer,
   rig,
   mp,
   input,

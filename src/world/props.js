@@ -9,7 +9,8 @@ import {
 } from 'three';
 import { heightAt } from '../sim/terrain.js';
 import { LOCATION } from '../sim/location.js';
-import { broadleafCrown } from './trees.js';
+import { broadleafCrown, blobCrown } from './trees.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 function rng(seed) {
   let s = seed;
@@ -281,11 +282,15 @@ export function gravelTexture() {
   }, [2, 1.4]);
 }
 
-/** Bushes along the edge of the field, in front of the tree line. */
-export function bushes(material) {
-  if (LOCATION.data) return realBushes(material);
+/**
+ * Bushes along the edge of the field, in front of the tree line.
+ * `detail` is the crown detail (src/world/quality.js); bushes further than
+ * `distance` from the pilot are left out.
+ */
+export function bushes(material, { detail = 1, distance = Infinity } = {}) {
+  if (LOCATION.data) return realBushes(material, detail, distance);
   const rnd = rng(77);
-  const shapes = [broadleafCrown(101), broadleafCrown(131)];
+  const shapes = bushShapes(detail);
   const n = 260;
   const meshes = shapes.map((s) => new InstancedMesh(s, material, n));
   const counts = shapes.map(() => 0);
@@ -314,8 +319,13 @@ export function bushes(material) {
   return meshes;
 }
 
+/** Two bush shapes at a quality's detail (a number, or 'blob'). */
+function bushShapes(detail) {
+  return detail === 'blob' ? [blobCrown(101), blobCrown(131)] : [broadleafCrown(101, detail), broadleafCrown(131, detail)];
+}
+
 /** Hedges and shrubs at a real site: the LIDAR's 1-3 m vegetation. */
-function realBushes(material) {
+function realBushes(material, detail, distance) {
   const rnd = rng(78);
   const pts = [...LOCATION.data.bushes];
   // Belts of tall bushes from the site layout: two staggered rows, 2.5 m apart.
@@ -332,7 +342,7 @@ function realBushes(material) {
     }
   }
   const n = pts.length / 3;
-  const shapes = [broadleafCrown(101), broadleafCrown(131)];
+  const shapes = bushShapes(detail);
   const meshes = shapes.map((s) => new InstancedMesh(s, material, n));
   const counts = shapes.map(() => 0);
   const o = new Object3D();
@@ -342,13 +352,16 @@ function realBushes(material) {
     const z = pts[i + 1] + (rnd() - 0.5) * 1.5;
     const h = pts[i + 2];
     const w = 1.5 + rnd() * 0.8; // half-width: neighbours (3 m apart) overlap into a hedge
+    const turn = rnd() * Math.PI * 2;
+    const tint = [0.24 + rnd() * 0.05, 0.36 + rnd() * 0.12, 0.13 + rnd() * 0.05];
+    if (Math.hypot(x, z) > distance) continue;
     o.position.set(x, heightAt(x, z) + h * 0.5, z);
-    o.rotation.set(0, rnd() * Math.PI * 2, 0);
+    o.rotation.set(0, turn, 0);
     o.scale.set(w, h * 0.55, w);
     o.updateMatrix();
     const k = (i / 3) % shapes.length;
     meshes[k].setMatrixAt(counts[k], o.matrix);
-    col.setHSL(0.24 + rnd() * 0.05, 0.36 + rnd() * 0.12, 0.13 + rnd() * 0.05);
+    col.setHSL(...tint);
     meshes[k].setColorAt(counts[k]++, col);
   }
   meshes.forEach((m, k) => {
@@ -370,7 +383,32 @@ export function siteFence(f) {
     const stretch = f.kind === 'panels' ? tempPanels : chainLink;
     g.add(stretch(f.path[i - 1], f.path[i], f.height));
   }
-  return g;
+  // Hundreds of panels, tubes and posts: one draw call per material.
+  return mergeByMaterial(g);
+}
+
+/** The meshes of a group baked into one mesh per material. */
+function mergeByMaterial(group) {
+  group.updateMatrixWorld(true);
+  const byMat = new Map();
+  group.traverse((o) => {
+    if (!o.isMesh) return;
+    let g = o.geometry.clone().applyMatrix4(o.matrixWorld);
+    if (!g.index) g = g.toNonIndexed();
+    if (!byMat.has(o.material)) byMat.set(o.material, { geos: [], cast: false, receive: false });
+    const e = byMat.get(o.material);
+    e.geos.push(g.index ? g.toNonIndexed() : g);
+    e.cast ||= o.castShadow;
+    e.receive ||= o.receiveShadow;
+  });
+  const out = new Group();
+  for (const [mat, e] of byMat) {
+    const m = new Mesh(mergeGeometries(e.geos), mat);
+    m.castShadow = e.cast;
+    m.receiveShadow = e.receive;
+    out.add(m);
+  }
+  return out;
 }
 
 /**

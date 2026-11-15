@@ -4,6 +4,7 @@ import { CAMERA_LABELS } from '../view/cameras.js';
 import { AIRCRAFT, getAircraft } from '../aircraft/index.js';
 import { formatHours } from '../world/sun.js';
 import { LOCATIONS, LOCATION } from '../sim/location.js';
+import { QUALITY, DISTANCES } from '../world/quality.js';
 
 const CH_LABEL = { roll: 'Aileron (roll)', pitch: 'Elevator (pitch)', yaw: 'Rudder (yaw)', throttle: 'Throttle' };
 
@@ -176,6 +177,10 @@ export class Panel {
       this.#select('Auto-zoom', 'losZoom', { 0: 'Off', 1: 'Gentle', 2: 'Strong' }),
       this.#range('Pilot position (left/right)', 'pilotX', -60, 60, 1, (v) => `${v} m`),
       this.#range('Pilot position (fwd/back)', 'pilotZ', -10, 30, 1, (v) => `${v} m`),
+      el('h3', {}, 'Graphics'),
+      this.#select('Quality', 'graphics', Object.fromEntries(Object.entries(QUALITY).map(([k, q]) => [k, q.name]))),
+      this.#select('Scenery distance', 'viewDistance', DISTANCES),
+      el('p', { class: 'hint' }, 'Lower these if the picture is jerky. Low draws simpler trees and fewer pixels; a shorter distance leaves out far trees and brings the haze in. Changing either reloads the simulator.'),
     ];
   }
 
