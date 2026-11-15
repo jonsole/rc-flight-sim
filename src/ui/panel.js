@@ -7,6 +7,7 @@ import { formatDay } from '../world/seasons.js';
 import { LOCATIONS, LOCATION } from '../sim/location.js';
 import { QUALITY, DISTANCES } from '../world/quality.js';
 import { googleSessions } from '../world/googleTiles.js';
+import { tunablesFor, loadTuning, saveTuning } from '../sim/tuning.js';
 
 const CH_LABEL = { roll: 'Aileron (roll)', pitch: 'Elevator (pitch)', yaw: 'Rudder (yaw)', throttle: 'Throttle' };
 
@@ -82,7 +83,7 @@ export class Panel {
   }
 
   render() {
-    const tabs = { fly: 'Flying', mp: 'Multiplayer', view: 'View', env: 'Weather', controls: 'Transmitter', help: 'Help' };
+    const tabs = { fly: 'Flying', tune: 'Tuning', mp: 'Multiplayer', view: 'View', env: 'Weather', controls: 'Transmitter', help: 'Help' };
     this.root.replaceChildren(
       el('div', { class: 'panel' },
         el('div', { class: 'panel-head' },
@@ -108,6 +109,91 @@ export class Panel {
       this.#range('Volume', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.#check('Show HUD / OSD (H)', 'showHud'),
     ];
+  }
+
+  /** Tuning: the flight settings of the model you're flying (src/sim/tuning.js). */
+  tab_tune() {
+    const entry = this.opts.aircraftEntry();
+    const values = loadTuning(entry.id);
+    const decimals = (step) => (step >= 1 ? 0 : step >= 0.1 ? 1 : 2);
+    const fmt = (t, v) => `${Number(v).toFixed(decimals(t.step))} ${t.unit}`;
+    const commit = () => {
+      saveTuning(entry.id, values);
+      this.opts.onRetune();
+    };
+    const out = [
+      el('p', { class: 'hint' }, `${entry.name}. Changes apply as you let go of a slider, in flight too, and are saved in this browser for this model. Export them to send in and have them built in.`),
+    ];
+    let group = '';
+    for (const t of tunablesFor(entry.def)) {
+      if (t.group !== group) {
+        group = t.group;
+        out.push(el('h3', {}, group));
+      }
+      const v = values[t.key] ?? t.dflt;
+      const show = el('span', { class: 'val' }, fmt(t, v));
+      const changed = values[t.key] != null;
+      const input = el('input', {
+        type: 'range', min: t.min, max: t.max, step: t.step, value: v,
+        oninput: (e) => (show.textContent = fmt(t, e.target.value)),
+        onchange: (e) => {
+          const nv = Number(e.target.value);
+          if (Math.abs(nv - t.dflt) < t.step / 2) delete values[t.key];
+          else values[t.key] = nv;
+          commit();
+          this.render();
+        },
+      });
+      const reset = el('button', {
+        class: 'tune-reset', title: `Back to ${fmt(t, t.dflt)}`, disabled: !changed,
+        onclick: () => {
+          delete values[t.key];
+          commit();
+          this.render();
+        },
+      }, '↺');
+      out.push(el('label', { class: changed ? 'row tuned' : 'row' },
+        el('span', { class: 'lbl' }, t.label, el('small', {}, ` (default ${fmt(t, t.dflt)})`)), input, show, reset));
+    }
+    const fileIn = el('input', {
+      type: 'file', accept: '.json,application/json', style: 'display:none',
+      onchange: async (e) => {
+        const f = e.target.files?.[0];
+        e.target.value = '';
+        if (!f) return;
+        try {
+          const j = JSON.parse(await f.text());
+          if (j.aircraft && j.aircraft !== entry.id && !confirm(`This tuning is for "${j.aircraft}", not the ${entry.name}. Load it anyway?`)) return;
+          for (const k of Object.keys(values)) delete values[k];
+          Object.assign(values, j.tuning ?? j);
+          commit();
+          this.render();
+        } catch (err) {
+          alert(`Couldn't read that file: ${err.message}`);
+        }
+      },
+    });
+    out.push(el('div', { class: 'row' },
+      el('button', {
+        onclick: () => {
+          if (!Object.keys(values).length || !confirm(`Put all the ${entry.name}'s settings back to default?`)) return;
+          for (const k of Object.keys(values)) delete values[k];
+          commit();
+          this.render();
+        },
+      }, 'Reset all'),
+      el('button', {
+        onclick: () => {
+          const blob = new Blob([JSON.stringify({ aircraft: entry.id, tuning: values }, null, 1)], { type: 'application/json' });
+          const a = el('a', { href: URL.createObjectURL(blob), download: `${entry.id}-tuning.json` });
+          document.body.append(a);
+          a.click();
+          a.remove();
+        },
+      }, 'Export'),
+      el('button', { onclick: () => fileIn.click() }, 'Import'),
+      fileIn));
+    return out;
   }
 
   tab_mp() {

@@ -23,6 +23,7 @@ import { loadSettings, saveSettings } from './ui/settings.js';
 import { EngineSound } from './audio/engine.js';
 import { LOCATION, LOCATIONS, clubAngle, clubToWorld, pilotSpot } from './sim/location.js';
 import { QUALITY, qualityPreset, viewDistance } from './world/quality.js';
+import { tunedDef, loadTuning } from './sim/tuning.js';
 import { GoogleTiles } from './world/googleTiles.js';
 import { loadEdits } from './sim/edits.js';
 import { Editor } from './editor/editor.js';
@@ -172,10 +173,20 @@ let navLights = null;
 function loadAircraft(id) {
   entry = getAircraft(id);
   settings.aircraft = entry.id;
-  aircraft = new Aircraft(entry.def, { ground, wind, obstacles });
+  // With your own tuning (Menu → Tuning, src/sim/tuning.js) applied.
+  aircraft = new Aircraft(tunedDef(entry.def, loadTuning(entry.id)), { ground, wind, obstacles });
   aircraft.assistMode = settings.assist;
   replaceModel();
   rig.setAircraft(entry);
+}
+
+/** The tuning changed: rebuild the flight model, carrying on from where it is. */
+function retune() {
+  const old = aircraft;
+  aircraft = new Aircraft(tunedDef(entry.def, loadTuning(entry.id)), { ground, wind, obstacles });
+  for (const k of ['position', 'velocity', 'orientation', 'omega']) aircraft[k].copy(old[k]);
+  for (const k of ['controls', 'servo', 'assistMode', 'throttleActual', 'held', 'crashed', 'crashReason', 'propBroken', 'battery', 'time']) aircraft[k] = old[k];
+  for (const part of old.broken) aircraft.broken.add(part);
 }
 loadAircraft(settings.aircraft);
 const osd = new OSD(document.getElementById('osd'));
@@ -398,6 +409,8 @@ const panel = new Panel(document.getElementById('panel'), {
   },
   onReset: resetAircraft,
   onEditScenery: () => openEditor(),
+  aircraftEntry: () => entry,
+  onRetune: () => retune(),
   onClose: () => setMenu(false),
 });
 
