@@ -243,7 +243,8 @@ for (const entry of AIRCRAFT) {
         const near = forcesAt(0.1);
         const far = forcesAt(3);
         expect(near.lift).toBeGreaterThan(far.lift * 1.03);
-        expect(near.drag).toBeLessThan(far.drag * 0.9);
+        // Only the induced drag drops: less in all with more profile drag.
+        expect(near.drag).toBeLessThan(far.drag * 0.92);
         expect(near.ge).toBeGreaterThan(0.1); // biplanes get less: the upper wing is higher
         expect(far.ge).toBeLessThan(0.01);
       });
@@ -734,6 +735,24 @@ describe('rudder and aileron coupling', () => {
         adverse = Math.max(adverse, ac.omega.y * Math.sign(ac.omega.x));
       }
       expect(adverse).toBeGreaterThan(0.25);
+    });
+  }
+});
+
+describe('gliding: draggy foamies come down', () => {
+  for (const id of ['eflite-se5a-900', 'buschtrottel-shockcub', 'buschtrottel-highlander', 'buschtrottel-agro']) {
+    it(`${id}: hands-off, motor off, glides between 3:1 and 6:1`, () => {
+      const ac = new Aircraft(getAircraft(id).def, { ground });
+      ac.assistMode = 'off';
+      ac.resetInAir(new Vector3(0, 400, 0), 0, 12);
+      ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 0 };
+      ac.update(6);
+      const p0 = ac.position.clone();
+      ac.update(12);
+      const d = ac.position.clone().sub(p0);
+      const glide = Math.hypot(d.x, d.z) / -d.y;
+      expect(glide).toBeGreaterThan(3);
+      expect(glide).toBeLessThan(6); // the S.E.5a glided 7.7:1, the Buschtrottels ~5:1
     });
   }
 });

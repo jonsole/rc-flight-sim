@@ -138,7 +138,7 @@ export function buildF22(style) {
     alphaStall: 24 * deg,
     stallWidth: 0.04,
     stallDrop: 0.6,
-    cd0: 0.025,
+    cd0: 0.03,
     ar: AR,
     e: 0.85,
   };
@@ -191,7 +191,7 @@ export function buildF22(style) {
   // Hinged straight onto the trailing edge, they act partly as the back of
   // the low-aspect-ratio planform rather than as a separate tail: a lift
   // slope between the two.
-  const elevFoil = { cla: liftSlope((AR + elevAr) / 2), alpha0: 0, alphaStall: 28 * deg, stallWidth: 0.03, cd0: 0.025, ar: elevAr, e: 0.75 };
+  const elevFoil = { cla: liftSlope((AR + elevAr) / 2), alpha0: 0, alphaStall: 28 * deg, stallWidth: 0.03, cd0: 0.03, ar: elevAr, e: 0.75 };
   const inc = -style.reflex;
   const elevons = [-1, 1].map((side) => ({
     name: `stab-${side > 0 ? 'R' : 'L'}`,
@@ -223,7 +223,7 @@ export function buildF22(style) {
     chord: [1, 0, 0],
     span: [0, -Math.cos(cant), -side * Math.sin(cant)],
     area: finP.area,
-    foil: { cla: liftSlope(1.4), alpha0: 0, alphaStall: 20 * deg, cd0: 0.025, ar: 1.4, e: 0.7 },
+    foil: { cla: liftSlope(1.4), alpha0: 0, alphaStall: 20 * deg, cd0: 0.03, ar: 1.4, e: 0.7 },
     propwash: 0.1,
     controls: [],
   }));
@@ -259,7 +259,7 @@ export function buildF22(style) {
     // Roll, yaw, pitch (estimated): ~120 g of foam spread over the span and
     // the 667 mm length, battery at the CG, motor 7 cm behind it.
     inertia: [0.0025, 0.006, 0.004],
-    parasite: { x: 0.0035, y: 0.02, z: 0.03 },
+    parasite: { x: 0.0049, y: 0.02, z: 0.03 },
     surfaces: [...wing, ...elevons, ...fins, ...body],
     wingAspectRatio: AR,
     wingArea: AREA,
@@ -338,7 +338,7 @@ export function buildF22(style) {
 // five-blade quad prop, loaded to ~22,000 rpm: about 510 g static thrust at
 // ~16 A (estimated from typical 5" prop data). Pitch speed = pitch × loaded
 // rpm, so it is faster flat out than the plan's 2300Kv and 6x4.5.
-const PROP_5x45x5 = { diameterIn: 5, pitchIn: 4.5, blades: 5, rpm: 22000, staticThrust: 5.0, pitchSpeed: 42, current: 16 };
+const PROP_5x45x5 = { diameterIn: 5, pitchIn: 4.5, blades: 5, rpm: 22000, staticThrust: 5.75, pitchSpeed: 42, current: 16 };
 
 export const FT_MINI_F22 = buildF22({
   id: 'ft-mini-f22',
