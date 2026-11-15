@@ -1,0 +1,90 @@
+// Broadleaf crown layout, shared by the physics (collisions) and the drawn
+// trees, so you hit exactly the clumps you can see.
+import { IcosahedronGeometry, Vector3 } from 'three';
+
+/** The crown shapes in use (seeds); each tree picks one. */
+export const CROWN_SEEDS = [11, 23, 37, 53, 71];
+
+export function rng(seed) {
+  let s = seed;
+  return () => ((s = (s * 16807) % 2147483647) / 2147483647);
+}
+
+function hash3(x, y, z) {
+  const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+/** Smooth 3D value noise (0..1). */
+export function noise3(x, y, z) {
+  const xi = Math.floor(x);
+  const yi = Math.floor(y);
+  const zi = Math.floor(z);
+  const f = (t) => t * t * (3 - 2 * t);
+  const u = f(x - xi);
+  const v = f(y - yi);
+  const w = f(z - zi);
+  let r = 0;
+  for (let dz = 0; dz <= 1; dz++) {
+    for (let dy = 0; dy <= 1; dy++) {
+      for (let dx = 0; dx <= 1; dx++) {
+        const k = (dx ? u : 1 - u) * (dy ? v : 1 - v) * (dz ? w : 1 - w);
+        r += k * hash3(xi + dx, yi + dy, zi + dz);
+      }
+    }
+  }
+  return r;
+}
+
+/** Leafy lumps: how much a crown surface point is pushed out (factor). */
+export function lumpScale(v, seed) {
+  const n = noise3(v.x * 3 + seed, v.y * 3, v.z * 3) - 0.5 + (noise3(v.x * 9, v.y * 9 + seed, v.z * 9) - 0.5) * 0.45;
+  return 1 + n * 0.32;
+}
+
+/**
+ * Clumps (spheres [x, y, z, r]) scattered over a slightly squashed dome,
+ * more of them up top, poking out by different amounts so the outline is
+ * ragged, not round; plus one in the middle. Before normalising to unit size.
+ */
+export function crownClumps(seed) {
+  const rnd = rng(seed);
+  const out = [];
+  const n = 11 + Math.floor(rnd() * 5);
+  for (let i = 0; i < n; i++) {
+    const r = 0.26 + rnd() * 0.2;
+    const a = rnd() * Math.PI * 2;
+    const y = Math.min(1, Math.max(-0.6, rnd() * 1.5 - 0.5)); // -0.5..1, biased upwards
+    const ring = Math.sqrt(1 - y * y);
+    const d = (1 - r) * (0.75 + rnd() * 0.35);
+    out.push([Math.cos(a) * ring * d, y * d * 0.8, Math.sin(a) * ring * d, r]);
+  }
+  out.push([0, 0, 0, 0.6]);
+  return out;
+}
+
+const cache = new Map();
+/**
+ * The crown as drawn, for collisions: clump spheres scaled to the unit crown
+ * (the drawn mesh is normalised so its furthest lump is at radius 1).
+ * @returns {{ clumps: number[][], norm: number }}
+ */
+export function crownShape(seed) {
+  if (cache.has(seed)) return cache.get(seed);
+  const clumps = crownClumps(seed);
+  // Same vertices and lumps the drawn crown uses, to find its size.
+  let max = 0;
+  const v = new Vector3();
+  for (const [x, y, z, r] of clumps) {
+    const g = new IcosahedronGeometry(r, 2).translate(x, y, z);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i);
+      max = Math.max(max, v.length() * lumpScale(v, seed));
+    }
+    g.dispose();
+  }
+  const shape = { clumps: clumps.map(([x, y, z, r]) => [x / max, y / max, z / max, r / max]), norm: max };
+  cache.set(seed, shape);
+  return shape;
+}

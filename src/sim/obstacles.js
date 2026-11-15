@@ -7,8 +7,12 @@
 //   cylinder  vertical cylinder: { x, z, r, y0, y1 }                  solid
 //   ellipsoid foliage: { cx, cy, cz, rx, ry, rz }                     soft
 //   cone      foliage: { x, z, r (base radius), y0 (base), h }        soft
+//   crown     foliage: a broadleaf crown's clumps, as drawn             soft
 
 import { heightAt } from './terrain.js';
+import { CROWN_SEEDS, crownShape, lumpScale } from './treeShapes.js';
+
+const _lp = { x: 0, y: 0, z: 0 };
 
 const CELL = 12; // spatial-hash cell size (m)
 
@@ -56,14 +60,27 @@ function makeTrees() {
 export class Obstacles {
   constructor() {
     this.trees = makeTrees();
+    // Which crown shape (and conifer shape) each tree is drawn with.
+    this.trees.forEach((t, i) => {
+      t.pick = Math.floor(((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1 * 1000);
+      t.variant = t.pick % CROWN_SEEDS.length;
+    });
     this.shapes = [];
     for (const t of this.trees) {
       // Trunk (solid). Rendered as a 0.25-0.4 m tapered cylinder.
       this.shapes.push({ type: 'cylinder', name: 'a tree trunk', x: t.x, z: t.z, r: 0.33, y0: t.y - 0.2, y1: t.y - 0.2 + t.h * 0.45 });
       if (t.conifer) {
-        this.shapes.push({ type: 'cone', name: 'a tree', x: t.x, z: t.z, r: t.h * 0.22, y0: t.y + t.h * 0.15, h: t.h * 0.9 });
+        // As drawn: 0.22 h base radius, from 0.1 h up, 0.95 h tall.
+        this.shapes.push({ type: 'cone', name: 'a tree', x: t.x, z: t.z, r: t.h * 0.22, y0: t.y + t.h * 0.1, h: t.h * 0.95 });
       } else {
-        this.shapes.push({ type: 'ellipsoid', name: 'a tree', cx: t.x, cy: t.y + t.h * 0.62, cz: t.z, rx: t.crownW, ry: t.h * 0.38, rz: t.crownW });
+        // The crown's own clumps, placed, sized and turned as drawn
+        // (src/world/world.js): centre 0.62 h up, crownW wide, 0.4 h tall.
+        const sx = t.crownW * 1.05;
+        const sy = t.h * 0.4;
+        this.shapes.push({
+          type: 'crown', name: 'a tree', cx: t.x, cy: t.y + t.h * 0.62, cz: t.z, sx, sy,
+          cos: Math.cos(t.rot), sin: Math.sin(t.rot), seed: CROWN_SEEDS[t.variant], ...crownShape(CROWN_SEEDS[t.variant]),
+        });
       }
     }
     // Clubhouse behind the pilot: walls, pitched roof (eaves to ridge).
@@ -99,6 +116,8 @@ export class Obstacles {
     this.table = { x: 6, z: 3 };
     this.shapes.push({ type: 'box', name: 'the table', min: [5, 0, 2.6], max: [7, 0.78, 3.4] });
 
+    // Bounding sphere per shape, for a quick whole-aircraft check first.
+    for (const s of this.shapes) s.bound = boundOf(s);
     // Spatial hash over each shape's horizontal footprint.
     this.grid = new Map();
     for (const s of this.shapes) {
@@ -165,6 +184,37 @@ export class Obstacles {
         const w = (z - s.cz) / s.rz;
         return u * u + v * v + w * w < 1 ? { soft: true } : null;
       }
+      case 'crown': {
+        // Into the crown's own frame (undo its turn and size), then inside
+        // any clump? Clumps are shrunk a touch: their lumpy surface dips in
+        // as often as it bulges out.
+        const dx = x - s.cx;
+        const dz = z - s.cz;
+        const lx = (dx * s.cos - dz * s.sin) / s.sx;
+        const ly = (y - s.cy) / s.sy;
+        const lz = (dx * s.sin + dz * s.cos) / s.sx;
+        // 1. Outside the whole crown's bounding shell?
+        if (lx * lx + ly * ly + lz * lz > 1.1) return null;
+        for (const [cx, cy, cz, r] of s.clumps) {
+          const ex = lx - cx;
+          const ey = ly - cy;
+          const ez = lz - cz;
+          // 2. Outside this clump's sphere, allowing for lumps that bulge out?
+          if (ex * ex + ey * ey + ez * ez > r * r * 1.45) continue;
+          // 3. The leafy lumps exactly as drawn: the drawn surface is each
+          //    clump pushed in or out by lumpScale (in the un-normalised
+          //    crown), so undo that for this point and test the plain clump.
+          _lp.x = lx * s.norm;
+          _lp.y = ly * s.norm;
+          _lp.z = lz * s.norm;
+          const k = 1 / lumpScale(_lp, s.seed);
+          const fx = lx * k - cx;
+          const fy = ly * k - cy;
+          const fz = lz * k - cz;
+          if (fx * fx + fy * fy + fz * fz < r * r) return { soft: true };
+        }
+        return null;
+      }
       case 'cone': {
         const t = (y - s.y0) / s.h;
         if (t < 0 || t > 1) return null;
@@ -176,6 +226,25 @@ export class Obstacles {
   }
 }
 
+function boundOf(s) {
+  switch (s.type) {
+    case 'box': {
+      const c = [0, 1, 2].map((i) => (s.min[i] + s.max[i]) / 2);
+      return { x: c[0], y: c[1], z: c[2], r: Math.hypot(s.max[0] - c[0], s.max[1] - c[1], s.max[2] - c[2]) };
+    }
+    case 'cylinder':
+      return { x: s.x, y: (s.y0 + s.y1) / 2, z: s.z, r: Math.hypot(s.r, (s.y1 - s.y0) / 2) };
+    case 'cone':
+      return { x: s.x, y: s.y0 + s.h / 2, z: s.z, r: Math.hypot(s.r, s.h / 2) };
+    case 'crown':
+      return { x: s.cx, y: s.cy, z: s.cz, r: Math.max(s.sx, s.sy) * 1.05 };
+    case 'ellipsoid':
+      return { x: s.cx, y: s.cy, z: s.cz, r: Math.max(s.rx, s.ry, s.rz) };
+    default:
+      return { x: 0, y: 0, z: 0, r: Infinity };
+  }
+}
+
 function footprint(s) {
   switch (s.type) {
     case 'box':
@@ -183,6 +252,8 @@ function footprint(s) {
     case 'cylinder':
     case 'cone':
       return [s.x - s.r, s.z - s.r, s.x + s.r, s.z + s.r];
+    case 'crown':
+      return [s.cx - s.sx, s.cz - s.sx, s.cx + s.sx, s.cz + s.sx];
     case 'ellipsoid':
       return [s.cx - s.rx, s.cz - s.rz, s.cx + s.rx, s.cz + s.rz];
     default:

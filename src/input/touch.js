@@ -28,6 +28,11 @@ class Stick {
 
     this.zone.addEventListener('pointerdown', (e) => {
       if (this.pointer !== null) return;
+      // Only grab touches on or just around the stick, not anywhere in the
+      // big zone (a tap mid-screen mustn't slam the throttle open).
+      const r = this.base.getBoundingClientRect();
+      const radius = r.width / 2;
+      if (Math.hypot(e.clientX - (r.left + radius), e.clientY - (r.top + radius)) > radius * 1.3) return;
       this.pointer = e.pointerId;
       this.zone.setPointerCapture(e.pointerId);
       this.zone.classList.add('active');
@@ -103,7 +108,13 @@ export class TouchControls {
     button('ASSIST', 'Flight assist: manual / AS3X / SAFE', () => opts.onAction('KeyG'));
     button('☰', 'Menu', () => opts.onMenu());
     this.root.append(bar);
+    this.bar = bar;
     document.body.append(this.root);
+    // The buttons fade out after a few seconds without a touch and come back
+    // on the next one (while hidden, that touch only brings them back).
+    this._idleTimer = 0;
+    window.addEventListener('pointerdown', () => this.wake(), { capture: true });
+    this.wake();
     this.setMode(2);
     this.setVisible(false);
   }
@@ -113,6 +124,18 @@ export class TouchControls {
     this.left.setHoldY(this.mode === 2);
     this.right.setHoldY(this.mode === 1);
     this.root.dataset.mode = String(this.mode);
+  }
+
+  /** Show the buttons and restart the hide timer. */
+  wake() {
+    this.bar.classList.remove('idle');
+    clearTimeout(this._idleTimer);
+    this._idleTimer = setTimeout(() => this.bar.classList.add('idle'), 4000);
+  }
+
+  /** Hide the thumb sticks (a USB transmitter is plugged in); buttons stay. */
+  setSticks(v) {
+    if (this.root.classList.contains('no-sticks') !== !v) this.root.classList.toggle('no-sticks', !v);
   }
 
   setVisible(v) {

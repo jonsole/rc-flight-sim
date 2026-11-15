@@ -1,5 +1,5 @@
 // Settings / setup panel (plain DOM).
-import { CHANNELS } from '../input/input.js';
+import { CHANNELS, rawInput } from '../input/input.js';
 import { CAMERA_LABELS } from '../view/cameras.js';
 import { AIRCRAFT, getAircraft } from '../aircraft/index.js';
 import { formatHours } from '../world/sun.js';
@@ -203,8 +203,20 @@ export class Panel {
 
     const rows = CHANNELS.map((ch) => {
       const a = cfg.axes[ch];
-      const axisSel = el('select', { onchange: (e) => { a.index = Number(e.target.value); inp.save(); } },
-        Array.from({ length: 8 }, (_, i) => el('option', { value: i, selected: a.index === i }, `Axis ${i}`)));
+      const pad = inp.getGamepad();
+      const nAxes = Math.max(8, pad?.axes.length ?? 0);
+      const nButtons = pad?.buttons.length ?? 0;
+      const isBtn = a.kind === 'button';
+      const axisSel = el('select', {
+        onchange: (e) => {
+          const v = e.target.value;
+          a.kind = v[0] === 'b' ? 'button' : 'axis';
+          a.index = Number(v.slice(1));
+          inp.save();
+        },
+      },
+      Array.from({ length: nAxes }, (_, i) => el('option', { value: `a${i}`, selected: !isBtn && a.index === i }, `Axis ${i}`)),
+      Array.from({ length: nButtons }, (_, i) => el('option', { value: `b${i}`, selected: isBtn && a.index === i }, `Button ${i} (analog)`)));
       const bar = el('div', { class: 'bar' }, el('div', { class: 'fill', 'data-ch': ch }));
       return el('div', { class: 'chan' },
         el('span', { class: 'lbl' }, CH_LABEL[ch]),
@@ -232,6 +244,8 @@ export class Panel {
       this.#select('Stick mode', 'stickMode', { 2: 'Mode 2 (throttle left)', 1: 'Mode 1 (throttle right)' }),
       el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Device'), padSel),
       el('div', { class: 'status', id: 'pad-status' }, inp.gamepadName || 'No transmitter detected — keyboard active'),
+      el('div', { class: 'hint', id: 'pad-raw', style: 'font-family: monospace; word-break: break-all' }, ''),
+      el('p', { class: 'hint' }, 'On phones the browser may move or drop some joystick axes, or report them as analog buttons. Use Detect and move just that stick; if a channel never responds, set your radio\'s USB joystick to map the channels to X, Y, Z and Rz.'),
       el('h3', {}, 'Channel mapping'),
       el('p', { class: 'hint' }, 'Bars should move right for: right aileron, pull back (up elevator), right rudder, throttle up. Use Reverse if not.'),
       ...rows,
@@ -286,12 +300,21 @@ export class Panel {
     const st = this.root.querySelector('#pad-status');
     if (st) st.textContent = this.input.gamepadName ? `Connected: ${this.input.gamepadName} (${this.input.source})` : 'No transmitter detected — keyboard active';
     const pad = this.input.getGamepad();
+    const rawEl = this.root.querySelector('#pad-raw');
+    if (rawEl) {
+      const pressed = pad?.buttons.map((b, i) => (b.value ? `${i}:${b.value.toFixed(2)}` : null)).filter(Boolean);
+      rawEl.textContent = pad
+        ? `Axes: ${pad.axes.map((v, i) => `${i}:${v.toFixed(2)}`).join(' ')} | Buttons: ${pressed.join(' ') || 'none'} | mapping: ${pad.mapping || 'none'}`
+        : '';
+    }
     if (this.calibrating && pad) {
-      pad.axes.forEach((v, i) => {
-        const c = this.calibrating;
-        c.min[i] = Math.min(c.min[i] ?? v, v);
-        c.max[i] = Math.max(c.max[i] ?? v, v);
-      });
+      const c = this.calibrating;
+      const note = (key, v) => {
+        c.min[key] = Math.min(c.min[key] ?? v, v);
+        c.max[key] = Math.max(c.max[key] ?? v, v);
+      };
+      pad.axes.forEach((v, i) => note(`a${i}`, v));
+      pad.buttons.forEach((b, i) => note(`b${i}`, b.value * 2 - 1));
     }
   }
 
@@ -301,23 +324,25 @@ export class Panel {
       btn.textContent = 'No device';
       return;
     }
-    const base = [...pad.axes];
+    const read = (p) => [...p.axes.map((v, i) => ['axis', i, v]), ...p.buttons.map((b, i) => ['button', i, b.value * 2 - 1])];
+    const base = read(pad);
     btn.textContent = 'Move stick…';
     const start = performance.now();
     const poll = () => {
       const p = this.input.getGamepad();
       if (!p) return;
-      let best = -1;
+      let best = null;
       let bestD = 0.4;
-      p.axes.forEach((v, i) => {
-        const d = Math.abs(v - base[i]);
+      read(p).forEach(([kind, i, v], k) => {
+        const d = Math.abs(v - (base[k]?.[2] ?? v));
         if (d > bestD) {
           bestD = d;
-          best = i;
+          best = [kind, i];
         }
       });
-      if (best >= 0) {
-        this.input.config.axes[ch].index = best;
+      if (best) {
+        this.input.config.axes[ch].kind = best[0];
+        this.input.config.axes[ch].index = best[1];
         this.input.save();
         this.render();
         return;
@@ -365,12 +390,13 @@ export class Panel {
     if (pad) {
       for (const ch of CHANNELS) {
         const a = cfg.axes[ch];
-        const lo = c.min[a.index];
-        const hi = c.max[a.index];
+        const key = `${a.kind === 'button' ? 'b' : 'a'}${a.index}`;
+        const lo = c.min[key];
+        const hi = c.max[key];
         if (lo == null || hi == null || hi - lo < 0.2) continue;
         a.min = lo;
         a.max = hi;
-        a.center = ch === 'throttle' ? (lo + hi) / 2 : pad.axes[a.index];
+        a.center = ch === 'throttle' ? (lo + hi) / 2 : rawInput(pad, a.kind, a.index);
       }
     }
     this.calibrating = null;
