@@ -345,3 +345,66 @@ function realBushes(material) {
   });
   return meshes;
 }
+
+/**
+ * Tall steel palisade fence along a line: square posts every 2.75 m, top and
+ * bottom rails, and pales you can see through between them.
+ * @param {{ from: number[], to: number[], height: number }} f
+ */
+export function metalFence(f) {
+  const g = new Group();
+  const [ax, az] = f.from;
+  const [bx, bz] = f.to;
+  const len = Math.hypot(bx - ax, bz - az);
+  const yaw = Math.atan2(-(bz - az), bx - ax); // local x along the fence
+  const metal = new MeshStandardMaterial({ color: '#6f7577', roughness: 0.55, metalness: 0.5 });
+  // Pales: 7 cm wide every 15 cm, with pointed tops, drawn on a texture.
+  const pales = canvasTex(64, 256, (c, w, h) => {
+    c.clearRect(0, 0, w, h);
+    c.fillStyle = '#8a9092';
+    for (const x0 of [0, 32]) {
+      c.beginPath();
+      c.moveTo(x0 + 2, h);
+      c.lineTo(x0 + 2, 18);
+      c.lineTo(x0 + 9, 0);
+      c.lineTo(x0 + 16, 18);
+      c.lineTo(x0 + 16, h);
+      c.fill();
+    }
+  });
+  const panelMat = new MeshStandardMaterial({ map: pales, alphaTest: 0.5, side: DoubleSide, roughness: 0.55, metalness: 0.4 });
+  const steps = Math.max(1, Math.round(len / 2.75));
+  const y0 = Math.min(heightAt(ax, az), heightAt(bx, bz));
+  // One panel per bay, following the ground.
+  for (let i = 0; i < steps; i++) {
+    const t0 = i / steps;
+    const t1 = (i + 1) / steps;
+    const xm = ax + (bx - ax) * (t0 + t1) / 2;
+    const zm = az + (bz - az) * (t0 + t1) / 2;
+    const y = heightAt(xm, zm);
+    const bay = new Mesh(new PlaneGeometry(len / steps, f.height), panelMat);
+    bay.geometry.attributes.uv.array.forEach((v, k, a) => { if (k % 2 === 0) a[k] = v * (len / steps / 0.3); });
+    bay.position.set(xm, y + f.height / 2, zm);
+    bay.rotation.y = yaw;
+    bay.castShadow = true;
+    bay.receiveShadow = true;
+    g.add(bay);
+  }
+  const postGeo = new BoxGeometry(0.1, f.height + 0.1, 0.1);
+  for (let i = 0; i <= steps; i++) {
+    const x = ax + ((bx - ax) * i) / steps;
+    const z = az + ((bz - az) * i) / steps;
+    const post = new Mesh(postGeo, metal);
+    post.position.set(x, heightAt(x, z) + (f.height + 0.1) / 2, z);
+    post.rotation.y = yaw;
+    post.castShadow = true;
+    g.add(post);
+  }
+  for (const ry of [0.3, f.height - 0.35]) {
+    const rail = new Mesh(new BoxGeometry(len, 0.05, 0.05), metal);
+    rail.position.set((ax + bx) / 2, y0 + ry, (az + bz) / 2);
+    rail.rotation.y = yaw;
+    g.add(rail);
+  }
+  return g;
+}

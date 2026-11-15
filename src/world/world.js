@@ -13,7 +13,7 @@ import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail } from './ground.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, addLeafShading, leafUniforms } from './trees.js';
 import { CROWN_SEEDS } from '../sim/treeShapes.js';
-import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes } from './props.js';
+import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes, metalFence } from './props.js';
 
 const smooth = (e0, e1, x) => {
   const t = MathUtils.clamp((x - e0) / (e1 - e0), 0, 1);
@@ -585,6 +585,7 @@ export class World {
     const club = [gazebo(ob.gazebo), ...ob.cars.map(car)];
     if (ob.hut) club.push(clubhouse(ob.hut));
     if (ob.container) club.push(shippingContainer(ob.container));
+    for (const f of ob.fences) club.push(metalFence(f));
     for (const o of club) {
       shadowy(o);
       this.scene.add(o);

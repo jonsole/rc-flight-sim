@@ -43,11 +43,14 @@ function realTrees() {
   const trees = [];
   let rnd = 4242;
   const rand = () => ((rnd = (rnd * 16807) % 2147483647) / 2147483647);
+  const L = LOCATION.layout;
   const t = d.trees;
-  for (let i = 0; i < t.length; i += 4) {
-    const [x, z, h, r] = [t[i], t[i + 1], t[i + 2], t[i + 3]];
+  const raw = [];
+  for (let i = 0; i < t.length; i += 4) raw.push({ x: t[i], z: t[i + 1], h: t[i + 2], r: t[i + 3] });
+  for (const belt of L.treeBelts ?? []) growBelt(raw, belt, rand);
+  for (const { x, z, h, r } of raw) {
     // Narrow for its height: probably a conifer (or a Lombardy poplar).
-    const conifer = r < h * 0.17 && h > 8;
+    const conifer = L.conifers !== false && r < h * 0.17 && h > 8;
     trees.push(dressTree({ x, y: heightAt(x, z), z, h, conifer, rot: rand() * Math.PI * 2 }, rand, Math.max(1.2, r)));
   }
   // Clumps of woodland on the skyline, outside the baked area.
@@ -63,10 +66,45 @@ function realTrees() {
       const z = cz + (rand() - 0.5) * 60;
       if (Math.max(Math.abs(x), Math.abs(z)) < half + 60) continue;
       const h = 10 + rand() * 10;
-      trees.push(dressTree({ x, y: heightAt(x, z), z, h, conifer: rand() < 0.15, rot: rand() * Math.PI * 2 }, rand));
+      const conifer = L.conifers !== false && rand() < 0.15;
+      trees.push(dressTree({ x, y: heightAt(x, z), z, h, conifer, rot: rand() * Math.PI * 2 }, rand));
     }
   }
   return trees;
+}
+
+/**
+ * A tree line that has grown since the survey: its trees taller and wider,
+ * and new ones in the gaps, so it reads as one belt.
+ */
+function growBelt(trees, belt, rand) {
+  const [ax, az] = belt.from;
+  const [bx, bz] = belt.to;
+  const len = Math.hypot(bx - ax, bz - az);
+  const ux = (bx - ax) / len;
+  const uz = (bz - az) / len;
+  const along = [];
+  for (const t of trees) {
+    const s = (t.x - ax) * ux + (t.z - az) * uz;
+    const off = -(t.x - ax) * uz + (t.z - az) * ux;
+    if (s < 0 || s > len || Math.abs(off) > belt.width / 2) continue;
+    t.h = Math.max(belt.minH, t.h * belt.grow);
+    t.r = Math.max(t.r * belt.grow, t.h * 0.3);
+    along.push({ s, off });
+  }
+  along.sort((p, q) => p.s - q.s);
+  // Fill the gaps (including either end) with trees like their neighbours.
+  const stops = [{ s: -belt.spacing / 2, off: 0 }, ...along, { s: len + belt.spacing / 2, off: 0 }];
+  for (let i = 1; i < stops.length; i++) {
+    const gap = stops[i].s - stops[i - 1].s;
+    const n = Math.floor(gap / belt.spacing);
+    for (let k = 1; k <= n; k++) {
+      const s = stops[i - 1].s + (gap * k) / (n + 1);
+      const off = (rand() - 0.5) * belt.width * 0.4;
+      const h = belt.minH + rand() * belt.minH * 0.5;
+      trees.push({ x: ax + ux * s - uz * off, z: az + uz * s + ux * off, h, r: h * (0.3 + rand() * 0.1) });
+    }
+  }
 }
 
 /** Deterministic tree layout (tree lines around the field and woods beyond). */
@@ -172,6 +210,22 @@ export class Obstacles {
     // Buildings at a real site.
     this.buildings = (LOCATION.data?.buildings ?? []).map(prepareBuilding);
     for (const b of this.buildings) this.shapes.push({ type: 'building', name: 'a building', b });
+    // Tall fences: a thin slab, solid like a wall.
+    this.fences = (L.fences ?? []).map((f) => {
+      const [ax, az] = f.from;
+      const [bx, bz] = f.to;
+      const len = Math.hypot(bx - ax, bz - az);
+      const nx = (-(bz - az) / len) * 0.05;
+      const nz = ((bx - ax) / len) * 0.05;
+      const y = Math.min(heightAt(ax, az), heightAt(bx, bz));
+      const pts = [[ax - nx, az - nz], [bx - nx, bz - nz], [bx + nx, bz + nz], [ax + nx, az + nz]];
+      const b = {
+        pts, y0: y - 0.3, eave: y + f.height, ridge: y + f.height, kind: 'fence',
+        x0: Math.min(ax, bx) - 0.1, x1: Math.max(ax, bx) + 0.1, z0: Math.min(az, bz) - 0.1, z1: Math.max(az, bz) + 0.1,
+      };
+      this.shapes.push({ type: 'building', name: 'the metal fence', b });
+      return f;
+    });
 
     // Bounding sphere per shape, for a quick whole-aircraft check first.
     for (const s of this.shapes) s.bound = boundOf(s);

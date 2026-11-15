@@ -12,6 +12,11 @@
 //   flat                ground forced level to y = 0 here (rectangle), fading out over `fade` m
 //   hut, container      club buildings (null for none)
 //   cars, gazebo, table, windsock, fence
+//   conifers            real sites: guess conifers from narrow crowns (false: all broadleaf)
+//   treeBelts           real sites: tree lines grown since the LIDAR survey:
+//                       { from, to, width, grow, minH, spacing } scales trees within
+//                       width/2 of the line and fills gaps longer than `spacing`
+//   fences              tall fences: { from: [x, z], to: [x, z], height }
 
 const HOME = {
   id: 'home',
@@ -58,6 +63,12 @@ const WATERBEACH = {
     table: { x: 6, z: 3 },
     windsock: { x: -35, z: -42, height: 5 },
     fence: { z: 6, x0: -60, x1: 60 },
+    // All deciduous round the field.
+    conifers: false,
+    // The east hedge's trees have grown a lot since the LIDAR (2022)...
+    treeBelts: [{ from: [98, -220], to: [77, 110], width: 22, grow: 1.4, minH: 10, spacing: 7 }],
+    // ...and there is a 3 m metal fence behind them.
+    fences: [{ from: [103, -220], to: [82, 110], height: 3 }],
   },
 };
 
