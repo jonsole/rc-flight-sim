@@ -362,17 +362,63 @@ def _disc(r, y, x, shape):
     return m[sy0:sy1, sx0:sx1]
 
 
-def find_bushes(vom, xs, zs, step=3):
-    """Hedges and shrubs (1-3 m) on a coarse grid: (x, z, h)."""
-    v = np.nan_to_num(vom)
+def find_bushes(vom, xs, zs, no_plant, max_bushes, step=3):
+    """Bushes and scrub: (x, z, h), nearest the field first.
+
+    The leaf-off LIDAR sees shrubs as sparse speckles, so the canopy is
+    closed up first; then every 3 m cell whose low vegetation (0.6-4 m)
+    covers 15% of it gets a bush. Woodland and tree lines also have a fringe
+    of scrub the LIDAR barely sees: some bushes are scattered along the open
+    edge of the tree canopy. Nothing on roads, paths, car parks, buildings or
+    water (`no_plant`, from OpenStreetMap).
+    """
+    raw = np.nan_to_num(vom)
+    v = ndimage.grey_closing(raw, size=(3, 3))
+    h2 = step // 2
     out = []
-    for y in range(step // 2, v.shape[0], step):
-        for x in range(step // 2, v.shape[1], step):
-            cell = v[y - step // 2:y + step // 2 + 1, x - step // 2:x + step // 2 + 1]
+    for y in range(h2, v.shape[0], step):
+        for x in range(h2, v.shape[1], step):
+            if no_plant[y, x]:
+                continue
+            cell = v[y - h2:y + h2 + 1, x - h2:x + h2 + 1]
             h = float(cell.max())
-            if 1.0 <= h < 3.0 and (cell > 0.8).mean() > 0.3:
+            if 0.6 <= h < 4.0 and (cell > 0.5).mean() > 0.15:
                 out.append((xs[x], zs[y], h))
-    return out
+    # Scrub along the open edge of the tree canopy (within 5 m of it).
+    canopy = v > 4
+    edge = ndimage.binary_dilation(canopy, iterations=5) & ~canopy & (raw < 0.5) & ~no_plant
+    rng = np.random.default_rng(7)
+    for y in range(h2, v.shape[0], step):
+        for x in range(h2, v.shape[1], step):
+            if edge[y, x] and rng.random() < 0.3:
+                jx, jy = rng.uniform(-1, 1, 2)
+                out.append((xs[x] + jx, zs[y] + jy, float(rng.uniform(0.8, 2.4))))
+    out.sort(key=lambda b: b[0] ** 2 + b[1] ** 2)
+    return out[:max_bushes]
+
+
+def no_plant_mask(areas, lines, buildings, x0, z0, n):
+    """1 m cells where no bush grows: roads, paths, car parks, paved and
+    commercial land, buildings and water (from OpenStreetMap)."""
+    img = Image.new('L', (n, n), 0)
+    d = ImageDraw.Draw(img)
+
+    def P(pts):
+        return [(x - x0, z - z0) for x, z in pts]
+
+    for a in areas:
+        cls, _ = area_class(a['tags'])
+        if cls in ('asphalt', 'paved', 'water') and len(a['pts']) >= 3:
+            d.polygon(P(a['pts']), fill=1)
+    for w in lines:
+        hw = w['tags'].get('highway')
+        if hw in ROAD_WIDTH and len(w['pts']) >= 2:
+            d.line(P(w['pts']), fill=1, width=max(1, round(ROAD_WIDTH[hw] + 1)))
+        if w['tags'].get('waterway') and len(w['pts']) >= 2:
+            d.line(P(w['pts']), fill=1, width=3)
+    for b in buildings:
+        d.polygon(P(b['pts']), fill=1)
+    return np.asarray(img, bool)
 
 
 # --- Buildings -----------------------------------------------------------------------
@@ -503,6 +549,7 @@ def main():
     ap.add_argument('--cache', required=True, help='folder for the downloads')
     ap.add_argument('--out', default=os.path.join(os.path.dirname(__file__), '..', 'src', 'locations'))
     ap.add_argument('--max-trees', type=int, default=5000)
+    ap.add_argument('--max-bushes', type=int, default=16000)
     ap.add_argument('--ground-px', type=int, default=2048)
     ap.add_argument('--lidar-buildings', action='store_true',
                     help='also add structures the LIDAR shows that OSM does not have (they may since have been demolished)')
@@ -537,8 +584,9 @@ def main():
     terrain = np.round(tg * 100).astype('<i2')
 
     trees = find_trees(vom, xs, zs, args.max_trees)
-    bushes = find_bushes(vom, xs, zs)
     buildings = buildings_from(areas, ndsm, vom, xs, zs, args.lidar_buildings)
+    no_plant = no_plant_mask(areas, lines, buildings, float(xs[0] - 0.5), float(zs[0] - 0.5), n)
+    bushes = find_bushes(vom, xs, zs, no_plant, args.max_bushes)
     print(f'{len(trees)} trees, {len(bushes)} bush points, {len(buildings)} buildings')
     png, img = paint_ground(areas, lines, buildings, vom, n, args.ground_px)
     img.save(os.path.join(args.cache, 'ground-preview.png'))

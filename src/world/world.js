@@ -600,8 +600,9 @@ export class World {
     this.#trees();
     const ob = this.obstacles;
     const q = this.quality;
-    const near = { nearDetail: q.nearDetail === 2 ? 1 : 0, nearRadius: Math.min(q.nearRadius, 250) };
-    for (const m of bushes(this.leafMat, ob.bushes, { detail: q.bushDetail, ...near, distance: this.viewDistance })) {
+    const near = { nearDetail: q.bushNear, nearRadius: Math.min(q.nearRadius, 250) };
+    const bushFar = Math.min(this.viewDistance, q.bushDistance ?? Infinity);
+    for (const m of bushes(this.leafMat, ob.bushes, { detail: q.bushDetail, ...near, distance: bushFar })) {
       m.userData.kind = 'bush';
       this.scene.add(m);
     }

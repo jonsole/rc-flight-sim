@@ -15,7 +15,7 @@
 
 import { heightAt } from './terrain.js';
 import { CROWN_SEEDS, crownShape, lumpScale, crownOf } from './treeShapes.js';
-import { LOCATION, clubAngle, clubToWorld } from './location.js';
+import { LOCATION, clubAngle, clubToWorld, inMown } from './location.js';
 import { prepareBuilding, roofAt, insideFootprint, nearestWall } from './buildings.js';
 import { EDITS, applyTreeEdits, applyBushEdits, applyBuildingEdits, applyFenceEdits, treeId } from './edits.js';
 
@@ -165,7 +165,14 @@ function makeBushes() {
   });
   if (LOCATION.data) {
     const p = LOCATION.data.bushes;
-    for (let i = 0; i < p.length; i += 3) add(p[i] + (rand() - 0.5) * 1.5, p[i + 1] + (rand() - 0.5) * 1.5, p[i + 2], 1.5 + rand() * 0.8);
+    for (let i = 0; i < p.length; i += 3) {
+      const x = p[i] + (rand() - 0.5) * 1.5;
+      const z = p[i + 1] + (rand() - 0.5) * 1.5;
+      const h = p[i + 2];
+      const w = Math.min(1.5 + rand() * 0.8, 0.7 + h * 0.7); // low scrub is narrower too
+      if (inMown(x, z)) continue; // the club keeps its mown grass clear
+      add(x, z, h, w);
+    }
     // Belts of tall bushes from the site layout: two staggered rows, 2.5 m apart.
     for (const b of LOCATION.layout.bushBelts ?? []) {
       const [ax, az] = b.from;
