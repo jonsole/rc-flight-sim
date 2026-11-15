@@ -18,10 +18,12 @@
 //   mown                (optional) the short-cut areas on it, world frame:
 //                       { oval: [x, z], rx, rz, p } rounded oval (p: 2 ellipse, lower more diamond,
 //                       mown in rings), or { x0, x1, z0, z1 } rectangle (mown in stripes).
-//                       Without it the whole field is short grass.
+//                       club: true puts an oval in the club frame. Without a
+//                       list the whole field is short grass.
+//   trees               real sites: extra trees { at: [[x, z], ...], h, r } (grown since the survey)
 //   flat                ground forced level to y = 0 here (rectangle), fading out over `fade` m
 //   hut, container      club buildings (null for none)
-//   gazebo, table, windsock, fence   (club frame)
+//   gazebo, table, windsock, fence   (club frame; null for none)
 //   cars                parked cars (world frame)
 //   conifers            real sites: guess conifers from narrow crowns (false: all broadleaf)
 //   treeBelts           real sites: tree lines grown since the LIDAR survey:
@@ -60,29 +62,30 @@ const WATERBEACH = {
   layout: {
     // The cricket pitch in the middle of the field is the runway: 28 m,
     // heading about 101°/281°. You stand 22 m south of it, facing it.
+    // No pits, tables, fence or windsock: just the field.
     angle: 11.19,
     runway: { x: 0, z: -22, length: 28.4, width: 3.05, style: 'cricket' },
-    pilotPad: { x: 0, z: 0.5, length: 6, width: 4 },
+    pilotPad: null,
     // The field: about 160 m east-west by 210 m north-south, long grass
-    // except a mown oval round the pitch and a mown rectangle south of it.
+    // except about 32 m round the pitch, and a mown rectangle south of it.
     field: { x0: -62, x1: 96, z0: -129, z1: 81 },
+    flat: { x0: -62, x1: 96, z0: -129, z1: 81, fade: 40 },
     mown: [
-      { oval: [7, -16.4], rx: 44, rz: 34.6, p: 1.6 },
+      { oval: [0, -22], rx: 14.2 + 32, rz: 1.5 + 32, p: 1.7, club: true },
       { x0: -14.4, x1: 65, z0: 29.1, z1: 73.7 },
     ],
-    flat: { x0: -62, x1: 96, z0: -129, z1: 81, fade: 40 },
     hut: null,
     container: null,
-    // In the car park south of the field.
-    cars: [
-      { x: -12, z: 96.7, color: '#b8202a' },
-      { x: -8.5, z: 97.1, color: '#c9ccd0' },
-      { x: -5, z: 96.5, color: '#284f8f' },
-    ],
-    gazebo: { x: 12, z: 12, size: 3, h: 2.5 },
-    table: { x: 6, z: 3 },
-    windsock: { x: -35, z: -42, height: 5 },
-    fence: { z: 6, x0: -60, x1: 60 },
+    cars: [],
+    gazebo: null,
+    table: null,
+    windsock: null,
+    fence: null,
+    // Young trees along the curved path west of the pitch, grown since the survey.
+    trees: [{
+      at: [[-18.9, -77.2], [-24.3, -70.1], [-29.3, -63.7], [-33.0, -57.5], [-37.6, -51.9], [-45.9, -44.4], [-53.8, -39.4]],
+      h: 9, r: 3.2,
+    }],
     // All deciduous round the field.
     conifers: false,
     // The east hedge's trees have grown a lot since the LIDAR (2022)...
@@ -132,7 +135,11 @@ export function worldToClub(x, z) {
 export function inMown(x, z) {
   const m = LOCATION.layout.mown;
   if (!m) return inField(x, z);
-  return m.some((a) => (a.oval ? ovalDist(a, x, z) < 1 : x >= a.x0 && x <= a.x1 && z >= a.z0 && z <= a.z1));
+  return m.some((a) => {
+    if (!a.oval) return x >= a.x0 && x <= a.x1 && z >= a.z0 && z <= a.z1;
+    const [px, pz] = a.club ? worldToClub(x, z) : [x, z];
+    return ovalDist(a, px, pz) < 1;
+  });
 }
 
 /** Rounded-oval "radius" of a point: < 1 inside. */

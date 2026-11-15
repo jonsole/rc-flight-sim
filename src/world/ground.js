@@ -36,7 +36,7 @@ function mownGlsl() {
     if (a.oval) {
       const r = Math.min(a.rx, a.rz);
       return `{
-          vec2 q = abs(p - vec2(${f(a.oval[0])}, ${f(a.oval[1])})) / vec2(${f(a.rx)}, ${f(a.rz)});
+          vec2 q = abs(${a.club ? 'pc' : 'p'} - vec2(${f(a.oval[0])}, ${f(a.oval[1])})) / vec2(${f(a.rx)}, ${f(a.rz)});
           float d = pow(pow(q.x, ${f(a.p)}) + pow(q.y, ${f(a.p)}), ${f(1 / a.p)});
           float m${i} = 1.0 - smoothstep(1.0 - 0.6 / ${f(r)}, 1.0 + 0.6 / ${f(r)}, d);
           float ring = step(0.5, fract(d * ${f(r)} / 2.2));

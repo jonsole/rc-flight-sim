@@ -182,7 +182,7 @@ export function surfaceAt(x, z) {
   const cx = x * CLUB_COS + z * CLUB_SIN;
   const cz = -x * CLUB_SIN + z * CLUB_COS;
   if (inRect(RUNWAY, cx, cz)) return RUNWAY.style === 'cricket' ? SURFACES.pitch : SURFACES.runway;
-  if (inRect(PILOT_PAD, cx, cz)) return SURFACES.pad;
+  if (PILOT_PAD && inRect(PILOT_PAD, cx, cz)) return SURFACES.pad;
   return inMown(x, z) ? SURFACES.grass : SURFACES.rough;
 }
 

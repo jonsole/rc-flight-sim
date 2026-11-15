@@ -248,21 +248,24 @@ def paint_ground(areas, lines, buildings, vom, size_m, px):
 # --- Trees -------------------------------------------------------------------------
 
 def find_trees(vom, xs, zs, max_trees):
-    """Tree tops in the 1 m vegetation height model: (x, z, h, crown radius)."""
-    v = np.nan_to_num(vom)
-    vs = ndimage.gaussian_filter(v, 1.0)
-    peaks = (vs >= 3.0) & (vs == ndimage.maximum_filter(vs, size=5))
+    """Tree tops in the 1 m vegetation height model: (x, z, h, crown radius).
+
+    LIDAR flown with the leaves off sees a speckled canopy, full of holes,
+    so it is closed up first (gaps of a few metres filled with the heights
+    round them). Then tree tops are found, each with the crown out to where
+    the canopy falls below half its height, and any canopy still not under
+    a crown gets trees of its own, so woods come out as dense as they are.
+    """
+    v = ndimage.gaussian_filter(ndimage.grey_closing(np.nan_to_num(vom), size=(5, 5)), 1.2)
+    peaks = (v >= 3.0) & (v == ndimage.maximum_filter(v, size=5))
     iy, ix = np.nonzero(peaks)
-    order = np.argsort(-vs[iy, ix])
+    order = np.argsort(-v[iy, ix])
     taken = []
     occ = np.zeros(v.shape, bool)
+    under = np.zeros(v.shape, bool)  # canopy under an accepted crown
     dirs = [(math.cos(a), math.sin(a)) for a in np.linspace(0, 2 * math.pi, 12, endpoint=False)]
-    for k in order:
-        y, x = iy[k], ix[k]
-        if occ[y, x]:
-            continue
-        h = float(v[max(0, y - 1):y + 2, max(0, x - 1):x + 2].max())
-        # Crown radius: where the canopy drops below half the tree height.
+
+    def crown(y, x, h):
         rs = []
         for dx, dy in dirs:
             r = 1
@@ -272,11 +275,42 @@ def find_trees(vom, xs, zs, max_trees):
                     break
                 r += 1
             rs.append(r)
-        cr = float(np.clip(np.mean(rs), 1.2, 0.45 * h))
+        return float(np.clip(np.mean(rs), 1.2, 0.45 * h))
+
+    def accept(y, x, h, cr):
         taken.append((xs[x], zs[y], h, cr))
         # The next tree's top must be outside most of this crown.
         sep = max(2, int(cr * 0.85))
         occ[max(0, y - sep):y + sep + 1, max(0, x - sep):x + sep + 1] |= _disc(sep, y, x, v.shape)
+        rr = max(1, int(cr))
+        under[max(0, y - rr):y + rr + 1, max(0, x - rr):x + rr + 1] |= _disc(rr, y, x, v.shape)
+
+    for k in order:
+        y, x = iy[k], ix[k]
+        if occ[y, x]:
+            continue
+        h = float(v[y, x])
+        accept(y, x, h, crown(y, x, h))
+    # Canopy left uncovered: a tree at the tallest point of each patch.
+    for _ in range(3):
+        holes = (v >= 3.5) & ~under
+        lab, n = ndimage.label(holes)
+        if not n:
+            break
+        added = 0
+        for i, sl in enumerate(ndimage.find_objects(lab), start=1):
+            m = lab[sl] == i
+            area = int(m.sum())
+            if area < 10:
+                continue
+            w = np.where(m, v[sl], 0)
+            yy, xx = np.unravel_index(np.argmax(w), w.shape)
+            y, x = yy + sl[0].start, xx + sl[1].start
+            h = float(v[y, x])
+            accept(y, x, h, float(np.clip(math.sqrt(area / math.pi), 1.5, 0.45 * h)))
+            added += 1
+        if not added:
+            break
     # Nearest the field first, so a cap drops the far ones.
     taken.sort(key=lambda t: t[0] ** 2 + t[1] ** 2)
     return taken[:max_trees]
@@ -426,7 +460,7 @@ def main():
     ap.add_argument('site', choices=SITES)
     ap.add_argument('--cache', required=True, help='folder for the downloads')
     ap.add_argument('--out', default=os.path.join(os.path.dirname(__file__), '..', 'src', 'locations'))
-    ap.add_argument('--max-trees', type=int, default=3500)
+    ap.add_argument('--max-trees', type=int, default=5000)
     ap.add_argument('--ground-px', type=int, default=2048)
     ap.add_argument('--lidar-buildings', action='store_true',
                     help='also add structures the LIDAR shows that OSM does not have (they may since have been demolished)')

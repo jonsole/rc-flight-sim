@@ -415,7 +415,7 @@ paused = true; // until the splash is dismissed
 // --- Main loop -------------------------------------------------------------------
 let last = performance.now();
 const windTmp = new Vector3();
-const windsockPos = new Vector3(obstacles.windsock.x, obstacles.windsock.height, obstacles.windsock.z);
+const windsockPos = new Vector3(obstacles.windsock?.x ?? 0, obstacles.windsock?.height ?? 5, obstacles.windsock?.z ?? 0);
 let rssi = 99;
 
 function frame(now) {

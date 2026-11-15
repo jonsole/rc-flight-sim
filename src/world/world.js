@@ -501,16 +501,18 @@ export class World {
     rw.receiveShadow = true;
     this.club.add(rw);
 
-    // Pilot box (gravel pad) and safety fence line
-    const pad = new Mesh(new PlaneGeometry(PILOT_PAD.length, PILOT_PAD.width), addCloudShadows(new MeshLambertMaterial({ map: gravelTexture(), polygonOffset: true, polygonOffsetFactor: -2 })));
-    pad.rotation.x = -Math.PI / 2;
-    pad.position.set(PILOT_PAD.x, 0.002, PILOT_PAD.z);
-    pad.receiveShadow = true;
-    this.club.add(pad);
-
+    // Pilot box (gravel pad) and safety fence line, where the club has them.
+    if (PILOT_PAD) {
+      const pad = new Mesh(new PlaneGeometry(PILOT_PAD.length, PILOT_PAD.width), addCloudShadows(new MeshLambertMaterial({ map: gravelTexture(), polygonOffset: true, polygonOffsetFactor: -2 })));
+      pad.rotation.x = -Math.PI / 2;
+      pad.position.set(PILOT_PAD.x, 0.002, PILOT_PAD.z);
+      pad.receiveShadow = true;
+      this.club.add(pad);
+    }
+    const fence = this.obstacles.fence;
+    if (!fence) return;
     const postGeo = new CylinderGeometry(0.04, 0.04, 1.1, 6);
     const postMat = new MeshStandardMaterial({ color: '#6b5b45' });
-    const fence = this.obstacles.fence;
     const posts = new InstancedMesh(postGeo, postMat, fence.posts.length);
     const o = new Object3D();
     fence.posts.forEach((x, i) => {
@@ -630,8 +632,10 @@ export class World {
     sockMesh.castShadow = true;
     sock.add(sockMesh);
     ws.add(sock);
+    // (Still worked out where a site has none: it's just not shown.)
     const wsAt = this.obstacles.windsock;
-    ws.position.set(wsAt.x, 0, wsAt.z);
+    ws.position.set(wsAt?.x ?? 0, 0, wsAt?.z ?? 0);
+    ws.visible = !!wsAt;
     this.scene.add(ws);
     this.windsock = sock;
     this.sockMesh = sockMesh;
@@ -649,7 +653,7 @@ export class World {
       }
     });
     // Pits and club buildings in the club frame; cars and site fences in the world.
-    const clubThings = [gazebo(ob.gazebo)];
+    const clubThings = ob.gazebo ? [gazebo(ob.gazebo)] : [];
     if (ob.hut) clubThings.push(clubhouse(ob.hut));
     if (ob.container) clubThings.push(shippingContainer(ob.container));
     for (const o of clubThings) {
@@ -668,6 +672,7 @@ export class World {
     }
 
     // Flight-line table
+    if (!ob.table) return;
     const tx = ob.table.x;
     const tz = ob.table.z;
     const table = new Mesh(new BoxGeometry(2, 0.06, 0.8), new MeshStandardMaterial({ color: '#c8c8c8' }));

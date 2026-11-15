@@ -48,6 +48,9 @@ function realTrees() {
   const raw = [];
   for (let i = 0; i < t.length; i += 4) raw.push({ x: t[i], z: t[i + 1], h: t[i + 2], r: t[i + 3] });
   for (const belt of L.treeBelts ?? []) growBelt(raw, belt, rand);
+  for (const group of L.trees ?? []) {
+    for (const [x, z] of group.at) raw.push({ x, z, h: group.h * (0.9 + rand() * 0.2), r: group.r * (0.9 + rand() * 0.2) });
+  }
   for (const { x, z, h, r } of raw) {
     // Narrow for its height: probably a conifer (or a Lombardy poplar).
     const conifer = L.conifers !== false && r < h * 0.17 && h > 8;
@@ -186,25 +189,33 @@ export class Obstacles {
     // Pop-up gazebo in the pits, behind the safety fence.
     this.gazebo = L.gazebo;
     const gz = L.gazebo;
-    for (const [dx, dz] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5]]) {
-      club.push({ type: 'cylinder', name: 'the gazebo', x: gz.x + dx, z: gz.z + dz, r: 0.03, y0: 0, y1: 2.2 });
+    if (gz) {
+      for (const [dx, dz] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5]]) {
+        club.push({ type: 'cylinder', name: 'the gazebo', x: gz.x + dx, z: gz.z + dz, r: 0.03, y0: 0, y1: 2.2 });
+      }
+      club.push({ type: 'box', name: 'the gazebo', min: [gz.x - 1.6, 2.1, gz.z - 1.6], max: [gz.x + 1.6, 2.7, gz.z + 1.6] });
+      club.push({ type: 'box', name: 'the pits table', min: [gz.x - 1, 0, gz.z + 0.2], max: [gz.x + 1, 0.75, gz.z + 1] });
     }
-    club.push({ type: 'box', name: 'the gazebo', min: [gz.x - 1.6, 2.1, gz.z - 1.6], max: [gz.x + 1.6, 2.7, gz.z + 1.6] });
-    club.push({ type: 'box', name: 'the pits table', min: [gz.x - 1, 0, gz.z + 0.2], max: [gz.x + 1, 0.75, gz.z + 1] });
     // Windsock pole (kept in world coordinates: it swings with the wind).
     const ws = L.windsock;
-    const [wsx, wsz] = clubToWorld(ws.x, ws.z);
-    this.windsock = { ...ws, x: wsx, z: wsz };
-    club.push({ type: 'cylinder', name: 'the windsock pole', x: ws.x, z: ws.z, r: 0.05, y0: 0, y1: ws.height });
+    this.windsock = null;
+    if (ws) {
+      const [wsx, wsz] = clubToWorld(ws.x, ws.z);
+      this.windsock = { ...ws, x: wsx, z: wsz };
+      club.push({ type: 'cylinder', name: 'the windsock pole', x: ws.x, z: ws.z, r: 0.05, y0: 0, y1: ws.height });
+    }
     // Safety fence: posts and the top rail.
     const f = L.fence;
-    const nPosts = Math.round((f.x1 - f.x0) / 5.1) + 1;
-    this.fence = { z: f.z, posts: Array.from({ length: nPosts }, (_, i) => f.x0 + i * 5.1), height: 1.1, railY: 1.0, x0: f.x0, x1: f.x1 };
-    for (const px of this.fence.posts) club.push({ type: 'cylinder', name: 'the fence', x: px, z: f.z, r: 0.04, y0: 0, y1: 1.1 });
-    club.push({ type: 'box', name: 'the fence', min: [f.x0, 0.98, f.z - 0.02], max: [f.x1, 1.02, f.z + 0.02] });
+    this.fence = null;
+    if (f) {
+      const nPosts = Math.round((f.x1 - f.x0) / 5.1) + 1;
+      this.fence = { z: f.z, posts: Array.from({ length: nPosts }, (_, i) => f.x0 + i * 5.1), height: 1.1, railY: 1.0, x0: f.x0, x1: f.x1 };
+      for (const px of this.fence.posts) club.push({ type: 'cylinder', name: 'the fence', x: px, z: f.z, r: 0.04, y0: 0, y1: 1.1 });
+      club.push({ type: 'box', name: 'the fence', min: [f.x0, 0.98, f.z - 0.02], max: [f.x1, 1.02, f.z + 0.02] });
+    }
     // Flight-line table.
     this.table = L.table;
-    club.push({ type: 'box', name: 'the table', min: [L.table.x - 1, 0, L.table.z - 0.4], max: [L.table.x + 1, 0.78, L.table.z + 0.4] });
+    if (L.table) club.push({ type: 'box', name: 'the table', min: [L.table.x - 1, 0, L.table.z - 0.4], max: [L.table.x + 1, 0.78, L.table.z + 0.4] });
     for (const sh of club) this.shapes.push(clubShapeToWorld(sh));
     // Cars in the car park, nose to the field (world frame).
     this.cars = L.cars;
