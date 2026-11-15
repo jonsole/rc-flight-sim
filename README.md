@@ -104,6 +104,24 @@ copyright and/or database right, licensed under the
 [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/),
 and map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL).
 
+### Surveying a field with a phone
+
+`survey.html` (https://jonsole.github.io/rc-flight-sim/survey.html, or `/dev/survey.html`)
+is a page for walking a real field with a phone to make its layout more accurate.
+Open it in Chrome on the phone and allow location:
+
+- **Record point**: stand on the spot and keep still; it averages GPS for 5–60 s.
+- **Photo here**: a quick point at the current position with a photo and compass heading.
+- **Walk a line**: adds a point every 3 m as you walk a fence, hedge or mown edge.
+
+The map shows the site's baked ground map, your position and what you have
+recorded. Everything is kept on the phone (IndexedDB) until cleared. **Export zip**
+shares `survey.json` plus the photos. Each feature keeps its raw GPS values plus its
+National Grid position and the site's world position (`local`: x east, z south
+of the pilot), ready for `src/sim/location.js`. The conversion is the same
+Helmert WGS84 → OSGB36 shift the baker used for OpenStreetMap, good to about 2 m.
+Phone GPS adds 2–5 m on top, so averaging and open ground matter.
+
 ## Flying with your transmitter
 
 Most transmitters can act as a USB game controller:
