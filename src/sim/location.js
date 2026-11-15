@@ -60,8 +60,8 @@ const HOME = {
 
 const WATERBEACH = {
   id: 'waterbeach',
-  name: 'Waterbeach',
-  summary: 'The real field at Waterbeach, Cambridgeshire, from Environment Agency LIDAR and OpenStreetMap.',
+  name: 'Barrack Field',
+  summary: 'Barrack Field at Waterbeach, Cambridgeshire: the real field, from Environment Agency LIDAR and OpenStreetMap.',
   load: () => import('../locations/waterbeach.json'),
   layout: {
     // The cricket pitch in the middle of the field is the runway: 28 m,

@@ -73,12 +73,12 @@ published leaves the live page on the older build.
 ## Flying fields
 
 Pick the field on the start screen or under *Menu → Flying → Flying field*
-(changing it reloads the page; `?field=waterbeach` in the URL works too):
+(changing it reloads the page; `?field=waterbeach` in the URL opens Barrack Field):
 
 | Field | Notes |
 | --- | --- |
 | **Club field** | Made up: a mown field in rolling country. |
-| **Waterbeach** | The real field at Waterbeach, Cambridgeshire. 2 × 2 km of scenery around it is built from Environment Agency 1 m LIDAR (ground, ~3500 trees at their measured heights and crown sizes, hedges, building heights) and OpenStreetMap (building outlines, roads, paths, water, gardens, farmland). |
+| **Barrack Field** | The real field at Waterbeach, Cambridgeshire: the cricket pitch is the runway, with the grass mown about 32 m round it, and you stand 10 m south of it. 2 × 2 km of scenery around it is built from Environment Agency 1 m LIDAR (ground, ~5000 trees at their measured heights and crown sizes, hedges, building heights) and OpenStreetMap (building outlines, roads, paths, water, gardens, farmland), touched up from what's there now: bigger trees, the chain-link and temporary fences, demolished buildings left out. |
 
 Real fields are baked by `tools/bake_location.py` into `src/locations/<id>.json`
 (about 2.6 MB), so nothing is fetched at run time and no API key is needed:
@@ -89,11 +89,17 @@ python3 tools/bake_location.py waterbeach --cache /tmp/waterbeach-data
 ```
 
 To add a field in England, add it to `SITES` in the script (the OSGB
-easting/northing where the pilot stands) and its layout (runway, pilot box,
-fence, windsock, cars) to `src/sim/location.js`. Players in multiplayer only
-meet others at the same field.
+easting/northing where the pilot stands) and its layout (runway and its
+heading, mown areas, pilot box, fences, trees grown since the survey) to
+`src/sim/location.js`. Players in multiplayer only meet others at the same
+field.
 
-Waterbeach scenery contains Environment Agency LIDAR data © Environment Agency
+If the picture is jerky, lower *Menu → View → Graphics*: quality (Low /
+Medium / High: how detailed the trees are and how far out, screen
+resolution, shadow sharpness) and scenery distance. Both are on the start
+screen too.
+
+Barrack Field scenery contains Environment Agency LIDAR data © Environment Agency
 copyright and/or database right, licensed under the
 [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/),
 and map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL).
