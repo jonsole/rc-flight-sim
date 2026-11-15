@@ -99,10 +99,13 @@ function layout(style) {
     incidence: 2 * deg,
     wingY: high ? 0.094 : -0.065,  // underside of the wing at the root
     dihedral: (high ? 0 : 5) * deg, // as built (what you see); high wing: none
-    // Effective dihedral for the aerodynamics: a high wing adds stability
-    // (≈ +10° here, tuned so it is close to spirally neutral like a real
-    // Cub-type), a low wing gives less.
-    aeroDihedral: (high ? 12 : 6) * deg,
+    // Effective dihedral for the aerodynamics: a high wing adds a little
+    // roll stability (keel effect) though the wing itself is flat. 3° keeps
+    // it close to spirally neutral like a real Cub-type (from a 30° bank,
+    // hands off, it is at ~17° after 5 s) without full rudder rolling it
+    // hard (25° in a second; it was 41° at 12°). Low wing (Agro): its 5° of
+    // dihedral less the low-wing effect (rudder rolled it 46° at 6°; ~28 now).
+    aeroDihedral: 3 * deg,
     rootZ: high ? 0 : 0.04,        // low wing joins the fuselage side
     slats: style.slats ? { from: high ? 0.05 : 0.045, to: 0.42 } : null, // spanwise extent (m)
     hinge: high ? 0.68 : 0.75,     // aileron hinge, fraction of chord (plan: 70 mm flaperons)
@@ -157,7 +160,7 @@ export function buildBuschtrottel(style) {
     // Slats keep lift almost constant well past the stall, so a dropping wing
     // doesn't lose lift and autorotate: it mushes and the nose drops instead.
     stallDrop: style.slats ? 0.6 : 1.6,
-    cd0: style.slats ? 0.036 : 0.03, // stepped foam section, exposed edges (+ slats)
+    cd0: style.slats ? 0.05 : 0.042, // stepped foam section, exposed edges (+ slats): glides ~4:1
     ar: AR,
     e: 0.75,
   };
@@ -191,7 +194,7 @@ export function buildBuschtrottel(style) {
   const t = L.tail;
   const tailArea = polyArea(L.outlines.stab);
   const tailAr = t.span ** 2 / tailArea;
-  const tailFoil = { cla: liftSlope(tailAr), alpha0: 0, alphaStall: 16 * deg, cd0: 0.025, ar: tailAr, e: 0.75 };
+  const tailFoil = { cla: liftSlope(tailAr), alpha0: 0, alphaStall: 16 * deg, cd0: 0.035, ar: tailAr, e: 0.75 };
   const tail = [-1, 1].map((side) => ({
     name: `stab-${side > 0 ? 'R' : 'L'}`,
     pos: [t.leX - t.chord * 0.3, t.y, side * t.span * 0.25],
@@ -217,7 +220,7 @@ export function buildBuschtrottel(style) {
     span: [0, -1, 0], // normal = +z (right)
     // Exposed area: the outline less the part buried in the fuselage.
     area: polyArea(finPts) * 0.85,
-    foil: { cla: liftSlope(finAr), alpha0: 0, alphaStall: 20 * deg, cd0: 0.025, ar: finAr, e: 0.7 },
+    foil: { cla: liftSlope(finAr), alpha0: 0, alphaStall: 20 * deg, cd0: 0.035, ar: finAr, e: 0.7 },
     propwash: 0.85,
     controls: [{ input: 'yaw', gain: -1, max: 30 * deg, tau: 0.6 }],
   };
@@ -229,7 +232,7 @@ export function buildBuschtrottel(style) {
       chord: [1, 0, 0],
       span: [0, -1, 0],
       area: 0.065,
-      foil: { cla: liftSlope(0.3), alpha0: 0, alphaStall: 25 * deg, cd0: 0.02, ar: 0.3, e: 0.5 },
+      foil: { cla: liftSlope(0.3), alpha0: 0, alphaStall: 25 * deg, cd0: 0.028, ar: 0.3, e: 0.5 },
       controls: [],
     },
     {
@@ -255,7 +258,7 @@ export function buildBuschtrottel(style) {
     name: style.name,
     mass: style.mass,
     inertia: [0.010, 0.020, 0.012], // roll, yaw, pitch (estimated)
-    parasite: { x: style.mount === 'low' ? 0.0075 : 0.0065, y: 0.03, z: 0.04 },
+    parasite: { x: style.mount === 'low' ? 0.0135 : 0.0117, y: 0.03, z: 0.04 }, // gear legs, wheels, blunt foam
     surfaces: [...wing, ...tail, fin, ...body],
     wingAspectRatio: AR,
     wingArea: SPAN * CHORD,
@@ -359,8 +362,8 @@ const COMMON = 'Fixed LE slats. AT2308 1450Kv, 3S 1350 mAh, ~450 g.';
 
 // Props on the AT2308 1450Kv / 3S. Loaded rpm and static thrust are
 // estimates from typical prop data; pitch speed = pitch × loaded rpm.
-const PROP_8x6 = { blades: 2, pitchIn: 6, rpm: 11000, staticThrust: 6.2, pitchSpeed: 28, current: 16 };
-const PROP_8x45x3 = { blades: 3, pitchIn: 4.5, rpm: 11000, staticThrust: 7.0, pitchSpeed: 21, current: 16 };
+const PROP_8x6 = { blades: 2, pitchIn: 6, rpm: 11000, staticThrust: 9.0, pitchSpeed: 28, current: 16 };
+const PROP_8x45x3 = { blades: 3, pitchIn: 4.5, rpm: 11000, staticThrust: 10.2, pitchSpeed: 21, current: 16 };
 
 export const BUSCHTROTTEL_SHOCKCUB = buildBuschtrottel({
   id: 'buschtrottel-shockcub',

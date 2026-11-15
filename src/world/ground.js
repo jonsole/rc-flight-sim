@@ -10,11 +10,14 @@
 // At a real site the baked colour map (roads, paths, water, gardens, fields
 // from OpenStreetMap) replaces the made-up zones, with the grass texture's
 // detail on top; the made-up farmland only carries on beyond it.
-import { CanvasTexture, SRGBColorSpace, Vector2 } from 'three';
+import { CanvasTexture, SRGBColorSpace, Vector2, Vector3 } from 'three';
 import { RUNWAY } from '../sim/terrain.js';
 import { LOCATION, clubAngle } from '../sim/location.js';
 
 const FIELD = { x: 0, z: -40, r: 260 };
+
+/** Grass colour for the season (src/world/seasons.js), shared by the ground's shader. */
+export const groundUniforms = { uGrassTint: { value: new Vector3(1, 1, 1) } };
 
 /** GLSL polyFieldDist(p): distance outside a polygon field (0 inside). */
 function polyGlsl() {
@@ -129,6 +132,7 @@ export function addGroundDetail(material) {
   const trackDist = track.slice(1).map((b, i) => `segDist(p, ${track[i]}, ${b})`).reduce((a, b) => `min(${a}, ${b})`);
   material.onBeforeCompile = (shader, renderer) => {
     prev?.(shader, renderer);
+    Object.assign(shader.uniforms, groundUniforms);
     if (real) {
       shader.uniforms.groundMap = { value: real.tex };
       shader.uniforms.groundOrigin = { value: real.origin };
@@ -139,7 +143,7 @@ export function addGroundDetail(material) {
       .replace('#include <common>', '#include <common>\nvarying vec3 vGroundWorld;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGroundWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${GLSL}\n${polyGlsl()}\n#ifdef REAL_GROUND\nuniform sampler2D groundMap; uniform vec2 groundOrigin; uniform float groundSize;\n#endif`)
+      .replace('#include <common>', `#include <common>\n${GLSL}\n${polyGlsl()}\nuniform vec3 uGrassTint;\n#ifdef REAL_GROUND\nuniform sampler2D groundMap; uniform vec2 groundOrigin; uniform float groundSize;\n#endif`)
       .replace('#include <map_fragment>', /* glsl */ `
         vec2 p = vGroundWorld.xz;
         // Grass texture at two scales and angles, blended by a slow noise,
@@ -228,6 +232,9 @@ ${mownGlsl()}
         g = mix(g, gravel, 1.0 - smoothstep(0.0, 0.8, dPark));
 #endif
 
+        // The season: on green (grassy) ground only, not roads and paths.
+        float grassy = smoothstep(0.0, 0.06, g.g - max(g.r, g.b));
+        g *= mix(vec3(1.0), uGrassTint, grassy);
         diffuseColor.rgb *= g;
       `);
   };

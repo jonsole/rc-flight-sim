@@ -28,7 +28,7 @@ function referenceLayout(cgFromUpperLeRef) {
     upperLeX,
     lowerY: -0.10,
     upperY: 0.17,
-    dihedral: 4.5 * deg,
+    dihedral: 2.5 * deg, // as on the model (4.5 made rudder roll it 72° in a second)
     incidence: 2.0 * deg,
     lowerRootZ: 0.08,
     // Tailplane, nose and cockpit measured off a 3D model of the S.E.5a
@@ -173,7 +173,7 @@ export function buildSE5a(o) {
       chord: [1, 0, 0],
       span: [0, -1, 0],
       area: s2(0.16),
-      foil: { cla: liftSlope(0.4), alpha0: 0, alphaStall: 25 * deg, cd0: 0.02, ar: 0.4, e: 0.5 },
+      foil: { cla: liftSlope(0.4), alpha0: 0, alphaStall: 25 * deg, cd0: 0.032, ar: 0.4, e: 0.5 },
       controls: [],
     });
     // Fuselage plan area (top/bottom): adds a little pitch damping.
@@ -199,7 +199,8 @@ export function buildSE5a(o) {
     inertia: o.inertia,
     // Parasite drag of everything not modelled as a surface: struts, wires,
     // radiator, undercarriage, guns... as an equivalent flat-plate area (m²).
-    parasite: { x: s2(0.024), y: s2(0.08), z: s2(0.06) },
+    // Struts, wires, radiator, guns: a draggy biplane (glides ~5:1).
+    parasite: { x: s2(0.053), y: s2(0.08), z: s2(0.06) },
     surfaces: [
       ...wingPanels('upper', G.upperLeX, G.upperY, 0.0, 3, s(0.4)),
       ...wingPanels('lower', G.lowerLeX, G.lowerY, G.lowerRootZ, 3, s(0.4)),
@@ -289,10 +290,10 @@ export const EFLITE_SE5a_900 = buildSE5a({
   mass: 1.303,
   inertia: [0.026, 0.044, 0.02],
   propRadius: 0.127,
-  foil: { cd0: 0.02, alphaStall: 14 * deg, stallWidth: 0.03 }, // foam wing: softish stall
+  foil: { cd0: 0.032, alphaStall: 14 * deg, stallWidth: 0.03 }, // foam wing: softish stall
   elevatorThrow: 16 * deg,
   // 3513-1100Kv on 4S with a 10x5: ~12,500 rpm loaded, ≈1.25:1 thrust/weight.
-  motor: { staticThrust: 16, pitchSpeed: 26, spoolTime: 0.08, torqueFactor: 0.0055, maxRpm: 12500 },
+  motor: { staticThrust: 21.6, pitchSpeed: 26, spoolTime: 0.08, torqueFactor: 0.0055, maxRpm: 12500 },
   battery: { cells: 4, capacity: 2200, maxCurrent: 38, internalResistance: 0.015 * 4 },
   // Small hard wheels close in front of the CG (axle ~65 mm ahead, about under
   // the top wing's leading edge): they drag and catch on grass, so without up
@@ -302,7 +303,7 @@ export const EFLITE_SE5a_900 = buildSE5a({
     wheelX: 0.065, rollScale: 1.8, bumpScale: 2,
   },
   trim: { roll: 0.002 }, // aileron trim against motor torque at cruise
-  upperWingDihedralEffect: 5 * deg, // top wing well above the CG acts like a high wing
+  upperWingDihedralEffect: 1 * deg, // top wing well above the CG acts a little like a high wing
   visualDihedral: 2.5 * deg, // as it looks on the model
   defaultAssist: 'as3x',
 });

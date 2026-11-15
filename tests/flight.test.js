@@ -215,7 +215,9 @@ for (const entry of AIRCRAFT) {
         ac.step(1e-6);
         const q = 0.5 * 1.225 * 100;
         const clBeta = ac.lastForces.moment.x / (q * def.wingArea * ac.wingSpan) / beta;
-        expect(clBeta).toBeLessThan(-0.08); // rolls left, raising the right wing
+        // Rolls left, raising the right wing. Modest: the models are tuned
+        // close to spirally neutral, so rudder doesn't roll them hard.
+        expect(clBeta).toBeLessThan(-0.05);
       });
 
       it('rolls back towards level when a bank is released (hands off)', () => {
@@ -223,7 +225,8 @@ for (const entry of AIRCRAFT) {
         ac.update(3);
         ac.orientation.multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), 30 * deg));
         ac.update(10);
-        expect(Math.abs(ac.attitude().roll)).toBeLessThan(15 * deg);
+        // Slowly: close to spirally neutral, but never spirally unstable.
+        expect(Math.abs(ac.attitude().roll)).toBeLessThan(25 * deg);
       });
 
       it('gets ground effect: more lift and less drag just above the ground', () => {
@@ -240,7 +243,8 @@ for (const entry of AIRCRAFT) {
         const near = forcesAt(0.1);
         const far = forcesAt(3);
         expect(near.lift).toBeGreaterThan(far.lift * 1.03);
-        expect(near.drag).toBeLessThan(far.drag * 0.9);
+        // Only the induced drag drops: less in all with more profile drag.
+        expect(near.drag).toBeLessThan(far.drag * 0.92);
         expect(near.ge).toBeGreaterThan(0.1); // biplanes get less: the upper wing is higher
         expect(far.ge).toBeLessThan(0.01);
       });
@@ -699,4 +703,56 @@ describe('E-flite S.E.5a on grass (like the real model)', () => {
   it('takes off safely when up elevator is held', async () => {
     expect(await noseOvers(0.35)).toBe(0);
   });
+});
+
+describe('rudder and aileron coupling', () => {
+  const trimmed = (id) => {
+    const ac = new Aircraft(getAircraft(id).def, { ground });
+    ac.assistMode = 'off';
+    ac.resetInAir(new Vector3(0, 120, 0), 0, 13);
+    ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 0.45 };
+    ac.update(3);
+    return ac;
+  };
+  for (const id of ['buschtrottel-shockcub', 'buschtrottel-highlander', 'buschtrottel-agro', 'eflite-se5a-900']) {
+    it(`${id}: full rudder for a second rolls it only moderately`, () => {
+      const ac = trimmed(id);
+      const r0 = ac.attitude().roll;
+      ac.controls.yaw = 1;
+      ac.update(1);
+      // Was 41° (ShockCub), 46° (Agro), 72° (S.E.5a: a biplane rolls more).
+      expect(Math.abs(ac.attitude().roll - r0)).toBeLessThan((id.includes('se5a') ? 40 : 30) * deg);
+    });
+
+    it(`${id}: aileron gives adverse yaw at first (nose swings out of the roll)`, () => {
+      const ac = trimmed(id);
+      ac.controls.roll = 1;
+      let adverse = -Infinity;
+      for (let i = 0; i < 15; i++) {
+        ac.update(0.01);
+        // Body yaw rate the same sign as the roll rate is away from the roll
+        // here (as for the S.E.5a, which shows adverse yaw throughout).
+        adverse = Math.max(adverse, ac.omega.y * Math.sign(ac.omega.x));
+      }
+      expect(adverse).toBeGreaterThan(0.25);
+    });
+  }
+});
+
+describe('gliding: draggy foamies come down', () => {
+  for (const id of ['eflite-se5a-900', 'buschtrottel-shockcub', 'buschtrottel-highlander', 'buschtrottel-agro']) {
+    it(`${id}: hands-off, motor off, glides between 3:1 and 6:1`, () => {
+      const ac = new Aircraft(getAircraft(id).def, { ground });
+      ac.assistMode = 'off';
+      ac.resetInAir(new Vector3(0, 400, 0), 0, 12);
+      ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 0 };
+      ac.update(6);
+      const p0 = ac.position.clone();
+      ac.update(12);
+      const d = ac.position.clone().sub(p0);
+      const glide = Math.hypot(d.x, d.z) / -d.y;
+      expect(glide).toBeGreaterThan(3);
+      expect(glide).toBeLessThan(6); // the S.E.5a glided 7.7:1, the Buschtrottels ~5:1
+    });
+  }
 });

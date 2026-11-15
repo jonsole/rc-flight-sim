@@ -243,11 +243,18 @@ export function coniferTrunk() {
   });
 }
 
-/** Shared state for the leaf shader: time and wind (m/s, blowing towards dir). */
+/**
+ * Shared state for the leaf shader: time and wind (m/s, blowing towards
+ * dir), and the season (src/world/seasons.js): how bare the broadleaves
+ * are, how far into autumn colour, how fresh the spring green.
+ */
 export const leafUniforms = {
   uLeafTime: { value: 0 },
   uWindSpeed: { value: 0 },
   uWindDir: { value: new Vector3(1, 0, 0) },
+  uBare: { value: 0 },
+  uAutumn: { value: 0 },
+  uFresh: { value: 0 },
 };
 
 /**
@@ -290,11 +297,31 @@ export function addLeafShading(material) {
           }
         }
         #endif`);
-    shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uBare;\nuniform float uAutumn;\nuniform float uFresh;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
         {
           vec3 wp = vCloudWorld;
           float m = cNoise(wp.xz * 0.45 + wp.y * 0.6) * 0.6 + cNoise(wp.xz * 1.7 - wp.y * 1.3) * 0.4;
           diffuseColor.rgb *= mix(vec3(0.84, 0.86, 0.86), vec3(1.12, 1.12, 0.96), m);
+          #ifndef CONIFER
+          float lum = dot(diffuseColor.rgb, vec3(0.3, 0.55, 0.15));
+          // Each tree turns its own colour in autumn (by where it stands),
+          // from yellow through orange to brown, some later than others.
+          float tone = cNoise(wp.xz * 0.09 + 7.0);
+          float turn = uAutumn * smoothstep(0.15, 0.6, tone + uAutumn * 0.6);
+          vec3 autumnCol = mix(vec3(2.3, 1.85, 0.55), mix(vec3(2.4, 1.15, 0.35), vec3(1.5, 0.95, 0.55), step(0.7, tone)), smoothstep(0.35, 0.65, tone));
+          diffuseColor.rgb = mix(diffuseColor.rgb, lum * autumnCol, turn);
+          // New leaves in spring: paler, fresher green.
+          diffuseColor.rgb = mix(diffuseColor.rgb, lum * vec3(1.15, 1.75, 0.6), uFresh * 0.5);
+          // Winter: bare. Most of the crown goes (see-through), what's left
+          // is grey-brown twigs.
+          if (uBare > 0.0) {
+            float twigs = cNoise(wp.xz * 2.3 + wp.y * 1.9) * 0.55 + cNoise(vec2(wp.x + wp.z, wp.y) * 6.1) * 0.45;
+            if (twigs < uBare * 0.82) discard;
+            diffuseColor.rgb = mix(diffuseColor.rgb, lum * vec3(1.25, 1.05, 0.9), uBare);
+          }
+          #endif
         }`);
   };
   const prevKey = material.customProgramCacheKey?.bind(material);

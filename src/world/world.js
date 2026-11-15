@@ -11,7 +11,8 @@ import { buildingsMesh } from './buildings.js';
 import { clubAngle } from '../sim/location.js';
 import { sunPosition, moonPosition } from './sun.js';
 import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
-import { addGroundDetail } from './ground.js';
+import { addGroundDetail, groundUniforms } from './ground.js';
+import { seasonFor } from './seasons.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
 import { QUALITY } from './quality.js';
 import { CROWN_SEEDS, crownOf } from '../sim/treeShapes.js';
@@ -582,6 +583,26 @@ export class World {
     if (this.shadows) this.shadows.dirty = true;
   }
 
+  /**
+   * The time of year (day 1-366): leaves (bare in winter, autumn colours,
+   * fresh in spring) and grass. Bare crowns stop casting leafy shadows.
+   */
+  setSeason(day) {
+    this.seasonDay = day;
+    const s = seasonFor(day);
+    leafUniforms.uBare.value = s.bare;
+    leafUniforms.uAutumn.value = s.autumn;
+    leafUniforms.uFresh.value = s.fresh;
+    groundUniforms.uGrassTint.value.set(...s.grass);
+    const leafy = s.bare < 0.5;
+    if (leafy !== this.leafy) {
+      this.leafy = leafy;
+      for (const m of this.trees?.crowns ?? []) m.castShadow = leafy;
+      for (const o of this.siteObjects ?? []) if (o.userData.kind === 'bush') o.castShadow = leafy;
+      if (this.shadows) this.shadows.dirty = true;
+    }
+  }
+
   /** Leaf sway and wind: time in seconds, wind speed m/s and direction it blows FROM (degrees). */
   updateTrees(t, windSpeed, windFromDeg) {
     leafUniforms.uLeafTime.value = t;
@@ -639,6 +660,10 @@ export class World {
     }
     this.#site();
     this.placeWindsock();
+    if (this.seasonDay != null) {
+      this.leafy = undefined; // the new crowns' shadows follow the season too
+      this.setSeason(this.seasonDay);
+    }
     if (this.googleMode) this.setGoogleMode(true);
     if (this.shadows) this.shadows.dirty = true;
   }
