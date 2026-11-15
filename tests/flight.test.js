@@ -5,6 +5,7 @@ import { AIRCRAFT, getAircraft } from '../src/aircraft/index.js';
 import { buildBuschtrottel } from '../src/aircraft/buschtrottel.js';
 import { ground } from '../src/sim/terrain.js';
 import { Obstacles } from '../src/sim/obstacles.js';
+import { crownOf } from '../src/sim/treeShapes.js';
 import { coefficients, liftSlope } from '../src/sim/aero.js';
 import { applyExpo } from '../src/input/input.js';
 
@@ -515,10 +516,15 @@ describe('collisions with obstacles', () => {
   }
 
   it('crashes into a tree trunk', () => {
-    const ac = flyAt({ x: tree.x, y: tree.y + 1.2, z: tree.z }, 9);
+    // A tall tree on the level field (so the run-in is level too), hit low
+    // on the bare trunk, below its leaves (crownOf).
+    const t = obstacles.trees.find((tr) => !tr.conifer && tr.h > 15 && Math.abs(tr.y) < 1e-6
+      && Math.abs(ground.heightAt(tr.x - 12, tr.z)) < 1e-6);
+    const ac = flyAt({ x: t.x, y: t.y + 0.6, z: t.z }, 9);
+    expect(crownOf(t).base * t.h).toBeGreaterThan(1.4);
     expect(ac.crashed).toBe(true);
     expect(ac.crashReason).toMatch(/tree trunk/);
-    expect(ac.position.x).toBeLessThan(tree.x + 1); // stopped, not passed through
+    expect(ac.position.x).toBeLessThan(t.x + 1); // stopped, not passed through
   });
 
   it('crashes into the club hut', () => {
@@ -547,6 +553,13 @@ describe('collisions with obstacles', () => {
     expect(caught).toBe(true);
     expect(ac.crashed).toBe(false);
     expect(ac.velocity.length()).toBeLessThan(2); // held back by the foliage
+  });
+
+  it("doesn't blow up when started with its wheels in the ground beside a tree", () => {
+    // (Used to fire it off at 1e30 m/s, which then hung the obstacle lookups.)
+    const ac = flyAt({ x: tree.x, y: tree.y + 0.3, z: tree.z }, 9, 1);
+    expect(Number.isFinite(ac.position.x)).toBe(true);
+    expect(ac.velocity.length()).toBeLessThanOrEqual(120.001);
   });
 
   it('leaves the runway and the circuit clear', () => {

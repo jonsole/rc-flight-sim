@@ -10,12 +10,14 @@
 //   nearRadius   trees within this of the pilot get full-detail crowns (m)
 //   nearDetail   crown detail for them (2 full, 1 medium, 0 low)
 //   farDetail    crown detail for the rest ('blob': one ~80-triangle lump)
-//   bushDetail   crown detail for bushes and hedges (or 'blob')
+//   bushDetail   crown detail for bushes and hedges further out (or 'blob')
+//   bushNear     ...and near the pilot (within nearRadius, at most 250 m)
+//   bushDistance bushes further than this aren't drawn (m; they still catch you)
 
 export const QUALITY = {
-  low: { name: 'Low (phones)', pixelRatio: 1, shadowMap: 1024, nearRadius: 150, nearDetail: 1, farDetail: 'blob', bushDetail: 'blob' },
-  medium: { name: 'Medium', pixelRatio: 1.5, shadowMap: 2048, nearRadius: 250, nearDetail: 2, farDetail: 'blob', bushDetail: 'blob' },
-  high: { name: 'High', pixelRatio: 2, shadowMap: 4096, nearRadius: 500, nearDetail: 2, farDetail: 0, bushDetail: 0 },
+  low: { name: 'Low (phones)', pixelRatio: 1, shadowMap: 1024, nearRadius: 150, nearDetail: 1, farDetail: 'blob', bushDetail: 'blob', bushNear: 'blob', bushDistance: 300 },
+  medium: { name: 'Medium', pixelRatio: 1.5, shadowMap: 2048, nearRadius: 250, nearDetail: 2, farDetail: 'blob', bushDetail: 'blob', bushNear: 0, bushDistance: 600 },
+  high: { name: 'High', pixelRatio: 2, shadowMap: 4096, nearRadius: 500, nearDetail: 2, farDetail: 0, bushDetail: 'blob', bushNear: 1, bushDistance: 1000 },
 };
 
 /** Scenery distance choices (m); 0 = as far as there is scenery. */

@@ -3,7 +3,7 @@ import {
   Scene, Color, FogExp2, HemisphereLight, Points, PointsMaterial, BufferGeometry, Sprite, SpriteMaterial, DirectionalLight, Mesh, PlaneGeometry, MeshStandardMaterial,
   CanvasTexture, RepeatWrapping, SRGBColorSpace, InstancedMesh, CylinderGeometry, IcosahedronGeometry,
   Object3D, BoxGeometry, ConeGeometry, Group, Vector3, MathUtils, DoubleSide, Float32BufferAttribute,
-  MeshBasicMaterial, ShaderMaterial, SphereGeometry, BackSide, MeshLambertMaterial,
+  MeshBasicMaterial, ShaderMaterial, SphereGeometry, BackSide, MeshLambertMaterial, Matrix4,
 } from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY, PILOT_PAD } from '../sim/terrain.js';
@@ -14,8 +14,8 @@ import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail } from './ground.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
 import { QUALITY } from './quality.js';
-import { CROWN_SEEDS } from '../sim/treeShapes.js';
-import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes, siteFence } from './props.js';
+import { CROWN_SEEDS, crownOf } from '../sim/treeShapes.js';
+import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes, bushMatrix, siteFence } from './props.js';
 
 const smooth = (e0, e1, x) => {
   const t = MathUtils.clamp((x - e0) / (e1 - e0), 0, 1);
@@ -297,6 +297,31 @@ function cricketPitchTexture(r) {
   return t;
 }
 
+const _trunkM = new Matrix4();
+const _crownM = new Matrix4();
+
+/** A tree's trunk and crown matrices (unit trunk scaled by height; crown from crownOf). */
+function treeMatrices(t, o, trunkM, crownM) {
+  o.rotation.set(0, t.rot, 0);
+  o.position.set(t.x, t.y - 0.15, t.z);
+  o.scale.setScalar(t.h);
+  o.updateMatrix();
+  trunkM.copy(o.matrix);
+  const c = crownOf(t);
+  if (t.conifer) {
+    o.position.set(t.x, c.y0, t.z);
+    o.scale.set(c.r, c.ch, c.r);
+  } else {
+    o.position.set(t.x, c.cy, t.z);
+    o.scale.set(c.sx, c.sy, c.sx);
+  }
+  o.updateMatrix();
+  crownM.copy(o.matrix);
+}
+
+/** Built scenery still drawn over Google's tiles. */
+const KEEP_OVER_GOOGLE = new Set(['tree', 'bush', 'fence']);
+
 export class World {
   /** @param {import('../sim/obstacles.js').Obstacles} obstacles */
   /**
@@ -306,6 +331,9 @@ export class World {
   constructor(obstacles, opts = {}) {
     this.obstacles = obstacles;
     this.quality = opts.quality ?? QUALITY.high;
+    // The ground, trees, buildings and fences drawn from the site data, which
+    // Google's photorealistic tiles replace when they're on.
+    this.builtScenery = [];
     this.viewDistance = opts.viewDistance ?? Infinity;
     this.scene = new Scene();
     this.scene.background = new Color('#9cc3e6');
@@ -328,7 +356,7 @@ export class World {
     this.club.rotation.y = -clubAngle();
     this.scene.add(this.club);
     this.#runway();
-    this.#trees();
+    this.#site();
     this.#props();
     this.setTime(14, 172);
   }
@@ -497,17 +525,25 @@ export class World {
     const ground = new Mesh(geo, mat);
     ground.receiveShadow = true;
     this.scene.add(ground);
+    this.terrainMesh = ground;
+    ground.userData.kind = 'terrain';
+    this.builtScenery.push(ground);
   }
 
   #runway() {
-    const g = new PlaneGeometry(RUNWAY.length, RUNWAY.width);
-    g.rotateX(-Math.PI / 2);
-    const tex = RUNWAY.style === 'cricket' ? cricketPitchTexture(RUNWAY) : runwayTexture();
-    const rw = new Mesh(g, addCloudShadows(new MeshLambertMaterial({ map: tex, polygonOffset: true, polygonOffsetFactor: -2 })));
-    // Just above the physics ground (y = 0); polygonOffset prevents z-fighting.
-    rw.position.set(RUNWAY.x, 0.002, RUNWAY.z);
-    rw.receiveShadow = true;
-    this.club.add(rw);
+    // A strip to draw, unless take-offs are just from the field's grass.
+    if (RUNWAY.style !== 'none') {
+      const g = new PlaneGeometry(RUNWAY.length, RUNWAY.width);
+      g.rotateX(-Math.PI / 2);
+      const tex = RUNWAY.style === 'cricket' ? cricketPitchTexture(RUNWAY) : runwayTexture();
+      const rw = new Mesh(g, addCloudShadows(new MeshLambertMaterial({ map: tex, polygonOffset: true, polygonOffsetFactor: -2 })));
+      // Just above the physics ground (y = 0); polygonOffset prevents z-fighting.
+      rw.position.set(RUNWAY.x, 0.002, RUNWAY.z);
+      rw.receiveShadow = true;
+      rw.userData.kind = 'runway';
+      this.club.add(rw);
+      this.builtScenery.push(rw);
+    }
 
     // Pilot box (gravel pad) and safety fence line, where the club has them.
     if (PILOT_PAD) {
@@ -535,12 +571,114 @@ export class World {
     this.club.add(rail);
   }
 
+  /**
+   * Google photorealistic tiles on (or off): they replace the ground,
+   * buildings and runway; the trees, hedges and fences (yours included) stay
+   * on top, as Google's own look melted close up.
+   */
+  setGoogleMode(on) {
+    this.googleMode = on;
+    for (const o of this.builtScenery) o.visible = !on || KEEP_OVER_GOOGLE.has(o.userData.kind);
+    if (this.shadows) this.shadows.dirty = true;
+  }
+
   /** Leaf sway and wind: time in seconds, wind speed m/s and direction it blows FROM (degrees). */
   updateTrees(t, windSpeed, windFromDeg) {
     leafUniforms.uLeafTime.value = t;
     leafUniforms.uWindSpeed.value = windSpeed;
     const from = (windFromDeg * Math.PI) / 180;
     leafUniforms.uWindDir.value.set(-Math.sin(from), 0, Math.cos(from));
+  }
+
+  /**
+   * The site's trees, buildings and fences: what the scenery editor changes.
+   * Built once, and again after each edit (rebuildSite).
+   */
+  #site() {
+    this.siteObjects = [];
+    const before = this.scene.children.length;
+    this.#trees();
+    const ob = this.obstacles;
+    const q = this.quality;
+    const near = { nearDetail: q.bushNear, nearRadius: Math.min(q.nearRadius, 250) };
+    const bushFar = Math.min(this.viewDistance, q.bushDistance ?? Infinity);
+    for (const m of bushes(this.leafMat, ob.bushes, { detail: q.bushDetail, ...near, distance: bushFar })) {
+      m.userData.kind = 'bush';
+      this.scene.add(m);
+    }
+    if (ob.buildings.length) {
+      const houses = buildingsMesh(ob.buildings);
+      addCloudShadows(houses.material);
+      houses.userData.kind = 'building';
+      this.scene.add(houses);
+    }
+    for (const f of ob.fences) {
+      const o = siteFence(f);
+      o.userData.kind = 'fence';
+      o.userData.fenceIndex = f.index;
+      o.traverse((m) => {
+        if (!m.isMesh) return;
+        m.userData.kind = 'fence';
+        if (m.material && !m.material.userData.clouds) {
+          addCloudShadows(m.material);
+          m.material.userData.clouds = true;
+        }
+      });
+      this.scene.add(o);
+    }
+    this.siteObjects = this.scene.children.slice(before);
+    this.builtScenery.push(...this.siteObjects);
+  }
+
+  /** Redraw the site's trees, buildings and fences after the obstacles were reloaded with edits. */
+  rebuildSite() {
+    for (const o of this.siteObjects) {
+      this.scene.remove(o);
+      this.builtScenery.splice(this.builtScenery.indexOf(o), 1);
+      o.traverse((m) => m.geometry?.dispose());
+    }
+    this.#site();
+    this.placeWindsock();
+    if (this.googleMode) this.setGoogleMode(true);
+    if (this.shadows) this.shadows.dirty = true;
+  }
+
+  /** Put the windsock where the obstacles say (edited), or hide it. */
+  placeWindsock() {
+    const at = this.obstacles.windsock;
+    this.windsockGroup.visible = !!at;
+    if (at) this.windsockGroup.position.set(at.x, heightAt(at.x, at.z), at.z);
+  }
+
+  /** Redraw one bush as `spec` changes it (editor, before committing). */
+  moveBushDrawing(b, spec) {
+    if (!b.drawn) return;
+    const [m, i] = b.drawn;
+    m.setMatrixAt(i, bushMatrix({ ...b, ...spec }, _trunkM));
+    m.instanceMatrix.needsUpdate = true;
+    m.frustumCulled = false;
+  }
+
+  /**
+   * Redraw one tree as `spec` (its own x, z, h, crownW, base...), in the
+   * slots it was drawn in: instant, for the editor while dragging or sliding.
+   * The obstacles aren't changed until the edit is committed.
+   */
+  moveTreeDrawing(t, spec) {
+    if (!t.drawn) return;
+    const p = { ...t, ...spec };
+    p.y = heightAt(p.x, p.z);
+    const o = new Object3D();
+    treeMatrices(p, o, _trunkM, _crownM);
+    const [tm, ti] = t.drawn.trunk;
+    const [cm, ci] = t.drawn.crown;
+    tm.setMatrixAt(ti, _trunkM);
+    cm.setMatrixAt(ci, _crownM);
+    tm.instanceMatrix.needsUpdate = true;
+    cm.instanceMatrix.needsUpdate = true;
+    // Moved out of its set's bounds: don't let it be culled.
+    tm.frustumCulled = false;
+    cm.frustumCulled = false;
   }
 
   #trees() {
@@ -582,35 +720,20 @@ export class World {
       const o = new Object3D();
       const col = new Color();
       for (const t of set.trees) {
-        const { x, y, z, h } = t;
-        o.rotation.set(0, t.rot, 0);
-        // Trunks are drawn for a 1-unit tree, so scale them by its height.
-        o.position.set(x, y - 0.15, z);
-        o.scale.setScalar(h);
-        o.updateMatrix();
-        if (t.conifer) conTrunks.setMatrixAt(nConTrunk++, o.matrix);
-        else {
-          const k = t.pick % trunks.length;
-          trunks[k].setMatrixAt(nTrunk[k]++, o.matrix);
-        }
+        // Where this tree's trunk and crown are drawn: kept, so the editor
+        // can move and resize it on the spot (moveTreeDrawing).
+        const trunkMesh = t.conifer ? conTrunks : trunks[t.pick % trunks.length];
+        const trunkSlot = t.conifer ? nConTrunk++ : nTrunk[t.pick % trunks.length]++;
+        const crownMesh = t.conifer ? conifers[t.pick % conifers.length] : crowns[t.variant]; // the shape the collisions use
+        const crownSlot = t.conifer ? nCon[t.pick % conifers.length]++ : nCrown[t.variant]++;
+        t.drawn = { trunk: [trunkMesh, trunkSlot], crown: [crownMesh, crownSlot] };
+        treeMatrices(t, o, _trunkM, _crownM);
+        trunkMesh.setMatrixAt(trunkSlot, _trunkM);
+        crownMesh.setMatrixAt(crownSlot, _crownM);
         // Leaf colour per tree, a little brighter than before (the shapes
         // carry their own shading).
         col.setHSL(t.hue, t.sat, t.light * 1.12 + 0.02);
-        if (t.conifer) {
-          const k = t.pick % conifers.length;
-          o.position.set(x, y + h * 0.1, z);
-          o.scale.set(h * 0.22, h * 0.95, h * 0.22);
-          o.updateMatrix();
-          conifers[k].setMatrixAt(nCon[k], o.matrix);
-          conifers[k].setColorAt(nCon[k]++, col);
-        } else {
-          const k = t.variant; // the shape the collisions use
-          o.position.set(x, y + h * 0.62, z);
-          o.scale.set(t.crownW * 1.05, h * 0.4, t.crownW * 1.05);
-          o.updateMatrix();
-          crowns[k].setMatrixAt(nCrown[k], o.matrix);
-          crowns[k].setColorAt(nCrown[k]++, col);
-        }
+        crownMesh.setColorAt(crownSlot, col);
       }
       crowns.forEach((m, k) => (m.count = nCrown[k]));
       conifers.forEach((m, k) => (m.count = nCon[k]));
@@ -622,6 +745,8 @@ export class World {
         m.receiveShadow = true;
         // Cull a whole set when it's out of view (bounds of all its trees).
         m.computeBoundingSphere();
+        m.userData.kind = 'tree';
+        m.userData.trees = set.trees; // instance order isn't tree order: see treeAt in the editor
         this.scene.add(m);
       }
       this.trees.trunks.push(...trunks);
@@ -662,9 +787,8 @@ export class World {
     sock.add(sockMesh);
     ws.add(sock);
     // (Still worked out where a site has none: it's just not shown.)
-    const wsAt = this.obstacles.windsock;
-    ws.position.set(wsAt?.x ?? 0, 0, wsAt?.z ?? 0);
-    ws.visible = !!wsAt;
+    this.windsockGroup = ws;
+    this.placeWindsock();
     this.scene.add(ws);
     this.windsock = sock;
     this.sockMesh = sockMesh;
@@ -689,15 +813,11 @@ export class World {
       shadowy(o);
       this.club.add(o);
     }
-    for (const o of [...ob.cars.map(car), ...ob.fences.map(siteFence)]) {
+    for (const o of ob.cars.map(car)) {
       shadowy(o);
+      o.userData.kind = 'car';
       this.scene.add(o);
-    }
-    for (const b of bushes(this.leafMat, { detail: this.quality.bushDetail, distance: this.viewDistance })) this.scene.add(b);
-    if (ob.buildings.length) {
-      const houses = buildingsMesh(ob.buildings);
-      addCloudShadows(houses.material);
-      this.scene.add(houses);
+      this.builtScenery.push(o);
     }
 
     // Flight-line table

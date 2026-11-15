@@ -35,7 +35,7 @@ export class Wind {
     // Canopy height above the ground per cell (0 = open).
     this.canopy = new Float32Array(NX * NZ);
     for (const t of trees) {
-      const r = t.conifer ? t.h * 0.18 : (t.crownW ?? t.h * 0.3) * 0.9;
+      const r = t.conifer ? (t.crownW ?? t.h * 0.22) * 0.8 : (t.crownW ?? t.h * 0.3) * 0.9;
       const i0 = Math.floor((t.x - r - X0) / CELL);
       const i1 = Math.floor((t.x + r - X0) / CELL);
       const j0 = Math.floor((t.z - r - Z0) / CELL);

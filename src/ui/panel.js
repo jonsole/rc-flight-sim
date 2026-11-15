@@ -5,6 +5,7 @@ import { AIRCRAFT, getAircraft } from '../aircraft/index.js';
 import { formatHours } from '../world/sun.js';
 import { LOCATIONS, LOCATION } from '../sim/location.js';
 import { QUALITY, DISTANCES } from '../world/quality.js';
+import { googleSessions } from '../world/googleTiles.js';
 
 const CH_LABEL = { roll: 'Aileron (roll)', pitch: 'Elevator (pitch)', yaw: 'Rudder (yaw)', throttle: 'Throttle' };
 
@@ -101,6 +102,8 @@ export class Panel {
       this.#select('Start position', 'startMode', { runway: 'On the runway', air: 'In the air (30 m)' }),
       this.#select('Camera', 'cameraMode', CAMERA_LABELS),
       el('div', { class: 'row' }, el('button', { onclick: () => { this.opts.onReset(); this.opts.onClose(); } }, 'Reset aircraft (R)')),
+      el('div', { class: 'row' }, el('button', { onclick: () => this.opts.onEditScenery() }, 'Edit scenery (E)')),
+      el('p', { class: 'hint' }, 'Move, resize or delete trees, buildings and fences, or add new ones. Edits are saved in this browser for this field.'),
       this.#range('Volume', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.#check('Show HUD / OSD (H)', 'showHud'),
     ];
@@ -169,11 +172,11 @@ export class Panel {
       el('h3', {}, 'FPV'),
       this.#select('Camera mount', 'fpvMount', { cockpit: "Pilot's eye (cockpit)", wing: 'Top wing pod' }),
       this.#range('Camera uptilt', 'fpvTilt', -10, 40, 1, (v) => `${v}°`),
-      this.#range('Field of view', 'fpvFov', 70, 150, 1, (v) => `${v}°`),
+      this.#range('Field of view (across)', 'fpvFov', 70, 170, 1, (v) => `${v}°`),
       this.#check('Motor vibration', 'fpvShake'),
       this.#check('Analog video effect', 'fpvAnalog'),
       el('h3', {}, 'Line of sight'),
-      this.#range('Field of view', 'losFov', 20, 80, 1, (v) => `${v}°`),
+      this.#range('Field of view (across)', 'losFov', 30, 170, 1, (v) => `${v}°`),
       this.#select('Auto-zoom', 'losZoom', { 0: 'Off', 1: 'Gentle', 2: 'Strong' }),
       this.#range('Pilot position (left/right)', 'pilotX', -60, 60, 1, (v) => `${v} m`),
       this.#range('Pilot position (fwd/back)', 'pilotZ', -10, 30, 1, (v) => `${v} m`),
@@ -181,6 +184,12 @@ export class Panel {
       this.#select('Quality', 'graphics', Object.fromEntries(Object.entries(QUALITY).map(([k, q]) => [k, q.name]))),
       this.#select('Scenery distance', 'viewDistance', DISTANCES),
       el('p', { class: 'hint' }, 'Lower these if the picture is jerky. Low draws simpler trees and fewer pixels; a shorter distance leaves out far trees and brings the haze in. Changing either reloads the simulator.'),
+      ...(LOCATION.data ? [
+        this.#select('Scenery', 'scenery', { built: 'Built in (LIDAR and OpenStreetMap)', google: 'Google photorealistic 3D' }),
+        this.#text('Google Maps API key', 'googleKey', { type: 'password', placeholder: 'AIza…' }),
+        el('p', { class: 'hint' }, 'Google photorealistic 3D needs your own Google Maps Platform API key with the Map Tiles API enabled (and billing set up). The key stays in this browser. Google\'s tiles replace the ground and buildings; the trees, hedges and fences stay, and are what you fly into. Press O to switch them on and off in flight.'),
+        el('p', { class: 'hint' }, `Google bills per session: each page load that shows the tiles starts one (good for 3 hours); switching off and on again doesn't. Sessions started from this browser this month: ${googleSessions().count}. Tip: leave the tiles off while reloading a lot, and set a daily cap on root tileset requests in the Google Cloud console.`),
+      ] : []),
     ];
   }
 

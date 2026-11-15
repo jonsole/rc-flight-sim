@@ -14,9 +14,10 @@
 // trees and buildings are the baked LIDAR ones.
 
 import { heightAt } from './terrain.js';
-import { CROWN_SEEDS, crownShape, lumpScale } from './treeShapes.js';
-import { LOCATION, clubAngle, clubToWorld } from './location.js';
+import { CROWN_SEEDS, crownShape, lumpScale, crownOf } from './treeShapes.js';
+import { LOCATION, clubAngle, clubToWorld, inMown } from './location.js';
 import { prepareBuilding, roofAt, insideFootprint, nearestWall } from './buildings.js';
+import { EDITS, applyTreeEdits, applyBushEdits, applyBuildingEdits, applyFenceEdits, treeId } from './edits.js';
 
 const _lp = { x: 0, y: 0, z: 0 };
 
@@ -148,12 +149,106 @@ function makeTrees() {
   return trees;
 }
 
+/**
+ * Bushes and hedges: { id, x, z, h (height), w (half-width), turn, tint
+ * [h, s, l], shape (0/1) }. Real sites: the LIDAR's 1-3 m vegetation (on a
+ * 3 m grid, so neighbours overlap into hedges) and the layout's bush belts;
+ * the made-up field: a ring in front of the tree line.
+ */
+function makeBushes() {
+  let rnd = 78;
+  const rand = () => ((rnd = (rnd * 16807) % 2147483647) / 2147483647);
+  const out = [];
+  const add = (x, z, h, w) => out.push({
+    id: treeId(x, z), x, z, h, w, turn: rand() * Math.PI * 2,
+    tint: [0.24 + rand() * 0.05, 0.36 + rand() * 0.12, 0.13 + rand() * 0.05], shape: out.length % 2,
+  });
+  if (LOCATION.data) {
+    const p = LOCATION.data.bushes;
+    for (let i = 0; i < p.length; i += 3) {
+      const x = p[i] + (rand() - 0.5) * 1.5;
+      const z = p[i + 1] + (rand() - 0.5) * 1.5;
+      const h = p[i + 2];
+      const w = Math.min(1.5 + rand() * 0.8, 0.7 + h * 0.7); // low scrub is narrower too
+      if (inMown(x, z)) continue; // the club keeps its mown grass clear
+      add(x, z, h, w);
+    }
+    // Belts of tall bushes from the site layout: two staggered rows, 2.5 m apart.
+    for (const b of LOCATION.layout.bushBelts ?? []) {
+      const [ax, az] = b.from;
+      const [bx, bz] = b.to;
+      const len = Math.hypot(bx - ax, bz - az);
+      const [ux, uz] = [(bx - ax) / len, (bz - az) / len];
+      for (let s = 0; s <= len; s += 2.5) {
+        for (const row of [-0.25, 0.25]) {
+          const off = row * b.width + (rand() - 0.5) * 1.2;
+          add(ax + ux * (s + row * 2.5) - uz * off, az + uz * (s + row * 2.5) + ux * off, b.minH + rand() * (b.maxH - b.minH), 1.5 + rand() * 0.8);
+        }
+      }
+    }
+  } else {
+    for (let i = 0; i < 260; i++) {
+      const a = rand() * Math.PI * 2;
+      const r = 150 + rand() * 22;
+      const x = Math.cos(a) * r * 1.3;
+      let z = Math.sin(a) * r - 40;
+      if (z > 20 && Math.abs(x) < 60) z += 80; // keep the view behind the pilot open
+      const size = 0.6 + rand() * 0.9;
+      add(x, z, size * 1.4, size * 1.3);
+    }
+  }
+  return out;
+}
+
+/** A whole bush from an edited or added one ({ x, z, h, w }). */
+function editedBush(spec, orig) {
+  const k = hashId(spec.id);
+  return {
+    id: spec.id,
+    x: spec.x ?? orig.x,
+    z: spec.z ?? orig.z,
+    h: spec.h ?? orig?.h ?? 2,
+    w: spec.w ?? orig?.w ?? 1.6,
+    turn: orig?.turn ?? k * Math.PI * 2,
+    tint: orig?.tint ?? [0.25, 0.42, 0.15],
+    shape: orig?.shape ?? (k < 0.5 ? 0 : 1),
+  };
+}
+
+/** A whole tree from an edited or added one ({ x, z, h, r, conifer }), keeping what it can of `orig`. */
+function editedTree(spec, orig) {
+  let rnd = Math.floor(hashId(spec.id) * 2147483646) + 1;
+  const rand = () => ((rnd = (rnd * 16807) % 2147483647) / 2147483647);
+  const conifer = spec.conifer ?? orig?.conifer ?? false;
+  const h = spec.h ?? orig?.h ?? 12;
+  const t = { id: spec.id, x: spec.x ?? orig.x, z: spec.z ?? orig.z, h, conifer, rot: orig?.rot ?? rand() * Math.PI * 2 };
+  t.y = heightAt(t.x, t.z);
+  const base = spec.base ?? orig?.base;
+  if (base != null) t.base = base;
+  if (orig && orig.conifer === conifer) {
+    Object.assign(t, { hue: orig.hue, sat: orig.sat, light: orig.light });
+    t.crownW = spec.r ?? orig.crownW;
+    return t;
+  }
+  dressTree(t, rand, spec.r ?? h * 0.33);
+  // Conifers keep their own (narrower) default unless given a radius.
+  t.crownW = spec.r ?? (conifer ? undefined : t.crownW);
+  return t;
+}
+
+/** 0..1 from a tree's id, so its crown shape doesn't change when others are edited. */
+function hashId(id) {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+  return ((h >>> 0) % 1000003) / 1000003;
+}
+
 export class Obstacles {
   constructor() {
-    this.trees = makeTrees();
+    this.trees = applyTreeEdits(makeTrees(), editedTree);
     // Which crown shape (and conifer shape) each tree is drawn with.
-    this.trees.forEach((t, i) => {
-      t.pick = Math.floor(((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1 * 1000);
+    this.trees.forEach((t) => {
+      t.pick = Math.floor(hashId(t.id) * 1000);
       t.variant = t.pick % CROWN_SEEDS.length;
     });
     this.shapes = [];
@@ -161,15 +256,15 @@ export class Obstacles {
       // Trunk (solid): drawn tapering from 0.024 h to under 0.01 h across.
       this.shapes.push({ type: 'cylinder', name: 'a tree trunk', x: t.x, z: t.z, r: t.h * (t.conifer ? 0.014 : 0.019), y0: t.y - 0.2, y1: t.y + t.h * (t.conifer ? 0.2 : 0.42) });
       if (t.conifer) {
-        // As drawn: 0.22 h base radius, from 0.1 h up, 0.95 h tall.
-        this.shapes.push({ type: 'cone', name: 'a tree', x: t.x, z: t.z, r: t.h * 0.22, y0: t.y + t.h * 0.1, h: t.h * 0.95 });
+        // As drawn (crownOf): boughs from `base` up, cone of radius r.
+        const c = crownOf(t);
+        this.shapes.push({ type: 'cone', name: 'a tree', x: t.x, z: t.z, r: c.r, y0: c.y0, h: c.ch });
       } else {
         // The crown's own clumps, placed, sized and turned as drawn
-        // (src/world/world.js): centre 0.62 h up, crownW wide, 0.4 h tall.
-        const sx = t.crownW * 1.05;
-        const sy = t.h * 0.4;
+        // (src/world/world.js, crownOf): from `base` up to the top, crownW wide.
+        const { sx, sy, cy } = crownOf(t);
         this.shapes.push({
-          type: 'crown', name: 'a tree', cx: t.x, cy: t.y + t.h * 0.62, cz: t.z, sx, sy,
+          type: 'crown', name: 'a tree', cx: t.x, cy, cz: t.z, sx, sy,
           cos: Math.cos(t.rot), sin: Math.sin(t.rot), seed: CROWN_SEEDS[t.variant], ...crownShape(CROWN_SEEDS[t.variant]),
         });
       }
@@ -204,9 +299,15 @@ export class Obstacles {
       club.push({ type: 'box', name: 'the pits table', min: [gz.x - 1, 0, gz.z + 0.2], max: [gz.x + 1, 0.75, gz.z + 1] });
     }
     // Windsock pole (kept in world coordinates: it swings with the wind).
+    // Placed in the editor (world frame), or taken away (false), or the site's own.
     const ws = L.windsock;
+    const placed = EDITS.site.windsock;
     this.windsock = null;
-    if (ws) {
+    if (placed) {
+      this.windsock = { height: 5, x: placed.x, z: placed.z };
+      const y = heightAt(placed.x, placed.z);
+      this.shapes.push({ type: 'cylinder', name: 'the windsock pole', x: placed.x, z: placed.z, r: 0.05, y0: y - 0.2, y1: y + 5 });
+    } else if (ws && placed !== false) {
       const [wsx, wsz] = clubToWorld(ws.x, ws.z);
       this.windsock = { ...ws, x: wsx, z: wsz };
       club.push({ type: 'cylinder', name: 'the windsock pole', x: ws.x, z: ws.z, r: 0.05, y0: 0, y1: ws.height });
@@ -230,12 +331,18 @@ export class Obstacles {
       const y = heightAt(c.x, c.z);
       this.shapes.push({ type: 'box', name: 'a car', min: [c.x - 0.9, y, c.z - 2.1], max: [c.x + 0.9, y + 1.45, c.z + 2.1] });
     }
+    // Bushes and hedges: soft, like foliage (they catch a model).
+    this.bushes = applyBushEdits(makeBushes(), editedBush);
+    for (const b of this.bushes) {
+      const y = heightAt(b.x, b.z);
+      this.shapes.push({ type: 'ellipsoid', name: 'a bush', cx: b.x, cy: y + b.h * 0.5, cz: b.z, rx: b.w * 0.9, ry: b.h * 0.5, rz: b.w * 0.9 });
+    }
     // Buildings at a real site.
-    this.buildings = (LOCATION.data?.buildings ?? []).map(prepareBuilding);
+    this.buildings = applyBuildingEdits(LOCATION.data?.buildings ?? []).map((b) => ({ ...prepareBuilding(b), index: b.index }));
     for (const b of this.buildings) this.shapes.push({ type: 'building', name: 'a building', b });
     // Site fences: thin slabs along each stretch, solid like a wall (no
     // flying through chain link or mesh panels).
-    this.fences = (L.fences ?? []).map((f) => {
+    this.fences = applyFenceEdits(L.fences ?? []).map((f) => {
       const path = f.path ?? [f.from, f.to];
       const name = f.kind === 'panels' ? 'the temporary fence' : 'the chain-link fence';
       for (let i = 1; i < path.length; i++) {
@@ -269,6 +376,11 @@ export class Obstacles {
         }
       }
     }
+  }
+
+  /** Rebuild everything from the site and the current edits (src/sim/edits.js). */
+  reload() {
+    Object.assign(this, new Obstacles());
   }
 
   /** Shapes whose footprint may overlap a circle of `radius` around (x, z). */

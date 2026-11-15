@@ -41,6 +41,13 @@ SITES = {
         'pilot': (549666.2, 266652.5),  # OSGB easting, northing where the pilot stands (10 m south of the cricket pitch)
         'half': 1000,                    # metres either side of the pilot baked in
     },
+    # Impington Village College sports field (Cambridgeshire).
+    'impington': {
+        'name': 'Impington Village College',
+        'centre': (544587.4, 262930.1),  # middle of the baked area
+        'pilot': (544662.4, 262900.1),   # middle of the main playing field
+        'half': 1000,
+    },
 }
 
 EA = 'https://environment.data.gov.uk/spatialdata'
@@ -76,15 +83,15 @@ def fetch(url, path, check=None):
 
 def download(site, cache):
     os.makedirs(cache, exist_ok=True)
-    e0, n0 = site['pilot']
+    # The baked area is centred on 'centre' if given (so the pilot spot can
+    # move without new downloads), otherwise on the pilot.
+    e0, n0 = site.get('centre', site['pilot'])
     h = site['half']
     box = (e0 - h, n0 - h, e0 + h, n0 + h)
     out = {}
     for key, (ds, cov) in COVERAGES.items():
-        url = (f'{EA}/{ds}/wcs?service=WCS&version=2.0.1&request=GetCoverage&coverageId={cov}'
-               f'&format=image/tiff&subset=E({box[0]:.0f},{box[2]:.0f})&subset=N({box[1]:.0f},{box[3]:.0f})')
         print(f'LIDAR {key}...')
-        out[key] = fetch(url, os.path.join(cache, f'{key}.tif'), lambda d: d[:2] in (b'II', b'MM'))
+        out[key] = fetch_mosaic(ds, cov, box, os.path.join(cache, f'{key}_E{box[0]:.0f}_N{box[1]:.0f}_{box[2] - box[0]:.0f}.tif'), cache, key)
     to_ll = Transformer.from_crs(27700, 4326, always_xy=True)
     lon0, lat0 = to_ll.transform(box[0], box[1])
     lon1, lat1 = to_ll.transform(box[2], box[3])
@@ -92,6 +99,29 @@ def download(site, cache):
     url = f'https://api.openstreetmap.org/api/0.6/map?bbox={lon0:.5f},{lat0:.5f},{lon1:.5f},{lat1:.5f}'
     out['osm'] = fetch(url, os.path.join(cache, 'osm.xml'), lambda d: b'<osm' in d[:400])
     return box, out
+
+
+def fetch_mosaic(ds, cov, box, path, cache, key, tile=500):
+    """One coverage over the box, fetched in tiles (the server times out on
+    big requests) and stitched into a single GeoTIFF-less array file."""
+    if os.path.exists(path):
+        return path
+    # Named by where they are, so a different box never reuses the wrong ones.
+    n = int(box[2] - box[0])
+    full = np.full((n, n), np.nan, np.float32)
+    for i in range(0, n, tile):
+        for j in range(0, n, tile):
+            e0, e1 = box[0] + i, box[0] + min(n, i + tile)
+            n0, n1 = box[1] + j, box[1] + min(n, j + tile)
+            url = (f'{EA}/{ds}/wcs?service=WCS&version=2.0.1&request=GetCoverage&coverageId={cov}'
+                   f'&format=image/tiff&subset=E({e0:.0f},{e1:.0f})&subset=N({n0:.0f},{n1:.0f})')
+            part = fetch(url, os.path.join(cache, f'{key}_E{e0:.0f}_N{n0:.0f}_{tile}.tif'), lambda d: d[:2] in (b'II', b'MM'))
+            a = tifffile.imread(part).astype(np.float32)
+            # Row 0 is the north edge.
+            r0 = n - (j + a.shape[0])
+            full[r0:r0 + a.shape[0], i:i + a.shape[1]] = a
+    tifffile.imwrite(path, full)
+    return path
 
 
 def read_tif(path, n):
@@ -256,7 +286,11 @@ def find_trees(vom, xs, zs, max_trees):
     the canopy falls below half its height, and any canopy still not under
     a crown gets trees of its own, so woods come out as dense as they are.
     """
-    v = ndimage.gaussian_filter(ndimage.grey_closing(np.nan_to_num(vom), size=(5, 5)), 1.2)
+    raw = np.nan_to_num(vom)
+    v = ndimage.gaussian_filter(ndimage.grey_closing(raw, size=(5, 5)), 1.2)
+    # Smoothing takes the tops off: a tree's height is the raw LIDAR's
+    # highest point near its top.
+    tops = ndimage.maximum_filter(raw, size=5)
     peaks = (v >= 3.0) & (v == ndimage.maximum_filter(v, size=5))
     iy, ix = np.nonzero(peaks)
     order = np.argsort(-v[iy, ix])
@@ -266,16 +300,18 @@ def find_trees(vom, xs, zs, max_trees):
     dirs = [(math.cos(a), math.sin(a)) for a in np.linspace(0, 2 * math.pi, 12, endpoint=False)]
 
     def crown(y, x, h):
+        # Out to where the (smoothed) canopy falls below 40% of its top.
+        top = float(v[y, x])
         rs = []
         for dx, dy in dirs:
             r = 1
-            while r < 0.5 * h + 3:
+            while r < 0.6 * h + 3:
                 xx, yy = int(round(x + dx * r)), int(round(y + dy * r))
-                if not (0 <= xx < v.shape[1] and 0 <= yy < v.shape[0]) or v[yy, xx] < 0.5 * h:
+                if not (0 <= xx < v.shape[1] and 0 <= yy < v.shape[0]) or v[yy, xx] < 0.4 * top:
                     break
                 r += 1
             rs.append(r)
-        return float(np.clip(np.mean(rs), 1.2, 0.45 * h))
+        return float(np.clip(np.mean(rs), 1.2, 0.6 * h))
 
     def accept(y, x, h, cr):
         taken.append((xs[x], zs[y], h, cr))
@@ -289,7 +325,7 @@ def find_trees(vom, xs, zs, max_trees):
         y, x = iy[k], ix[k]
         if occ[y, x]:
             continue
-        h = float(v[y, x])
+        h = float(tops[y, x])
         accept(y, x, h, crown(y, x, h))
     # Canopy left uncovered: a tree at the tallest point of each patch.
     for _ in range(3):
@@ -306,8 +342,8 @@ def find_trees(vom, xs, zs, max_trees):
             w = np.where(m, v[sl], 0)
             yy, xx = np.unravel_index(np.argmax(w), w.shape)
             y, x = yy + sl[0].start, xx + sl[1].start
-            h = float(v[y, x])
-            accept(y, x, h, float(np.clip(math.sqrt(area / math.pi), 1.5, 0.45 * h)))
+            h = float(tops[y, x])
+            accept(y, x, h, float(np.clip(math.sqrt(area / math.pi), 1.5, 0.6 * h)))
             added += 1
         if not added:
             break
@@ -326,17 +362,63 @@ def _disc(r, y, x, shape):
     return m[sy0:sy1, sx0:sx1]
 
 
-def find_bushes(vom, xs, zs, step=3):
-    """Hedges and shrubs (1-3 m) on a coarse grid: (x, z, h)."""
-    v = np.nan_to_num(vom)
+def find_bushes(vom, xs, zs, no_plant, max_bushes, step=3):
+    """Bushes and scrub: (x, z, h), nearest the field first.
+
+    The leaf-off LIDAR sees shrubs as sparse speckles, so the canopy is
+    closed up first; then every 3 m cell whose low vegetation (0.6-4 m)
+    covers 15% of it gets a bush. Woodland and tree lines also have a fringe
+    of scrub the LIDAR barely sees: some bushes are scattered along the open
+    edge of the tree canopy. Nothing on roads, paths, car parks, buildings or
+    water (`no_plant`, from OpenStreetMap).
+    """
+    raw = np.nan_to_num(vom)
+    v = ndimage.grey_closing(raw, size=(3, 3))
+    h2 = step // 2
     out = []
-    for y in range(step // 2, v.shape[0], step):
-        for x in range(step // 2, v.shape[1], step):
-            cell = v[y - step // 2:y + step // 2 + 1, x - step // 2:x + step // 2 + 1]
+    for y in range(h2, v.shape[0], step):
+        for x in range(h2, v.shape[1], step):
+            if no_plant[y, x]:
+                continue
+            cell = v[y - h2:y + h2 + 1, x - h2:x + h2 + 1]
             h = float(cell.max())
-            if 1.0 <= h < 3.0 and (cell > 0.8).mean() > 0.3:
+            if 0.6 <= h < 4.0 and (cell > 0.5).mean() > 0.15:
                 out.append((xs[x], zs[y], h))
-    return out
+    # Scrub along the open edge of the tree canopy (within 5 m of it).
+    canopy = v > 4
+    edge = ndimage.binary_dilation(canopy, iterations=5) & ~canopy & (raw < 0.5) & ~no_plant
+    rng = np.random.default_rng(7)
+    for y in range(h2, v.shape[0], step):
+        for x in range(h2, v.shape[1], step):
+            if edge[y, x] and rng.random() < 0.3:
+                jx, jy = rng.uniform(-1, 1, 2)
+                out.append((xs[x] + jx, zs[y] + jy, float(rng.uniform(0.8, 2.4))))
+    out.sort(key=lambda b: b[0] ** 2 + b[1] ** 2)
+    return out[:max_bushes]
+
+
+def no_plant_mask(areas, lines, buildings, x0, z0, n):
+    """1 m cells where no bush grows: roads, paths, car parks, paved and
+    commercial land, buildings and water (from OpenStreetMap)."""
+    img = Image.new('L', (n, n), 0)
+    d = ImageDraw.Draw(img)
+
+    def P(pts):
+        return [(x - x0, z - z0) for x, z in pts]
+
+    for a in areas:
+        cls, _ = area_class(a['tags'])
+        if cls in ('asphalt', 'paved', 'water') and len(a['pts']) >= 3:
+            d.polygon(P(a['pts']), fill=1)
+    for w in lines:
+        hw = w['tags'].get('highway')
+        if hw in ROAD_WIDTH and len(w['pts']) >= 2:
+            d.line(P(w['pts']), fill=1, width=max(1, round(ROAD_WIDTH[hw] + 1)))
+        if w['tags'].get('waterway') and len(w['pts']) >= 2:
+            d.line(P(w['pts']), fill=1, width=3)
+    for b in buildings:
+        d.polygon(P(b['pts']), fill=1)
+    return np.asarray(img, bool)
 
 
 # --- Buildings -----------------------------------------------------------------------
@@ -453,6 +535,12 @@ def buildings_from(areas, ndsm, vom, xs, zs, lidar_only=False):
     return out
 
 
+def true_north(e0, n0, to_ll, to_bng):
+    lon, lat = to_ll.transform(e0, n0)
+    e1, n1 = to_bng.transform(lon, lat + 0.01)
+    return math.degrees(math.atan2(e1 - e0, n1 - n0))
+
+
 # --- Main -----------------------------------------------------------------------------
 
 def main():
@@ -461,6 +549,7 @@ def main():
     ap.add_argument('--cache', required=True, help='folder for the downloads')
     ap.add_argument('--out', default=os.path.join(os.path.dirname(__file__), '..', 'src', 'locations'))
     ap.add_argument('--max-trees', type=int, default=5000)
+    ap.add_argument('--max-bushes', type=int, default=16000)
     ap.add_argument('--ground-px', type=int, default=2048)
     ap.add_argument('--lidar-buildings', action='store_true',
                     help='also add structures the LIDAR shows that OSM does not have (they may since have been demolished)')
@@ -473,11 +562,14 @@ def main():
     # Pixel centres in local coordinates (row 0 is the north edge).
     xs = box[0] + 0.5 + np.arange(n) - e0
     zs = -(box[3] - 0.5 - np.arange(n) - n0)
-    h0 = float(np.nanmedian(dtm[n // 2 - 3:n // 2 + 3, n // 2 - 3:n // 2 + 3]))
+    # Ground height at the pilot's spot (the origin).
+    pc, pr = int(e0 - box[0]), int(box[3] - n0)
+    h0 = float(np.nanmedian(dtm[pr - 3:pr + 3, pc - 3:pc + 3]))
     ground = np.where(np.isnan(dtm), np.nanmedian(dtm), dtm) - h0
     ndsm = dsm - dtm
 
     to_bng = Transformer.from_crs(4326, 27700, always_xy=True)
+    to_ll_pt = Transformer.from_crs(27700, 4326, always_xy=True)
 
     def to_local(lon, lat):
         e, nn = to_bng.transform(lon, lat)
@@ -492,8 +584,9 @@ def main():
     terrain = np.round(tg * 100).astype('<i2')
 
     trees = find_trees(vom, xs, zs, args.max_trees)
-    bushes = find_bushes(vom, xs, zs)
     buildings = buildings_from(areas, ndsm, vom, xs, zs, args.lidar_buildings)
+    no_plant = no_plant_mask(areas, lines, buildings, float(xs[0] - 0.5), float(zs[0] - 0.5), n)
+    bushes = find_bushes(vom, xs, zs, no_plant, args.max_bushes)
     print(f'{len(trees)} trees, {len(bushes)} bush points, {len(buildings)} buildings')
     png, img = paint_ground(areas, lines, buildings, vom, n, args.ground_px)
     img.save(os.path.join(args.cache, 'ground-preview.png'))
@@ -503,7 +596,10 @@ def main():
         'name': site['name'],
         'credits': 'Contains Environment Agency LIDAR data © Environment Agency copyright and/or database right, '
                    'licensed under the Open Government Licence v3.0. Map data © OpenStreetMap contributors (ODbL).',
-        'origin': {'easting': e0, 'northing': n0, 'height': round(h0, 2)},
+        'origin': {'easting': e0, 'northing': n0, 'height': round(h0, 2),
+                   'lat': round(to_ll_pt.transform(e0, n0)[1], 7), 'lon': round(to_ll_pt.transform(e0, n0)[0], 7),
+                   # Bearing of true north from grid north (the sim's -z), degrees.
+                   'trueNorth': round(true_north(e0, n0, to_ll_pt, to_bng), 4)},
         'size': n,
         'terrain': {'cell': cell, 'n': int(terrain.shape[0]), 'x0': float(xs[0] - 0.5 + cell / 2), 'z0': float(zs[0] - 0.5 + cell / 2),
                     'cm': b64(terrain)},

@@ -94,6 +94,24 @@ heading, mown areas, pilot box, fences, trees grown since the survey) to
 `src/sim/location.js`. Players in multiplayer only meet others at the same
 field.
 
+### Scenery editor
+
+Press **E** (or *Menu → Flying → Edit scenery*) to fix up a field: fly
+around with W A S D, Q / E (down / up), Shift (faster), right-drag to look
+and the wheel to zoom. Click a tree, bush, building, fence or the windsock to
+select it, drag its arrows to move it, and set its size or type in the
+panel (Delete removes it); *+ Tree* and *+ Bush* plant where you click,
+*+ Hedge* plants a bush every 2.5 m and *+ Fence* draws a fence through the
+points you click (Enter finishes); *Flight line* is the line pilots stand
+along (click its two ends: you stand at its middle, plus your own pilot
+position setting) and *Windsock* puts the windsock where you click. Ctrl+Z undoes. Every change
+also changes what you fly into. Edits are saved in your browser for that
+field; *Export* saves them to a file (send it in to have them built into
+the field for everyone) and *Import* loads one. With Google photorealistic
+scenery on, its tiles can be shown under your edits; when flying, Google's
+tiles replace the ground and buildings and the trees, hedges and fences
+(yours included) are drawn on top.
+
 If the picture is jerky, lower *Menu → View → Graphics*: quality (Low /
 Medium / High: how detailed the trees are and how far out, screen
 resolution, shadow sharpness) and scenery distance. Both are on the start
@@ -103,6 +121,24 @@ Barrack Field scenery contains Environment Agency LIDAR data © Environment Agen
 copyright and/or database right, licensed under the
 [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/),
 and map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL).
+
+### Surveying a field with a phone
+
+`survey.html` (https://jonsole.github.io/rc-flight-sim/survey.html, or `/dev/survey.html`)
+is a page for walking a real field with a phone to make its layout more accurate.
+Open it in Chrome on the phone and allow location:
+
+- **Record point**: stand on the spot and keep still; it averages GPS for 5–60 s.
+- **Photo here**: a quick point at the current position with a photo and compass heading.
+- **Walk a line**: adds a point every 3 m as you walk a fence, hedge or mown edge.
+
+The map shows the site's baked ground map, your position and what you have
+recorded. Everything is kept on the phone (IndexedDB) until cleared. **Export zip**
+shares `survey.json` plus the photos. Each feature keeps its raw GPS values plus its
+National Grid position and the site's world position (`local`: x east, z south
+of the pilot), ready for `src/sim/location.js`. The conversion is the same
+Helmert WGS84 → OSGB36 shift the baker used for OpenStreetMap, good to about 2 m.
+Phone GPS adds 2–5 m on top, so averaging and open ground matter.
 
 ## Flying with your transmitter
 

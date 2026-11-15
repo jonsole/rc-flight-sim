@@ -1,5 +1,7 @@
 // Camera modes: line-of-sight (pilot on the ground), FPV, and chase.
 import { PerspectiveCamera, Vector3, Quaternion, MathUtils } from 'three';
+import { pilotSpot } from '../sim/location.js';
+import { heightAt } from '../sim/terrain.js';
 
 export const CAMERA_MODES = ['los', 'fpv', 'chase'];
 export const CAMERA_LABELS = { los: 'Line of sight', fpv: 'FPV', chase: 'Chase' };
@@ -51,9 +53,13 @@ export class CameraRig {
     this.camera.aspect = aspect;
   }
 
+  /** Your eye: at the site's flight line (pilotSpot), moved by your pilot-position setting. */
   pilotEye() {
     const s = this.settings;
-    return new Vector3(s.pilotX, 1.7, s.pilotZ);
+    const [px, pz] = pilotSpot();
+    const x = px + s.pilotX;
+    const z = pz + s.pilotZ;
+    return new Vector3(x, heightAt(x, z) + 1.7, z);
   }
 
   update(aircraft, dt) {
@@ -74,12 +80,16 @@ export class CameraRig {
       cam.up.set(0, 1, 0);
       cam.lookAt(this.losLook);
       const dist = eye.distanceTo(aircraft.position);
-      let fov = s.losFov;
+      // losFov is across the screen, like FPV's.
+      let fov = hToVFov(Math.min(s.losFov, 170), aspect);
       if (s.losZoom > 0) {
         // Auto-zoom: keep the model from shrinking to a dot at range.
         const apparent = MathUtils.radToDeg(2 * Math.atan(this.views.span / 2 / Math.max(dist, 1)));
-        const wanted = apparent * (s.losZoom >= 2 ? 6 : 10);
-        fov = MathUtils.clamp(wanted, 8, s.losFov);
+        // Gentle: the model about 1/25 of the screen's height, at most ~2.5x
+        // zoom (20 deg); strong: about 1/12, at most ~5x (10 deg).
+        const strong = s.losZoom >= 2;
+        const wanted = apparent * (strong ? 12 : 25);
+        fov = MathUtils.clamp(wanted, Math.min(fov, strong ? 10 : 20), fov);
       }
       cam.fov = MathUtils.lerp(cam.fov, fov, 1 - Math.exp(-dt * 4));
       cam.near = 0.1;

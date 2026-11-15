@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#1c1c1e" />
+    <title>Site Survey</title>
+  </head>
+  <body>
+    <header>
+      <h1>Site survey</h1>
+      <select id="site" aria-label="Flying site"></select>
+      <span id="gps" class="pill">Waiting for GPS…</span>
+    </header>
+
+    <div id="map-wrap">
+      <canvas id="map" aria-label="Map of the site with your position and recorded points"></canvas>
+      <div class="map-btns">
+        <button id="zin" aria-label="Zoom in">+</button>
+        <button id="zout" aria-label="Zoom out">−</button>
+        <button id="follow" class="on" aria-label="Follow my position" title="Follow my position">◎</button>
+        <button id="pilot" aria-label="Show the pilot spot" title="Pilot spot">✛</button>
+      </div>
+      <div id="map-info"></div>
+    </div>
+
+    <section id="controls">
+      <label for="label">What is it?</label>
+      <input id="label" type="text" placeholder="e.g. Fence corner NE" autocomplete="off" />
+      <div id="chips"></div>
+
+      <div class="row">
+        <button id="rec" class="primary">Record point</button>
+        <select id="dur" aria-label="How long to average GPS">
+          <option value="5">5 s</option>
+          <option value="10">10 s</option>
+          <option value="15" selected>15 s</option>
+          <option value="30">30 s</option>
+          <option value="60">60 s</option>
+        </select>
+      </div>
+      <div class="row">
+        <button id="photo">📷 Photo here</button>
+        <button id="line">Walk a line</button>
+      </div>
+
+      <div id="progress" hidden>
+        <div class="track"><div id="bar"></div></div>
+        <p id="prog-text"></p>
+        <div class="row">
+          <button id="stop" class="primary">Finish</button>
+          <button id="cancel">Cancel</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="list-sec">
+      <h2>Recorded (<span id="count">0</span>)</h2>
+      <p id="empty" class="hint">Nothing yet. Stand on something and tap <b>Record point</b>.</p>
+      <ul id="list"></ul>
+    </section>
+
+    <section id="actions">
+      <div class="row">
+        <button id="export" class="primary">Export zip…</button>
+        <button id="clear" class="danger">Clear all</button>
+      </div>
+      <p id="storage-note" class="hint"></p>
+    </section>
+
+    <details id="help">
+      <summary>How to survey a field</summary>
+      <ul>
+        <li><b>Record point</b>: stand on the spot (a fence corner, the end of the pitch, a tree trunk), keep still and let it average the GPS. Longer is more accurate; 15 s is a good default.</li>
+        <li><b>Photo here</b>: a quick point at your current position with a photo and the compass direction you faced. Good for showing what things look like (fence type, hedge height).</li>
+        <li><b>Walk a line</b>: walk along a fence, hedge or the edge of the mown grass; it adds a point every 3 m. Tap <b>Finish</b> at the end.</li>
+        <li>Use 📷 on any item to add more photos, ✎ to add a note such as "about 2 m high".</li>
+        <li>GPS is best in the open, worse next to trees and buildings: aim for ±5 m or better (green).</li>
+        <li>Everything stays on this phone until you clear it. <b>Export zip</b> to share it (Drive, email…) and hand it over for the sim.</li>
+      </ul>
+    </details>
+
+    <p class="foot"><a href="./">← Back to the simulator</a></p>
+
+    <input id="cam" type="file" accept="image/*" capture="environment" hidden />
+    <div id="toast" role="status"></div>
+    <script type="module" src="./src/survey/main.js"></script>
+  </body>
+</html>

@@ -29,6 +29,11 @@ export class OSD {
     this.armed = false;
   }
 
+  /** Blank the overlay (scenery editor). */
+  clear() {
+    this.ctx.clearRect(0, 0, this.w, this.h);
+  }
+
   draw(mode, aircraft, info) {
     const { ctx, dpr } = this;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

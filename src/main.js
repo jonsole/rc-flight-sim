@@ -21,8 +21,11 @@ import { OSD } from './ui/osd.js';
 import { Panel } from './ui/panel.js';
 import { loadSettings, saveSettings } from './ui/settings.js';
 import { EngineSound } from './audio/engine.js';
-import { LOCATION, LOCATIONS, clubAngle, clubToWorld } from './sim/location.js';
+import { LOCATION, LOCATIONS, clubAngle, clubToWorld, pilotSpot } from './sim/location.js';
 import { QUALITY, qualityPreset, viewDistance } from './world/quality.js';
+import { GoogleTiles } from './world/googleTiles.js';
+import { loadEdits } from './sim/edits.js';
+import { Editor } from './editor/editor.js';
 
 // Development builds (the /dev/ page) are badged so they're never mistaken for live.
 if (import.meta.env.VITE_CHANNEL === 'dev') {
@@ -62,6 +65,8 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = PCFSoftShadowMap;
 
 // --- Simulation ----------------------------------------------------------------
+// Scenery edits for this field (src/sim/edits.js), before anything is built.
+loadEdits(LOCATION.id, LOCATION.layout.edits);
 const obstacles = new Obstacles();
 const world = new World(obstacles, { quality, viewDistance: viewDistance(settings) });
 const wind = new Wind();
@@ -72,6 +77,70 @@ const rig = new CameraRig(settings);
 // and the aeroplane's own shadow, drawn every frame.
 world.attachShadows(new Shadows(world.sun, { mapSize: quality.shadowMap }));
 const planeShadow = new PlaneShadow(world.scene, ground);
+
+// Google Photorealistic 3D Tiles in place of the built ground and buildings,
+// at real sites, with a key set (Menu → View → Graphics, or O to switch).
+// Google bills per session (one root tileset request, good for 3 hours), so
+// the tiles only start when first wanted, and switching them off just hides
+// them: switching back on is free.
+let googleTiles = null;
+const googleAvailable = () => !!(LOCATION.data && settings.googleKey);
+function showGoogle(on) {
+  if (on && !googleTiles && googleAvailable()) {
+    googleTiles = new GoogleTiles({
+      apiKey: settings.googleKey,
+      lat: LOCATION.data.origin.lat,
+      lon: LOCATION.data.origin.lon,
+      groundHeight: LOCATION.data.origin.height,
+      trueNorth: LOCATION.data.origin.trueNorth,
+      quality: settings.graphics,
+      creditEl: document.getElementById('map-credits'),
+    });
+    world.scene.add(googleTiles.group);
+  }
+  googleTiles?.setVisible(on);
+  world.setGoogleMode(on && !!googleTiles);
+}
+/** The scenery the settings ask for (not while editing: the editor has its own switch). */
+function applyScenery() {
+  if (editor?.active) return;
+  googleTiles?.setOpacity(1);
+  showGoogle(settings.scenery === 'google');
+}
+
+// Scenery editor (E, or Menu → Flying → Edit scenery). It shows the built
+// scenery, with Google's tiles underneath only if you switch them on.
+let pausedBeforeEdit = false;
+const editor = new Editor({
+  world,
+  obstacles,
+  camera: rig.camera,
+  canvas,
+  root: document.getElementById('editor'),
+  onRebuilt: () => {
+    wind.setTrees(obstacles.trees);
+    windsockPos.set(obstacles.windsock?.x ?? 0, obstacles.windsock?.height ?? 5, obstacles.windsock?.z ?? 0);
+  },
+  setGoogle: googleAvailable() ? (on) => showGoogle(on) : null,
+  setGoogleOpacity: (v) => googleTiles?.setOpacity(v),
+  onExit: () => {
+    applyScenery();
+    document.getElementById('menu-btn').style.display = '';
+    rig.setMode(rig.mode);
+    rig.resize(window.innerWidth / window.innerHeight);
+    paused = pausedBeforeEdit;
+  },
+});
+applyScenery();
+function openEditor() {
+  if (editor.active) return;
+  setMenu(false);
+  pausedBeforeEdit = false;
+  paused = true;
+  showGoogle(false);
+  document.getElementById('menu-btn').style.display = 'none';
+  editor.open();
+}
 
 let entry = null; // selected aircraft (registry entry)
 let aircraft = null; // flight model
@@ -176,8 +245,9 @@ function resetAircraft() {
   } else if (entry.def.handLaunch) {
     // In the pilot's right hand at the flight line, half a metre ahead,
     // pointing along the runway into wind.
-    const hx = settings.pilotX + lane * 3 + Math.cos(heading) * 0.5 + Math.sin(heading) * 0.3;
-    const hz = settings.pilotZ - Math.sin(heading) * 0.5 + Math.cos(heading) * 0.3;
+    const [px, pz] = pilotSpot();
+    const hx = px + settings.pilotX + lane * 3 + Math.cos(heading) * 0.5 + Math.sin(heading) * 0.3;
+    const hz = pz + settings.pilotZ - Math.sin(heading) * 0.5 + Math.cos(heading) * 0.3;
     aircraft.resetHandLaunch(hx, hz, heading);
   } else {
     const [gx, gz] = clubToWorld(RUNWAY.x - dir * run, RUNWAY.z + lane * 4);
@@ -315,9 +385,17 @@ const panel = new Panel(document.getElementById('panel'), {
     if (key === 'location') changeField(value);
     // The scenery is built for these once, so they take effect on a reload.
     if (key === 'graphics' || key === 'viewDistance') reloadKeepingRoom();
+    if (key === 'googleKey' && googleTiles) {
+      // A new key needs a new session.
+      world.scene.remove(googleTiles.group);
+      googleTiles.dispose();
+      googleTiles = null;
+    }
+    if (key === 'scenery' || key === 'googleKey') applyScenery();
     if (key === 'startMode') resetAircraft();
   },
   onReset: resetAircraft,
+  onEditScenery: () => openEditor(),
   onClose: () => setMenu(false),
 });
 
@@ -343,6 +421,7 @@ function setMenu(open) {
 }
 
 input.onAction = (code) => {
+  if (editor.active) return; // the editor has the keyboard
   sound.start();
   switch (code) {
     case 'KeyR':
@@ -372,6 +451,18 @@ input.onAction = (code) => {
       break;
     case 'KeyM':
       sound.muted = !sound.muted;
+      break;
+    case 'KeyE':
+      openEditor();
+      break;
+    case 'KeyO':
+      // Google photorealistic scenery on / off.
+      if (googleAvailable()) {
+        settings.scenery = settings.scenery === 'google' ? 'built' : 'google';
+        saveSettings(settings);
+        applyScenery();
+        if (panel.visible) panel.render();
+      }
       break;
     case 'Enter':
     case 'NumpadEnter':
@@ -475,7 +566,9 @@ function frame(now) {
 
   const fpv = rig.mode === 'fpv';
   model.setPilotVisible(!(fpv && settings.fpvMount === 'cockpit'));
-  rig.update(aircraft, dt);
+  if (editor.active) editor.update(dt);
+  else rig.update(aircraft, dt);
+  if (googleTiles?.visible) googleTiles.update(rig.camera, renderer, dt);
   // Other players (after the camera has moved, so their labels line up).
   rig.camera.updateMatrixWorld();
   const solid = mp.connected && !paused && !aircraft.crashed && now / 1000 > mpGraceUntil;
@@ -505,7 +598,8 @@ function frame(now) {
   analog.style.opacity = fpv && settings.fpvAnalog ? String(0.06 + Math.max(0, (dist - 250) / 900)) : '0';
 
   renderer.render(world.scene, rig.camera);
-  osd.draw(rig.mode, aircraft, {
+  if (editor.active) osd.clear();
+  else osd.draw(rig.mode, aircraft, {
     home: eye,
     rssi,
     paused,

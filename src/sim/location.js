@@ -1,3 +1,5 @@
+import { flightLineMiddle } from './edits.js';
+
 // Where you fly. The made-up club field is drawn from code; real sites come
 // from a baked data file (tools/bake_location.py): LIDAR terrain, trees and
 // buildings, and a ground colour map from OpenStreetMap.
@@ -13,8 +15,10 @@
 // table, windsock and fence. Everything else is in the world frame.
 //   angle               club frame turn from east, degrees (0: runway east-west)
 //   runway, pilotPad    runway strip and gravel pad {x, z, length, width}; runway.style
-//                       'mown' (striped grass) or 'cricket' (a rolled cricket pitch)
-//   field               the flying field: { x0, x1, z0, z1 } rectangle, or { x, z, r } circle
+//                       'mown' (striped grass), 'cricket' (a rolled cricket pitch) or
+//                       'none' (just where take-offs start, on the field's grass)
+//   field               the flying field: { x0, x1, z0, z1 } rectangle, { x, z, r } circle,
+//                       or { poly: [[x, z], ...] }
 //   mown                (optional) the short-cut areas on it, world frame:
 //                       { oval: [x, z], rx, rz, p } rounded oval (p: 2 ellipse, lower more diamond,
 //                       mown in rings), or { x0, x1, z0, z1 } rectangle (mown in stripes).
@@ -95,13 +99,15 @@ const WATERBEACH = {
     }],
     // Trees west and south of the field have grown since the survey too.
     treeGrowth: [
-      { x0: -180, x1: -50, z0: -140, z1: 110, grow: 1.4, minH: 10 }, // west
-      { x0: -50, x1: 140, z0: 80, z1: 190, grow: 1.4, minH: 10 }, // south
+      { x0: -180, x1: -50, z0: -140, z1: 110, grow: 1.15, minH: 10 }, // west
+      { x0: -50, x1: 140, z0: 80, z1: 190, grow: 1.15, minH: 10 }, // south
     ],
     // All deciduous round the field.
     conifers: false,
     // The east hedge's trees have grown a lot since the LIDAR (2022)...
-    treeBelts: [{ from: [113.8, -155.5], to: [92.8, 174.5], width: 22, grow: 1.4, minH: 10, spacing: 7 }],
+    // (grow is on top of the LIDAR heights; ~1.4 in all with the tree finder's
+    // height fix)
+    treeBelts: [{ from: [113.8, -155.5], to: [92.8, 174.5], width: 22, grow: 1.15, minH: 10, spacing: 7 }],
     // ...and there is a 3 m chain-link fence behind them.
     fences: [
       { from: [118.8, -155.5], to: [97.8, 174.5], height: 3, kind: 'chainlink' },
@@ -123,7 +129,35 @@ const WATERBEACH = {
   },
 };
 
-export const LOCATIONS = [HOME, WATERBEACH];
+const IMPINGTON = {
+  id: 'impington',
+  name: 'Impington Village College',
+  summary: 'The sports field at Impington Village College, Cambridgeshire, from Environment Agency LIDAR and OpenStreetMap. Best with the Google photorealistic scenery (Menu → View → Graphics).',
+  load: () => import('../locations/impington.json'),
+  layout: {
+    // You start in the middle of the main playing field; take off east or
+    // west into wind from just in front of you, on the grass.
+    angle: 0,
+    runway: { x: 0, z: -22, length: 80, width: 20, style: 'none' },
+    pilotPad: null,
+    // The college's playing field, as mapped in OpenStreetMap.
+    field: {
+      poly: [[-89.7, 19.1], [-39.9, -43.3], [-40.2, -47.7], [-62.9, -62.0], [8.3, -121.5], [11.5, -135.1], [11.4, -172.4],
+        [123.3, -80.2], [67.4, 10.2], [21.2, 82.6], [-1.1, 90.3], [-25.8, 162.9], [-303.0, 2.2], [-271.0, -71.3],
+        [-260.0, -81.5], [-246.8, -81.1], [-163.6, -29.1]],
+    },
+    hut: null,
+    container: null,
+    cars: [],
+    gazebo: null,
+    table: null,
+    windsock: null,
+    fence: null,
+    conifers: false,
+  },
+};
+
+export const LOCATIONS = [HOME, WATERBEACH, IMPINGTON];
 
 export const LOCATION = { ...HOME, data: null };
 
@@ -157,6 +191,15 @@ export function worldToClub(x, z) {
   return [x * c + z * s, -x * s + z * c];
 }
 
+/**
+ * Where pilots stand (world x, z): the middle of the flight line set in the
+ * editor, else the site's origin. Your own pilot-position setting is added
+ * to this.
+ */
+export function pilotSpot() {
+  return flightLineMiddle() ?? [0, 0];
+}
+
 /** Is (x, z) on short-cut grass? */
 export function inMown(x, z) {
   const m = LOCATION.layout.mown;
@@ -178,6 +221,18 @@ export function ovalDist(a, x, z) {
 /** Is (x, z) on the club's flying field? */
 export function inField(x, z) {
   const f = LOCATION.layout.field;
+  if (f.poly) return inPolygon(f.poly, x, z);
   if (f.r !== undefined) return Math.hypot(x - f.x, z - f.z) < f.r;
   return x >= f.x0 && x <= f.x1 && z >= f.z0 && z <= f.z1;
+}
+
+/** Point in polygon ([[x, z], ...]) by counting edge crossings. */
+export function inPolygon(p, x, z) {
+  let inside = false;
+  for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+    const [xi, zi] = p[i];
+    const [xj, zj] = p[j];
+    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
 }
