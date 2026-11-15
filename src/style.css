@@ -154,3 +154,22 @@ body.touch #splash .keys-only { display: none; }
 #map-credits { display: none; position: fixed; bottom: 4px; left: 50%; transform: translateX(-50%); z-index: 4; pointer-events: none; max-width: 70vw; padding: 2px 8px; border-radius: 4px; background: rgba(0,0,0,0.35); color: #fff; font: 11px/1.4 system-ui, sans-serif; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #map-credits .g-logo { height: 14px; vertical-align: middle; margin-right: 4px; }
 #map-credits.error { background: rgba(140,20,20,0.85); white-space: normal; font-size: 13px; pointer-events: auto; user-select: text; }
+
+/* Scenery editor */
+#editor { display: none; position: fixed; inset: 0; pointer-events: none; z-index: 5; font: 13px/1.4 system-ui, sans-serif; color: #eee; }
+#editor .ed-bar { pointer-events: auto; position: absolute; top: 8px; left: 8px; right: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 8px; background: rgba(20,24,28,0.85); border-radius: 8px; }
+#editor .ed-bar strong { margin-right: 6px; }
+#editor .ed-bar button { padding: 4px 10px; font-size: 13px; }
+#editor .ed-bar button.on { background: #e0a030; color: #1a1a1a; border-color: #e0a030; }
+#editor .ed-bar .ed-done { margin-left: auto; background: #3a7d44; border-color: #3a7d44; }
+#editor .ed-status { position: absolute; top: 56px; left: 8px; right: 8px; padding: 3px 8px; background: rgba(20,24,28,0.6); border-radius: 6px; width: fit-content; max-width: calc(100% - 16px); }
+#editor .ed-panel { pointer-events: auto; display: none; position: absolute; top: 90px; right: 8px; width: 260px; padding: 8px 10px; background: rgba(20,24,28,0.88); border-radius: 8px; }
+#editor .ed-panel h4 { margin: 2px 0 8px; }
+#editor .ed-row { display: grid; grid-template-columns: 82px 1fr 56px; gap: 6px; align-items: center; margin: 6px 0; }
+#editor .ed-row select { grid-column: 2 / 4; }
+#editor .ed-val { text-align: right; color: #ccc; }
+#editor .ed-hint { color: #99a; margin: 6px 0; }
+#editor .ed-delete { background: #8a2c2c; border-color: #8a2c2c; width: 100%; }
+#editor .ed-help { position: absolute; bottom: 8px; left: 8px; right: 8px; text-align: center; color: #ddd; text-shadow: 0 1px 2px #000; }
+#editor .ed-google { display: inline-flex; gap: 4px; align-items: center; padding: 0 6px; }
+#editor .ed-row input[type=range] { width: 100%; min-width: 0; }

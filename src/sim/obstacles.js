@@ -17,6 +17,7 @@ import { heightAt } from './terrain.js';
 import { CROWN_SEEDS, crownShape, lumpScale } from './treeShapes.js';
 import { LOCATION, clubAngle, clubToWorld } from './location.js';
 import { prepareBuilding, roofAt, insideFootprint, nearestWall } from './buildings.js';
+import { applyTreeEdits, applyBuildingEdits, applyFenceEdits } from './edits.js';
 
 const _lp = { x: 0, y: 0, z: 0 };
 
@@ -148,12 +149,35 @@ function makeTrees() {
   return trees;
 }
 
+/** A whole tree from an edited or added one ({ x, z, h, r, conifer }), keeping what it can of `orig`. */
+function editedTree(spec, orig) {
+  let rnd = Math.floor(hashId(spec.id) * 2147483646) + 1;
+  const rand = () => ((rnd = (rnd * 16807) % 2147483647) / 2147483647);
+  const conifer = spec.conifer ?? orig?.conifer ?? false;
+  const h = spec.h ?? orig?.h ?? 12;
+  const t = { id: spec.id, x: spec.x ?? orig.x, z: spec.z ?? orig.z, h, conifer, rot: orig?.rot ?? rand() * Math.PI * 2 };
+  t.y = heightAt(t.x, t.z);
+  if (orig && orig.conifer === conifer) {
+    Object.assign(t, { hue: orig.hue, sat: orig.sat, light: orig.light });
+    if (!conifer) t.crownW = spec.r ?? orig.crownW;
+    return t;
+  }
+  return dressTree(t, rand, spec.r ?? h * 0.33);
+}
+
+/** 0..1 from a tree's id, so its crown shape doesn't change when others are edited. */
+function hashId(id) {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
+  return ((h >>> 0) % 1000003) / 1000003;
+}
+
 export class Obstacles {
   constructor() {
-    this.trees = makeTrees();
+    this.trees = applyTreeEdits(makeTrees(), editedTree);
     // Which crown shape (and conifer shape) each tree is drawn with.
-    this.trees.forEach((t, i) => {
-      t.pick = Math.floor(((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1 * 1000);
+    this.trees.forEach((t) => {
+      t.pick = Math.floor(hashId(t.id) * 1000);
       t.variant = t.pick % CROWN_SEEDS.length;
     });
     this.shapes = [];
@@ -231,11 +255,11 @@ export class Obstacles {
       this.shapes.push({ type: 'box', name: 'a car', min: [c.x - 0.9, y, c.z - 2.1], max: [c.x + 0.9, y + 1.45, c.z + 2.1] });
     }
     // Buildings at a real site.
-    this.buildings = (LOCATION.data?.buildings ?? []).map(prepareBuilding);
+    this.buildings = applyBuildingEdits(LOCATION.data?.buildings ?? []).map((b) => ({ ...prepareBuilding(b), index: b.index }));
     for (const b of this.buildings) this.shapes.push({ type: 'building', name: 'a building', b });
     // Site fences: thin slabs along each stretch, solid like a wall (no
     // flying through chain link or mesh panels).
-    this.fences = (L.fences ?? []).map((f) => {
+    this.fences = applyFenceEdits(L.fences ?? []).map((f) => {
       const path = f.path ?? [f.from, f.to];
       const name = f.kind === 'panels' ? 'the temporary fence' : 'the chain-link fence';
       for (let i = 1; i < path.length; i++) {
@@ -269,6 +293,11 @@ export class Obstacles {
         }
       }
     }
+  }
+
+  /** Rebuild everything from the site and the current edits (src/sim/edits.js). */
+  reload() {
+    Object.assign(this, new Obstacles());
   }
 
   /** Shapes whose footprint may overlap a circle of `radius` around (x, z). */

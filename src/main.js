@@ -24,6 +24,8 @@ import { EngineSound } from './audio/engine.js';
 import { LOCATION, LOCATIONS, clubAngle, clubToWorld } from './sim/location.js';
 import { QUALITY, qualityPreset, viewDistance } from './world/quality.js';
 import { GoogleTiles } from './world/googleTiles.js';
+import { loadEdits } from './sim/edits.js';
+import { Editor } from './editor/editor.js';
 
 // Development builds (the /dev/ page) are badged so they're never mistaken for live.
 if (import.meta.env.VITE_CHANNEL === 'dev') {
@@ -63,6 +65,8 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = PCFSoftShadowMap;
 
 // --- Simulation ----------------------------------------------------------------
+// Scenery edits for this field (src/sim/edits.js), before anything is built.
+loadEdits(LOCATION.id, LOCATION.layout.edits);
 const obstacles = new Obstacles();
 const world = new World(obstacles, { quality, viewDistance: viewDistance(settings) });
 const wind = new Wind();
@@ -88,7 +92,45 @@ if (LOCATION.data && settings.scenery === 'google' && settings.googleKey) {
     creditEl: document.getElementById('map-credits'),
   });
   world.scene.add(googleTiles.group);
-  world.setBuiltSceneryVisible(false);
+  world.setGoogleMode(true);
+}
+
+// Scenery editor (E, or Menu → Flying → Edit scenery). It shows the built
+// scenery, with Google's tiles underneath only if you switch them on.
+let pausedBeforeEdit = false;
+const editor = new Editor({
+  world,
+  obstacles,
+  camera: rig.camera,
+  canvas,
+  root: document.getElementById('editor'),
+  onRebuilt: () => wind.setTrees(obstacles.trees),
+  setGoogle: googleTiles ? (on) => {
+    googleTiles.group.visible = on;
+    world.setGoogleMode(on);
+  } : null,
+  onExit: () => {
+    if (googleTiles) {
+      googleTiles.group.visible = true;
+      world.setGoogleMode(true);
+    }
+    document.getElementById('menu-btn').style.display = '';
+    rig.setMode(rig.mode);
+    rig.resize(window.innerWidth / window.innerHeight);
+    paused = pausedBeforeEdit;
+  },
+});
+function openEditor() {
+  if (editor.active) return;
+  setMenu(false);
+  pausedBeforeEdit = false;
+  paused = true;
+  if (googleTiles) {
+    googleTiles.group.visible = false;
+    world.setGoogleMode(false);
+  }
+  document.getElementById('menu-btn').style.display = 'none';
+  editor.open();
 }
 
 let entry = null; // selected aircraft (registry entry)
@@ -336,6 +378,7 @@ const panel = new Panel(document.getElementById('panel'), {
     if (key === 'startMode') resetAircraft();
   },
   onReset: resetAircraft,
+  onEditScenery: () => openEditor(),
   onClose: () => setMenu(false),
 });
 
@@ -361,6 +404,7 @@ function setMenu(open) {
 }
 
 input.onAction = (code) => {
+  if (editor.active) return; // the editor has the keyboard
   sound.start();
   switch (code) {
     case 'KeyR':
@@ -390,6 +434,9 @@ input.onAction = (code) => {
       break;
     case 'KeyM':
       sound.muted = !sound.muted;
+      break;
+    case 'KeyE':
+      openEditor();
       break;
     case 'Enter':
     case 'NumpadEnter':
@@ -493,7 +540,8 @@ function frame(now) {
 
   const fpv = rig.mode === 'fpv';
   model.setPilotVisible(!(fpv && settings.fpvMount === 'cockpit'));
-  rig.update(aircraft, dt);
+  if (editor.active) editor.update(dt);
+  else rig.update(aircraft, dt);
   googleTiles?.update(rig.camera, renderer, dt);
   // Other players (after the camera has moved, so their labels line up).
   rig.camera.updateMatrixWorld();
@@ -524,7 +572,8 @@ function frame(now) {
   analog.style.opacity = fpv && settings.fpvAnalog ? String(0.06 + Math.max(0, (dist - 250) / 900)) : '0';
 
   renderer.render(world.scene, rig.camera);
-  osd.draw(rig.mode, aircraft, {
+  if (editor.active) osd.clear();
+  else osd.draw(rig.mode, aircraft, {
     home: eye,
     rssi,
     paused,

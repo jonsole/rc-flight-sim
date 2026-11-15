@@ -94,6 +94,21 @@ heading, mown areas, pilot box, fences, trees grown since the survey) to
 `src/sim/location.js`. Players in multiplayer only meet others at the same
 field.
 
+### Scenery editor
+
+Press **E** (or *Menu → Flying → Edit scenery*) to fix up a field: fly
+around with W A S D, Q / E (down / up), Shift (faster), right-drag to look
+and the wheel to zoom. Click a tree, building or fence to select it, drag
+its arrows to move it, and set its size or type in the panel (Delete
+removes it); *+ Tree* plants trees where you click, *+ Fence* draws a fence
+through the points you click (Enter finishes). Ctrl+Z undoes. Every change
+also changes what you fly into. Edits are saved in your browser for that
+field; *Export* saves them to a file (send it in to have them built into
+the field for everyone) and *Import* loads one. With Google photorealistic
+scenery on, its tiles can be shown under your edits; when flying, Google's
+tiles replace the ground and buildings and the trees, hedges and fences
+(yours included) are drawn on top.
+
 If the picture is jerky, lower *Menu → View → Graphics*: quality (Low /
 Medium / High: how detailed the trees are and how far out, screen
 resolution, shadow sharpness) and scenery distance. Both are on the start

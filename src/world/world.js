@@ -297,6 +297,9 @@ function cricketPitchTexture(r) {
   return t;
 }
 
+/** Built scenery still drawn over Google's tiles. */
+const KEEP_OVER_GOOGLE = new Set(['tree', 'bush', 'fence']);
+
 export class World {
   /** @param {import('../sim/obstacles.js').Obstacles} obstacles */
   /**
@@ -331,7 +334,7 @@ export class World {
     this.club.rotation.y = -clubAngle();
     this.scene.add(this.club);
     this.#runway();
-    this.#trees();
+    this.#site();
     this.#props();
     this.setTime(14, 172);
   }
@@ -500,6 +503,8 @@ export class World {
     const ground = new Mesh(geo, mat);
     ground.receiveShadow = true;
     this.scene.add(ground);
+    this.terrainMesh = ground;
+    ground.userData.kind = 'terrain';
     this.builtScenery.push(ground);
   }
 
@@ -513,6 +518,7 @@ export class World {
       // Just above the physics ground (y = 0); polygonOffset prevents z-fighting.
       rw.position.set(RUNWAY.x, 0.002, RUNWAY.z);
       rw.receiveShadow = true;
+      rw.userData.kind = 'runway';
       this.club.add(rw);
       this.builtScenery.push(rw);
     }
@@ -543,10 +549,15 @@ export class World {
     this.club.add(rail);
   }
 
-  /** Show or hide the scenery drawn from the site data (Google tiles replace it). */
-  setBuiltSceneryVisible(visible) {
-    for (const o of this.builtScenery) o.visible = visible;
-    this.shadows?.update();
+  /**
+   * Google photorealistic tiles on (or off): they replace the ground,
+   * buildings and runway; the trees, hedges and fences (yours included) stay
+   * on top, as Google's own look melted close up.
+   */
+  setGoogleMode(on) {
+    this.googleMode = on;
+    for (const o of this.builtScenery) o.visible = !on || KEEP_OVER_GOOGLE.has(o.userData.kind);
+    if (this.shadows) this.shadows.dirty = true;
   }
 
   /** Leaf sway and wind: time in seconds, wind speed m/s and direction it blows FROM (degrees). */
@@ -555,6 +566,50 @@ export class World {
     leafUniforms.uWindSpeed.value = windSpeed;
     const from = (windFromDeg * Math.PI) / 180;
     leafUniforms.uWindDir.value.set(-Math.sin(from), 0, Math.cos(from));
+  }
+
+  /**
+   * The site's trees, buildings and fences: what the scenery editor changes.
+   * Built once, and again after each edit (rebuildSite).
+   */
+  #site() {
+    this.siteObjects = [];
+    const before = this.scene.children.length;
+    this.#trees();
+    const ob = this.obstacles;
+    if (ob.buildings.length) {
+      const houses = buildingsMesh(ob.buildings);
+      addCloudShadows(houses.material);
+      houses.userData.kind = 'building';
+      this.scene.add(houses);
+    }
+    for (const f of ob.fences) {
+      const o = siteFence(f);
+      o.userData.kind = 'fence';
+      o.traverse((m) => {
+        if (!m.isMesh) return;
+        m.userData.kind = 'fence';
+        if (m.material && !m.material.userData.clouds) {
+          addCloudShadows(m.material);
+          m.material.userData.clouds = true;
+        }
+      });
+      this.scene.add(o);
+    }
+    this.siteObjects = this.scene.children.slice(before);
+    this.builtScenery.push(...this.siteObjects);
+  }
+
+  /** Redraw the site's trees, buildings and fences after the obstacles were reloaded with edits. */
+  rebuildSite() {
+    for (const o of this.siteObjects) {
+      this.scene.remove(o);
+      this.builtScenery.splice(this.builtScenery.indexOf(o), 1);
+      o.traverse((m) => m.geometry?.dispose());
+    }
+    this.#site();
+    if (this.googleMode) this.setGoogleMode(true);
+    if (this.shadows) this.shadows.dirty = true;
   }
 
   #trees() {
@@ -636,8 +691,9 @@ export class World {
         m.receiveShadow = true;
         // Cull a whole set when it's out of view (bounds of all its trees).
         m.computeBoundingSphere();
+        m.userData.kind = 'tree';
+        m.userData.trees = set.trees; // instance order isn't tree order: see treeAt in the editor
         this.scene.add(m);
-        this.builtScenery.push(m);
       }
       this.trees.trunks.push(...trunks);
       this.trees.conTrunks.push(conTrunks);
@@ -704,20 +760,16 @@ export class World {
       shadowy(o);
       this.club.add(o);
     }
-    for (const o of [...ob.cars.map(car), ...ob.fences.map(siteFence)]) {
+    for (const o of ob.cars.map(car)) {
       shadowy(o);
+      o.userData.kind = 'car';
       this.scene.add(o);
       this.builtScenery.push(o);
     }
     for (const b of bushes(this.leafMat, { detail: this.quality.bushDetail, distance: this.viewDistance })) {
+      b.userData.kind = 'bush';
       this.scene.add(b);
       this.builtScenery.push(b);
-    }
-    if (ob.buildings.length) {
-      const houses = buildingsMesh(ob.buildings);
-      addCloudShadows(houses.material);
-      this.scene.add(houses);
-      this.builtScenery.push(houses);
     }
 
     // Flight-line table

@@ -101,6 +101,8 @@ export class Panel {
       this.#select('Start position', 'startMode', { runway: 'On the runway', air: 'In the air (30 m)' }),
       this.#select('Camera', 'cameraMode', CAMERA_LABELS),
       el('div', { class: 'row' }, el('button', { onclick: () => { this.opts.onReset(); this.opts.onClose(); } }, 'Reset aircraft (R)')),
+      el('div', { class: 'row' }, el('button', { onclick: () => this.opts.onEditScenery() }, 'Edit scenery (E)')),
+      el('p', { class: 'hint' }, 'Move, resize or delete trees, buildings and fences, or add new ones. Edits are saved in this browser for this field.'),
       this.#range('Volume', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.#check('Show HUD / OSD (H)', 'showHud'),
     ];
