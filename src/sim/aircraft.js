@@ -13,6 +13,9 @@ const RHO = 1.225;
 const G = 9.81;
 
 const _v = new Vector3();
+const _windCG = new Vector3();
+const _sp = new Vector3();
+const _sw = new Vector3();
 const _w = new Vector3();
 const _u = new Vector3();
 const _up = new Vector3();
@@ -224,7 +227,10 @@ export class Aircraft {
     this.throttleActual += (target - this.throttleActual) * k;
 
     // --- Air-relative velocity in body frame -----------------------------
-    const wind = this.env.wind ? this.env.wind.at(this.position, this.time, _tmp) : _tmp.set(0, 0, 0);
+    const W = this.env.wind;
+    const agl = W ? this.position.y - this.env.ground.heightAt(this.position.x, this.position.z) : 0;
+    const wind = W ? W.at(this.position, this.time, _tmp, agl) : _tmp.set(0, 0, 0);
+    _windCG.copy(wind);
     _v.copy(this.velocity).sub(wind).applyQuaternion(_qi); // body-frame air velocity
     const vAxial = Math.max(0, _v.x);
     this.airspeed = _v.length();
@@ -287,6 +293,16 @@ export class Aircraft {
       if (s.part && this.broken.has(s.part)) continue; // broken off
       // Panel velocity through the air = V + ω × r
       _u.crossVectors(this.omega, s.pos).add(_v);
+      if (W) {
+        // The air here can differ from the air at the CG (eddies behind
+        // trees): one wing in a gust, the other not.
+        _sp.copy(s.pos).applyQuaternion(q);
+        const ay = agl + _sp.y;
+        _sp.add(this.position);
+        W.at(_sp, this.time, _sw, ay);
+        _sw.sub(_windCG).applyQuaternion(_qi);
+        _u.sub(_sw);
+      }
       if (s.propwash) _u.x += this.propWash * s.propwash;
       // Remove spanwise flow
       _up.copy(_u).addScaledVector(s.span, -_u.dot(s.span));

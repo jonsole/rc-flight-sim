@@ -58,6 +58,7 @@ renderer.shadowMap.type = PCFSoftShadowMap;
 const obstacles = new Obstacles();
 const world = new World(obstacles, { lowDetail: TOUCH_DEVICE });
 const wind = new Wind();
+wind.setTrees(obstacles.trees); // trees shelter the field and stir up the air behind them
 const input = new Input();
 const rig = new CameraRig(settings);
 // Scenery shadows (redrawn only when the sun moves; smaller map on phones),
