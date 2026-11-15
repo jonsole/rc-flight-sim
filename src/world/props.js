@@ -348,7 +348,7 @@ function realBushes(material) {
 
 /**
  * Tall chain-link fence along a line: galvanised diamond mesh (see-through,
- * a grey haze from a distance) on round posts every 3 m, with a top rail.
+ * a grey haze from a distance) on square concrete posts every 3 m.
  * @param {{ from: number[], to: number[], height: number }} f
  */
 export function metalFence(f) {
@@ -357,7 +357,7 @@ export function metalFence(f) {
   const [bx, bz] = f.to;
   const len = Math.hypot(bx - ax, bz - az);
   const yaw = Math.atan2(-(bz - az), bx - ax); // local x along the fence
-  const metal = new MeshStandardMaterial({ color: '#9aa0a2', roughness: 0.45, metalness: 0.6 });
+  const concrete = lambert({ color: '#b3afa6' });
   // 0.4 m of mesh per tile: 50 mm diamonds of thin wire.
   const TILE = 0.4;
   const mesh = canvasTex(128, 128, (c, w, h) => {
@@ -380,7 +380,6 @@ export function metalFence(f) {
   });
   const steps = Math.max(1, Math.round(len / 3));
   const bayLen = len / steps;
-  const y0 = Math.min(heightAt(ax, az), heightAt(bx, bz));
   // One panel per bay, following the ground.
   for (let i = 0; i < steps; i++) {
     const t = (i + 0.5) / steps;
@@ -397,20 +396,18 @@ export function metalFence(f) {
     bay.receiveShadow = true;
     g.add(bay);
   }
-  const postGeo = new CylinderGeometry(0.03, 0.03, f.height + 0.05, 8);
+  // Square concrete posts, 125 mm, a little taller than the mesh.
+  const postH = f.height + 0.1;
+  const postGeo = new BoxGeometry(0.125, postH, 0.125);
   for (let i = 0; i <= steps; i++) {
     const x = ax + ((bx - ax) * i) / steps;
     const z = az + ((bz - az) * i) / steps;
-    const post = new Mesh(postGeo, metal);
-    post.position.set(x, heightAt(x, z) + (f.height + 0.05) / 2, z);
+    const post = new Mesh(postGeo, concrete);
+    post.position.set(x, heightAt(x, z) + postH / 2, z);
+    post.rotation.y = yaw;
     post.castShadow = true;
+    post.receiveShadow = true;
     g.add(post);
   }
-  // Top rail.
-  const rail = new Mesh(new CylinderGeometry(0.02, 0.02, len, 6), metal);
-  rail.rotation.set(0, yaw, Math.PI / 2);
-  rail.position.set((ax + bx) / 2, y0 + f.height - 0.03, (az + bz) / 2);
-  rail.castShadow = true;
-  g.add(rail);
   return g;
 }
