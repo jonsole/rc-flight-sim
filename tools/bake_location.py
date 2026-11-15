@@ -286,7 +286,11 @@ def find_trees(vom, xs, zs, max_trees):
     the canopy falls below half its height, and any canopy still not under
     a crown gets trees of its own, so woods come out as dense as they are.
     """
-    v = ndimage.gaussian_filter(ndimage.grey_closing(np.nan_to_num(vom), size=(5, 5)), 1.2)
+    raw = np.nan_to_num(vom)
+    v = ndimage.gaussian_filter(ndimage.grey_closing(raw, size=(5, 5)), 1.2)
+    # Smoothing takes the tops off: a tree's height is the raw LIDAR's
+    # highest point near its top.
+    tops = ndimage.maximum_filter(raw, size=5)
     peaks = (v >= 3.0) & (v == ndimage.maximum_filter(v, size=5))
     iy, ix = np.nonzero(peaks)
     order = np.argsort(-v[iy, ix])
@@ -296,16 +300,18 @@ def find_trees(vom, xs, zs, max_trees):
     dirs = [(math.cos(a), math.sin(a)) for a in np.linspace(0, 2 * math.pi, 12, endpoint=False)]
 
     def crown(y, x, h):
+        # Out to where the (smoothed) canopy falls below 40% of its top.
+        top = float(v[y, x])
         rs = []
         for dx, dy in dirs:
             r = 1
-            while r < 0.5 * h + 3:
+            while r < 0.6 * h + 3:
                 xx, yy = int(round(x + dx * r)), int(round(y + dy * r))
-                if not (0 <= xx < v.shape[1] and 0 <= yy < v.shape[0]) or v[yy, xx] < 0.5 * h:
+                if not (0 <= xx < v.shape[1] and 0 <= yy < v.shape[0]) or v[yy, xx] < 0.4 * top:
                     break
                 r += 1
             rs.append(r)
-        return float(np.clip(np.mean(rs), 1.2, 0.45 * h))
+        return float(np.clip(np.mean(rs), 1.2, 0.6 * h))
 
     def accept(y, x, h, cr):
         taken.append((xs[x], zs[y], h, cr))
@@ -319,7 +325,7 @@ def find_trees(vom, xs, zs, max_trees):
         y, x = iy[k], ix[k]
         if occ[y, x]:
             continue
-        h = float(v[y, x])
+        h = float(tops[y, x])
         accept(y, x, h, crown(y, x, h))
     # Canopy left uncovered: a tree at the tallest point of each patch.
     for _ in range(3):
@@ -336,8 +342,8 @@ def find_trees(vom, xs, zs, max_trees):
             w = np.where(m, v[sl], 0)
             yy, xx = np.unravel_index(np.argmax(w), w.shape)
             y, x = yy + sl[0].start, xx + sl[1].start
-            h = float(v[y, x])
-            accept(y, x, h, float(np.clip(math.sqrt(area / math.pi), 1.5, 0.45 * h)))
+            h = float(tops[y, x])
+            accept(y, x, h, float(np.clip(math.sqrt(area / math.pi), 1.5, 0.6 * h)))
             added += 1
         if not added:
             break

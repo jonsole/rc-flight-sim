@@ -97,13 +97,15 @@ const WATERBEACH = {
     }],
     // Trees west and south of the field have grown since the survey too.
     treeGrowth: [
-      { x0: -180, x1: -50, z0: -140, z1: 110, grow: 1.4, minH: 10 }, // west
-      { x0: -50, x1: 140, z0: 80, z1: 190, grow: 1.4, minH: 10 }, // south
+      { x0: -180, x1: -50, z0: -140, z1: 110, grow: 1.15, minH: 10 }, // west
+      { x0: -50, x1: 140, z0: 80, z1: 190, grow: 1.15, minH: 10 }, // south
     ],
     // All deciduous round the field.
     conifers: false,
     // The east hedge's trees have grown a lot since the LIDAR (2022)...
-    treeBelts: [{ from: [113.8, -155.5], to: [92.8, 174.5], width: 22, grow: 1.4, minH: 10, spacing: 7 }],
+    // (grow is on top of the LIDAR heights; ~1.4 in all with the tree finder's
+    // height fix)
+    treeBelts: [{ from: [113.8, -155.5], to: [92.8, 174.5], width: 22, grow: 1.15, minH: 10, spacing: 7 }],
     // ...and there is a 3 m chain-link fence behind them.
     fences: [
       { from: [118.8, -155.5], to: [97.8, 174.5], height: 3, kind: 'chainlink' },
