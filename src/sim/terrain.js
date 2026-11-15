@@ -4,7 +4,7 @@
 // flat at y = 0; beyond it, gentle rolling hills rise towards the horizon.
 // Real sites (src/sim/location.js): the LIDAR ground, levelled on the mown
 // field, fading into gentle made-up country beyond the baked area.
-import { LOCATION, inField } from './location.js';
+import { LOCATION, inMown, clubAngle } from './location.js';
 
 const FIELD_RADIUS = 260;
 const BLEND = 200;
@@ -166,6 +166,7 @@ export const PILOT_PAD = LOCATION.layout.pilotPad;
 
 export const SURFACES = {
   runway: { name: 'mown runway', roll: 0.06, stiction: 2, drag: 1.0, bump: 0.006 },
+  pitch: { name: 'cricket pitch', roll: 0.04, stiction: 2, drag: 0.9, bump: 0.002 },
   pad: { name: 'gravel pad', roll: 0.08, stiction: 2, drag: 1.0, bump: 0.003 },
   grass: { name: 'field grass', roll: 0.16, stiction: 2, drag: 1.3, bump: 0.02 },
   rough: { name: 'rough grass', roll: 0.22, stiction: 2, drag: 1.5, bump: 0.035 },
@@ -173,10 +174,16 @@ export const SURFACES = {
 
 const inRect = (r, x, z) => Math.abs(x - r.x) <= r.length / 2 && Math.abs(z - r.z) <= r.width / 2;
 
+// The runway and pad are laid out in the club frame (src/sim/location.js).
+const CLUB_COS = Math.cos(clubAngle());
+const CLUB_SIN = Math.sin(clubAngle());
+
 export function surfaceAt(x, z) {
-  if (inRect(RUNWAY, x, z)) return SURFACES.runway;
-  if (inRect(PILOT_PAD, x, z)) return SURFACES.pad;
-  return inField(x, z) ? SURFACES.grass : SURFACES.rough;
+  const cx = x * CLUB_COS + z * CLUB_SIN;
+  const cz = -x * CLUB_SIN + z * CLUB_COS;
+  if (inRect(RUNWAY, cx, cz)) return RUNWAY.style === 'cricket' ? SURFACES.pitch : SURFACES.runway;
+  if (inRect(PILOT_PAD, cx, cz)) return SURFACES.pad;
+  return inMown(x, z) ? SURFACES.grass : SURFACES.rough;
 }
 
 // Small bumps (~0.7 m across) on top of the terrain. Too small to see on the

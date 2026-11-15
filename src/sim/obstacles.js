@@ -15,7 +15,7 @@
 
 import { heightAt } from './terrain.js';
 import { CROWN_SEEDS, crownShape, lumpScale } from './treeShapes.js';
-import { LOCATION } from './location.js';
+import { LOCATION, clubAngle, clubToWorld } from './location.js';
 import { prepareBuilding, roofAt, insideFootprint, nearestWall } from './buildings.js';
 
 const _lp = { x: 0, y: 0, z: 0 };
@@ -165,48 +165,53 @@ export class Obstacles {
       }
     }
     const L = LOCATION.layout;
+    // The club's own things, laid out in the club frame (src/sim/location.js)
+    // and turned into the world below. Drawn in that frame by the world.
+    const club = [];
     // Clubhouse behind the pilot: walls, pitched roof (eaves to ridge).
     this.hut = L.hut;
     if (L.hut) {
       const { x, z, w, d, wall, ridge } = L.hut;
       const [x0, x1, z0, z1] = [x - w / 2, x + w / 2, z - d / 2, z + d / 2];
-      this.shapes.push({ type: 'box', name: 'the clubhouse', min: [x0, 0, z0], max: [x1, wall, z1] });
-      this.shapes.push({ type: 'box', name: 'the clubhouse roof', min: [x0 - 0.4, wall - 0.1, z0 - 0.4], max: [x1 + 0.4, wall + 0.75, z1 + 0.4] });
-      this.shapes.push({ type: 'box', name: 'the clubhouse roof', min: [x0 - 0.4, wall + 0.7, z0 + 1.6], max: [x1 + 0.4, ridge, z1 - 1.6] });
+      club.push({ type: 'box', name: 'the clubhouse', min: [x0, 0, z0], max: [x1, wall, z1] });
+      club.push({ type: 'box', name: 'the clubhouse roof', min: [x0 - 0.4, wall - 0.1, z0 - 0.4], max: [x1 + 0.4, wall + 0.75, z1 + 0.4] });
+      club.push({ type: 'box', name: 'the clubhouse roof', min: [x0 - 0.4, wall + 0.7, z0 + 1.6], max: [x1 + 0.4, ridge, z1 - 1.6] });
     }
     // Shipping container (20 ft) beside it.
     this.container = L.container;
     if (L.container) {
       const c = L.container;
-      this.shapes.push({ type: 'box', name: 'the container', min: [c.x - c.l / 2, 0, c.z - c.w / 2], max: [c.x + c.l / 2, c.h, c.z + c.w / 2] });
-    }
-    // Cars in the car park, nose to the field.
-    this.cars = L.cars;
-    for (const c of this.cars) {
-      const y = heightAt(c.x, c.z);
-      this.shapes.push({ type: 'box', name: 'a car', min: [c.x - 0.9, y, c.z - 2.1], max: [c.x + 0.9, y + 1.45, c.z + 2.1] });
+      club.push({ type: 'box', name: 'the container', min: [c.x - c.l / 2, 0, c.z - c.w / 2], max: [c.x + c.l / 2, c.h, c.z + c.w / 2] });
     }
     // Pop-up gazebo in the pits, behind the safety fence.
     this.gazebo = L.gazebo;
     const gz = L.gazebo;
     for (const [dx, dz] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5]]) {
-      this.shapes.push({ type: 'cylinder', name: 'the gazebo', x: gz.x + dx, z: gz.z + dz, r: 0.03, y0: 0, y1: 2.2 });
+      club.push({ type: 'cylinder', name: 'the gazebo', x: gz.x + dx, z: gz.z + dz, r: 0.03, y0: 0, y1: 2.2 });
     }
-    this.shapes.push({ type: 'box', name: 'the gazebo', min: [gz.x - 1.6, 2.1, gz.z - 1.6], max: [gz.x + 1.6, 2.7, gz.z + 1.6] });
-    this.shapes.push({ type: 'box', name: 'the pits table', min: [gz.x - 1, 0, gz.z + 0.2], max: [gz.x + 1, 0.75, gz.z + 1] });
-    // Windsock pole.
-    this.windsock = L.windsock;
+    club.push({ type: 'box', name: 'the gazebo', min: [gz.x - 1.6, 2.1, gz.z - 1.6], max: [gz.x + 1.6, 2.7, gz.z + 1.6] });
+    club.push({ type: 'box', name: 'the pits table', min: [gz.x - 1, 0, gz.z + 0.2], max: [gz.x + 1, 0.75, gz.z + 1] });
+    // Windsock pole (kept in world coordinates: it swings with the wind).
     const ws = L.windsock;
-    this.shapes.push({ type: 'cylinder', name: 'the windsock pole', x: ws.x, z: ws.z, r: 0.05, y0: 0, y1: ws.height });
+    const [wsx, wsz] = clubToWorld(ws.x, ws.z);
+    this.windsock = { ...ws, x: wsx, z: wsz };
+    club.push({ type: 'cylinder', name: 'the windsock pole', x: ws.x, z: ws.z, r: 0.05, y0: 0, y1: ws.height });
     // Safety fence: posts and the top rail.
     const f = L.fence;
     const nPosts = Math.round((f.x1 - f.x0) / 5.1) + 1;
     this.fence = { z: f.z, posts: Array.from({ length: nPosts }, (_, i) => f.x0 + i * 5.1), height: 1.1, railY: 1.0, x0: f.x0, x1: f.x1 };
-    for (const px of this.fence.posts) this.shapes.push({ type: 'cylinder', name: 'the fence', x: px, z: f.z, r: 0.04, y0: 0, y1: 1.1 });
-    this.shapes.push({ type: 'box', name: 'the fence', min: [f.x0, 0.98, f.z - 0.02], max: [f.x1, 1.02, f.z + 0.02] });
+    for (const px of this.fence.posts) club.push({ type: 'cylinder', name: 'the fence', x: px, z: f.z, r: 0.04, y0: 0, y1: 1.1 });
+    club.push({ type: 'box', name: 'the fence', min: [f.x0, 0.98, f.z - 0.02], max: [f.x1, 1.02, f.z + 0.02] });
     // Flight-line table.
     this.table = L.table;
-    this.shapes.push({ type: 'box', name: 'the table', min: [L.table.x - 1, 0, L.table.z - 0.4], max: [L.table.x + 1, 0.78, L.table.z + 0.4] });
+    club.push({ type: 'box', name: 'the table', min: [L.table.x - 1, 0, L.table.z - 0.4], max: [L.table.x + 1, 0.78, L.table.z + 0.4] });
+    for (const sh of club) this.shapes.push(clubShapeToWorld(sh));
+    // Cars in the car park, nose to the field (world frame).
+    this.cars = L.cars;
+    for (const c of this.cars) {
+      const y = heightAt(c.x, c.z);
+      this.shapes.push({ type: 'box', name: 'a car', min: [c.x - 0.9, y, c.z - 2.1], max: [c.x + 0.9, y + 1.45, c.z + 2.1] });
+    }
     // Buildings at a real site.
     this.buildings = (LOCATION.data?.buildings ?? []).map(prepareBuilding);
     for (const b of this.buildings) this.shapes.push({ type: 'building', name: 'a building', b });
@@ -344,6 +349,27 @@ export class Obstacles {
         return null;
     }
   }
+}
+
+/** A club-frame shape in world coordinates: boxes become turned slabs. */
+function clubShapeToWorld(s) {
+  if (!clubAngle()) return s;
+  if (s.type === 'cylinder') {
+    const [x, z] = clubToWorld(s.x, s.z);
+    return { ...s, x, z };
+  }
+  if (s.type === 'box') {
+    const [x0, y0, z0] = s.min;
+    const [x1, y1, z1] = s.max;
+    const pts = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]].map(([x, z]) => clubToWorld(x, z));
+    const b = {
+      pts, y0, eave: y1, ridge: y1, kind: 'club',
+      x0: Math.min(...pts.map((p) => p[0])), x1: Math.max(...pts.map((p) => p[0])),
+      z0: Math.min(...pts.map((p) => p[1])), z1: Math.max(...pts.map((p) => p[1])),
+    };
+    return { type: 'building', name: s.name, b };
+  }
+  return s;
 }
 
 function boundOf(s) {

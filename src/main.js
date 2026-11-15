@@ -21,7 +21,7 @@ import { OSD } from './ui/osd.js';
 import { Panel } from './ui/panel.js';
 import { loadSettings, saveSettings } from './ui/settings.js';
 import { EngineSound } from './audio/engine.js';
-import { LOCATION, LOCATIONS } from './sim/location.js';
+import { LOCATION, LOCATIONS, clubAngle, clubToWorld } from './sim/location.js';
 
 // Development builds (the /dev/ page) are badged so they're never mistaken for live.
 if (import.meta.env.VITE_CHANNEL === 'dev') {
@@ -152,17 +152,20 @@ function applySettings() {
 function resetAircraft() {
   // Put the model back together if anything broke off.
   if (aircraft.broken.size || debris.items.length) replaceModel();
-  // Take off into wind along the runway.
-  const windFromEast = Math.sin((settings.windDir * Math.PI) / 180) > 0; // wind from E half
-  const dir = windFromEast ? 1 : -1; // fly towards the wind (+x = east)
-  const heading = dir > 0 ? 0 : Math.PI;
-  const startX = RUNWAY.x - dir * 40;
+  // Take off into wind along the runway (which may be turned: the club frame).
+  const A = clubAngle();
+  const windRad = (settings.windDir * Math.PI) / 180;
+  const dir = Math.sin(windRad - A) > 0 ? 1 : -1; // +1: wind from the runway's +x end
+  const heading = (dir > 0 ? 0 : Math.PI) - A;
+  // Start a little in from the downwind end (40 m on a long runway).
+  const run = Math.min(40, RUNWAY.length / 2 - 3);
   // In multiplayer, each player starts in their own lane so nobody spawns
   // inside someone else's aeroplane.
   const lane = mp.connected ? ((mp.myId - 1) % 4) - 1.5 : 0;
   mpGraceUntil = performance.now() / 1000 + 3;
   if (settings.startMode === 'air') {
-    aircraft.resetInAir(new Vector3(startX + dir * 40, 30 + lane * 4, RUNWAY.z - 10 + lane * 8), heading, 14);
+    const [ax, az] = clubToWorld(RUNWAY.x, RUNWAY.z - 10 + lane * 8);
+    aircraft.resetInAir(new Vector3(ax, 30 + lane * 4, az), heading, 14);
     input.kb.throttle = 0.5;
   } else if (entry.def.handLaunch) {
     // In the pilot's right hand at the flight line, half a metre ahead,
@@ -171,7 +174,8 @@ function resetAircraft() {
     const hz = settings.pilotZ - Math.sin(heading) * 0.5 + Math.cos(heading) * 0.3;
     aircraft.resetHandLaunch(hx, hz, heading);
   } else {
-    aircraft.resetOnGround(startX, RUNWAY.z + lane * 4, heading);
+    const [gx, gz] = clubToWorld(RUNWAY.x - dir * run, RUNWAY.z + lane * 4);
+    aircraft.resetOnGround(gx, gz, heading);
   }
   osd.reset();
   rig.chaseInit = false;

@@ -12,7 +12,7 @@
 // detail on top; the made-up farmland only carries on beyond it.
 import { CanvasTexture, SRGBColorSpace, Vector2 } from 'three';
 import { RUNWAY } from '../sim/terrain.js';
-import { LOCATION } from '../sim/location.js';
+import { LOCATION, clubAngle } from '../sim/location.js';
 
 const FIELD = { x: 0, z: -40, r: 260 };
 
@@ -21,6 +21,44 @@ function fieldDist() {
   const f = LOCATION.layout.field;
   if (f.r !== undefined) return `max(0.0, length(p - vec2(${f.x.toFixed(1)}, ${f.z.toFixed(1)})) - ${f.r.toFixed(1)})`;
   return `rectDist(p, vec2(${((f.x0 + f.x1) / 2).toFixed(1)}, ${((f.z0 + f.z1) / 2).toFixed(1)}), vec2(${((f.x1 - f.x0) / 2).toFixed(1)}, ${((f.z1 - f.z0) / 2).toFixed(1)}))`;
+}
+
+/**
+ * GLSL for a site's mown areas (layout.mown): sets `mown` (0..1) and
+ * darkens the long grass around them; ovals are cut in rings, rectangles
+ * in stripes. Nothing without a list (the runway-and-pits zone stays).
+ */
+function mownGlsl() {
+  const list = LOCATION.layout.mown;
+  if (!list) return '';
+  const f = (v) => v.toFixed(2);
+  const parts = list.map((a, i) => {
+    if (a.oval) {
+      const r = Math.min(a.rx, a.rz);
+      return `{
+          vec2 q = abs(p - vec2(${f(a.oval[0])}, ${f(a.oval[1])})) / vec2(${f(a.rx)}, ${f(a.rz)});
+          float d = pow(pow(q.x, ${f(a.p)}) + pow(q.y, ${f(a.p)}), ${f(1 / a.p)});
+          float m${i} = 1.0 - smoothstep(1.0 - 0.6 / ${f(r)}, 1.0 + 0.6 / ${f(r)}, d);
+          float ring = step(0.5, fract(d * ${f(r)} / 2.2));
+          cut = max(cut, m${i});
+          pattern = mix(pattern, ring, m${i});
+        }`;
+    }
+    return `{
+          float m${i} = 1.0 - smoothstep(0.0, 0.6, rectDist(p, vec2(${f((a.x0 + a.x1) / 2)}, ${f((a.z0 + a.z1) / 2)}), vec2(${f((a.x1 - a.x0) / 2)}, ${f((a.z1 - a.z0) / 2)})));
+          float stripe = step(0.5, fract((p.x - ${f(a.x0)}) / 5.0));
+          cut = max(cut, m${i});
+          pattern = mix(pattern, stripe, m${i});
+        }`;
+  });
+  return `        float cut = 0.0;
+        float pattern = 0.0;
+        ${parts.join('\n        ')}
+        // Long grass: darker, browner, tufty. Cut grass: paler, in its pattern.
+        vec3 longGrass = g * vec3(0.86, 0.84, 0.66) * (0.85 + 0.3 * gNoise(p / 2.5));
+        vec3 shortGrass = g * vec3(1.04, 1.06, 0.94) * (1.0 + 0.08 * pattern);
+        g = mix(longGrass, shortGrass, cut);
+        mown = max(cut, 1.0 - smoothstep(0.0, 1.5, dRunway));`;
 }
 
 function realGround() {
@@ -100,11 +138,13 @@ export function addGroundDetail(material) {
 
         // Zones: mown around the runway and pits, field grass, then rough.
         float rField = length(p - vec2(${FIELD.x.toFixed(1)}, ${FIELD.z.toFixed(1)}));
-        float dRunway = rectDist(p, vec2(${RUNWAY.x.toFixed(1)}, ${RUNWAY.z.toFixed(1)}), vec2(${(RUNWAY.length / 2).toFixed(1)}, ${(RUNWAY.width / 2).toFixed(1)}));
-        float dPits = rectDist(p, vec2(-8.0, 12.0), vec2(40.0, 16.0));
-        float mown = 1.0 - smoothstep(18.0, 26.0, min(dRunway, dPits));
+        // The runway and pits are laid out in the club frame.
+        vec2 pc = vec2(p.x * ${Math.cos(clubAngle()).toFixed(6)} + p.y * ${Math.sin(clubAngle()).toFixed(6)}, -p.x * ${Math.sin(clubAngle()).toFixed(6)} + p.y * ${Math.cos(clubAngle()).toFixed(6)});
+        float dRunway = rectDist(pc, vec2(${RUNWAY.x.toFixed(1)}, ${RUNWAY.z.toFixed(1)}), vec2(${(RUNWAY.length / 2).toFixed(2)}, ${(RUNWAY.width / 2).toFixed(2)}));
+        float dPits = rectDist(pc, vec2(-8.0, 12.0), vec2(40.0, 16.0));
+        float mown = ${LOCATION.layout.mown ? '0.0' : '1.0 - smoothstep(18.0, 26.0, min(dRunway, dPits))'};
         // Mowing stripes along the runway, 3.5 m wide.
-        float stripe = step(0.5, fract(p.y / 7.0));
+        float stripe = step(0.5, fract(pc.y / 7.0));
         g *= mix(1.0, 1.0 + 0.07 * stripe, mown);
         g = mix(g, g * vec3(1.02, 1.05, 0.95), mown); // short grass is a fresher green
 #ifdef REAL_GROUND
@@ -116,8 +156,10 @@ export function addGroundDetail(material) {
         vec3 site = texture2D(groundMap, vec2(guv.x, 1.0 - guv.y)).rgb;
         float detail = dot(grass.rgb, vec3(0.2126, 0.7152, 0.0722)) / 0.2;
         site *= mix(1.0, detail, 0.75) * (0.94 + 0.12 * patches);
-        // The club's field is kept grass; mown areas keep their stripes.
+        // The club's field is grass; short-cut areas are fresher, with their
+        // mowing pattern, and the rest of the field is longer and browner.
         float onField = 1.0 - smoothstep(0.0, 8.0, ${fieldDist()});
+${mownGlsl()}
         site = mix(site, g, max(mown, onField * 0.9));
         g = mix(g, site, inMap);
         float farm = 1.0 - inMap;

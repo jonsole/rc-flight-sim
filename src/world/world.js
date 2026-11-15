@@ -8,6 +8,7 @@ import {
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY, PILOT_PAD } from '../sim/terrain.js';
 import { buildingsMesh } from './buildings.js';
+import { clubAngle } from '../sim/location.js';
 import { sunPosition, moonPosition } from './sun.js';
 import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail } from './ground.js';
@@ -235,6 +236,66 @@ function runwayTexture() {
   return t;
 }
 
+function cricketPitchTexture(r) {
+  // A rolled cricket pitch, lengthwise along the canvas: pale, dry, worn
+  // grass, darker roller bands, scuffed ends where bowlers land, and the
+  // white creases (bowling crease at each end, popping crease 1.22 m in
+  // front of it, return creases along the sides).
+  const ppm = 64; // pixels per metre
+  const W = Math.round(r.length * ppm);
+  const H = Math.round(r.width * ppm);
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext('2d');
+  let seed = 23;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  ctx.fillStyle = '#a7a467';
+  ctx.fillRect(0, 0, W, H);
+  // Roller bands along the pitch.
+  for (let i = 0; i < 4; i++) {
+    ctx.fillStyle = i % 2 ? 'rgba(90,100,40,0.10)' : 'rgba(255,250,210,0.06)';
+    ctx.fillRect(0, (i * H) / 4, W, H / 4 + 1);
+  }
+  for (let i = 0; i < 40000; i++) {
+    const l = 45 + rnd() * 25;
+    ctx.fillStyle = `hsla(${50 + rnd() * 25}, ${25 + rnd() * 20}%, ${l}%, 0.35)`;
+    ctx.fillRect(rnd() * W, rnd() * H, 1 + rnd() * 3, 1);
+  }
+  // Bare, scuffed patches where the ball lands and the bowlers run in.
+  const crease = (r.length - 20.12) / 2; // bowling creases 20.12 m apart
+  for (const end of [0, 1]) {
+    for (let i = 0; i < 60; i++) {
+      const d = crease + 1.5 + rnd() * 5;
+      const x = (end ? r.length - d : d) * ppm;
+      const y = H / 2 + (rnd() - 0.5) * H * 0.7;
+      const rad = 4 + rnd() * 14;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+      g.addColorStop(0, 'rgba(150,125,85,0.45)');
+      g.addColorStop(1, 'rgba(150,125,85,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+    }
+  }
+  // Creases, 5 cm white lines.
+  ctx.fillStyle = 'rgba(245,245,238,0.95)';
+  const lw = 0.05 * ppm;
+  for (const end of [0, 1]) {
+    const bowl = end ? r.length - crease : crease;
+    const pop = end ? bowl - 1.22 : bowl + 1.22;
+    ctx.fillRect(bowl * ppm - lw / 2, H / 2 - 1.32 * ppm, lw, 2.64 * ppm);
+    ctx.fillRect(pop * ppm - lw / 2, 0, lw, H);
+    // Return creases: 1.32 m either side of the middle, from the popping
+    // crease back 2.44 m towards the end of the pitch.
+    const x0 = end ? pop : pop - 2.44;
+    for (const side of [-1, 1]) ctx.fillRect(x0 * ppm, H / 2 + side * 1.32 * ppm - lw / 2, 2.44 * ppm, lw);
+  }
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
 export class World {
   /** @param {import('../sim/obstacles.js').Obstacles} obstacles */
   constructor(obstacles, opts = {}) {
@@ -254,6 +315,10 @@ export class World {
     this.scene.add(this.clouds.mesh);
     this.#lights();
     this.#terrain();
+    // The club's own things (runway, pad, fence, pits) in the club frame.
+    this.club = new Group();
+    this.club.rotation.y = -clubAngle();
+    this.scene.add(this.club);
     this.#runway();
     this.#trees();
     this.#props();
@@ -429,18 +494,19 @@ export class World {
   #runway() {
     const g = new PlaneGeometry(RUNWAY.length, RUNWAY.width);
     g.rotateX(-Math.PI / 2);
-    const rw = new Mesh(g, addCloudShadows(new MeshLambertMaterial({ map: runwayTexture(), polygonOffset: true, polygonOffsetFactor: -2 })));
+    const tex = RUNWAY.style === 'cricket' ? cricketPitchTexture(RUNWAY) : runwayTexture();
+    const rw = new Mesh(g, addCloudShadows(new MeshLambertMaterial({ map: tex, polygonOffset: true, polygonOffsetFactor: -2 })));
     // Just above the physics ground (y = 0); polygonOffset prevents z-fighting.
     rw.position.set(RUNWAY.x, 0.002, RUNWAY.z);
     rw.receiveShadow = true;
-    this.scene.add(rw);
+    this.club.add(rw);
 
     // Pilot box (gravel pad) and safety fence line
     const pad = new Mesh(new PlaneGeometry(PILOT_PAD.length, PILOT_PAD.width), addCloudShadows(new MeshLambertMaterial({ map: gravelTexture(), polygonOffset: true, polygonOffsetFactor: -2 })));
     pad.rotation.x = -Math.PI / 2;
     pad.position.set(PILOT_PAD.x, 0.002, PILOT_PAD.z);
     pad.receiveShadow = true;
-    this.scene.add(pad);
+    this.club.add(pad);
 
     const postGeo = new CylinderGeometry(0.04, 0.04, 1.1, 6);
     const postMat = new MeshStandardMaterial({ color: '#6b5b45' });
@@ -453,10 +519,10 @@ export class World {
       posts.setMatrixAt(i, o.matrix);
     });
     posts.castShadow = true;
-    this.scene.add(posts);
+    this.club.add(posts);
     const rail = new Mesh(new BoxGeometry(fence.x1 - fence.x0, 0.04, 0.04), postMat);
     rail.position.set((fence.x0 + fence.x1) / 2, 1.0, fence.z);
-    this.scene.add(rail);
+    this.club.add(rail);
   }
 
   /** Leaf sway and wind: time in seconds, wind speed m/s and direction it blows FROM (degrees). */
@@ -582,11 +648,15 @@ export class World {
         m.material.userData.clouds = true;
       }
     });
-    const club = [gazebo(ob.gazebo), ...ob.cars.map(car)];
-    if (ob.hut) club.push(clubhouse(ob.hut));
-    if (ob.container) club.push(shippingContainer(ob.container));
-    for (const f of ob.fences) club.push(metalFence(f));
-    for (const o of club) {
+    // Pits and club buildings in the club frame; cars and site fences in the world.
+    const clubThings = [gazebo(ob.gazebo)];
+    if (ob.hut) clubThings.push(clubhouse(ob.hut));
+    if (ob.container) clubThings.push(shippingContainer(ob.container));
+    for (const o of clubThings) {
+      shadowy(o);
+      this.club.add(o);
+    }
+    for (const o of [...ob.cars.map(car), ...ob.fences.map(metalFence)]) {
       shadowy(o);
       this.scene.add(o);
     }
@@ -603,12 +673,12 @@ export class World {
     const table = new Mesh(new BoxGeometry(2, 0.06, 0.8), new MeshStandardMaterial({ color: '#c8c8c8' }));
     table.position.set(tx, 0.75, tz);
     table.castShadow = true;
-    this.scene.add(table);
+    this.club.add(table);
     for (const dx of [-0.9, 0.9]) {
       for (const dz of [-0.3, 0.3]) {
         const leg = new Mesh(new CylinderGeometry(0.02, 0.02, 0.75), table.material);
         leg.position.set(tx + dx, 0.375, tz + dz);
-        this.scene.add(leg);
+        this.club.add(leg);
       }
     }
   }

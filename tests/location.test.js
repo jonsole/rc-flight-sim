@@ -2,7 +2,7 @@
 // the field is level, and buildings are solid. The site has to be chosen
 // before the world modules load, so they are imported after setLocation.
 import { describe, it, expect, beforeAll } from 'vitest';
-import { setLocation, inField } from '../src/sim/location.js';
+import { setLocation, inField, worldToClub, clubToWorld } from '../src/sim/location.js';
 import data from '../src/locations/waterbeach.json';
 
 let terrain;
@@ -24,31 +24,51 @@ describe('Waterbeach', () => {
     }
   });
 
-  it('puts the runway on the mown field', () => {
+  it('uses the cricket pitch as the runway, turned to its real heading', () => {
     const r = terrain.RUNWAY;
-    expect(inField(r.x - r.length / 2, r.z)).toBe(true);
-    expect(inField(r.x + r.length / 2, r.z)).toBe(true);
-    expect(terrain.surfaceAt(0, -22).name).toBe('mown runway');
+    // The pitch's ends as surveyed (52.277766,0.192194 and 52.277709,0.192599).
+    const ends = [[-27.7 + 18.1, -77.1 + 52.7], [0.1 + 18.1, -71.6 + 52.7]];
+    for (const [x, z] of ends) {
+      expect(inField(x, z)).toBe(true);
+      const [cx, cz] = worldToClub(x, z);
+      expect(Math.abs(Math.abs(cx - r.x) - r.length / 2)).toBeLessThan(0.5);
+      expect(Math.abs(cz - r.z)).toBeLessThan(0.5);
+    }
+    const [mx, mz] = clubToWorld(r.x, r.z);
+    expect(terrain.surfaceAt(mx, mz).name).toBe('cricket pitch');
+    // 3 m off the pitch's side: grass.
+    const [gx, gz] = clubToWorld(r.x, r.z - 3);
+    expect(terrain.surfaceAt(gx, gz).name).toBe('field grass');
+  });
+
+  it('has short grass on the mown oval and rectangle, long grass elsewhere on the field', () => {
+    expect(terrain.surfaceAt(0, -8).name).toBe('field grass'); // in front of the pilot, in the oval
+    expect(terrain.surfaceAt(40, 50).name).toBe('field grass'); // the rectangle
+    expect(terrain.surfaceAt(-45, -100).name).toBe('rough grass');
+    expect(terrain.surfaceAt(80, 0).name).toBe('rough grass');
   });
 
   it('loads the LIDAR trees and keeps them off the runway', () => {
     const ob = new Obstacles();
     expect(ob.trees.length).toBeGreaterThan(1000);
     const r = terrain.RUNWAY;
-    const onRunway = ob.trees.filter((t) => Math.abs(t.x - r.x) < r.length / 2 && Math.abs(t.z - r.z) < r.width / 2);
+    const onRunway = ob.trees.filter((t) => {
+      const [cx, cz] = worldToClub(t.x, t.z);
+      return Math.abs(cx - r.x) < r.length / 2 + 5 && Math.abs(cz - r.z) < r.width / 2 + 5;
+    });
     expect(onRunway).toHaveLength(0);
   });
 
   it('has only broadleaf trees, a grown east belt and a solid chain-link fence behind it', () => {
     const ob = new Obstacles();
     expect(ob.trees.filter((t) => t.conifer)).toHaveLength(0);
-    const belt = ob.trees.filter((t) => t.x > 70 && t.x < 100 && t.z > -150 && t.z < 100);
+    const belt = ob.trees.filter((t) => t.x > 88 && t.x < 118 && t.z > -100 && t.z < 150);
     expect(belt.length).toBeGreaterThan(30);
     expect(Math.min(...belt.map((t) => t.h))).toBeGreaterThanOrEqual(10);
-    // Fence from (103, -220) to (82, 110): solid below 3 m, clear above.
+    // Fence from (121.1, -167.3) to (100.1, 162.7): solid below 3 m, clear above.
     const fence = ob.shapes.find((s) => s.name === 'the chain-link fence');
-    const x = 103 + (82 - 103) * 0.5;
-    const z = -220 + 330 * 0.5;
+    const x = (121.1 + 100.1) / 2;
+    const z = (-167.3 + 162.7) / 2;
     expect(Obstacles.test(fence, x, 1.5, z)).not.toBeNull();
     expect(Obstacles.test(fence, x, 3.5, z)).toBeNull();
   });
