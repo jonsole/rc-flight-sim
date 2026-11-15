@@ -80,12 +80,13 @@ export class CameraRig {
       cam.up.set(0, 1, 0);
       cam.lookAt(this.losLook);
       const dist = eye.distanceTo(aircraft.position);
-      let fov = s.losFov;
+      // (Vertical: kept under 175° side to side on wide screens.)
+      let fov = Math.min(s.losFov, hToVFov(175, aspect));
       if (s.losZoom > 0) {
         // Auto-zoom: keep the model from shrinking to a dot at range.
         const apparent = MathUtils.radToDeg(2 * Math.atan(this.views.span / 2 / Math.max(dist, 1)));
         const wanted = apparent * (s.losZoom >= 2 ? 6 : 10);
-        fov = MathUtils.clamp(wanted, 8, s.losFov);
+        fov = MathUtils.clamp(wanted, 8, fov);
       }
       cam.fov = MathUtils.lerp(cam.fov, fov, 1 - Math.exp(-dt * 4));
       cam.near = 0.1;
