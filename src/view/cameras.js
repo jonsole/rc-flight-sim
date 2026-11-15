@@ -85,8 +85,11 @@ export class CameraRig {
       if (s.losZoom > 0) {
         // Auto-zoom: keep the model from shrinking to a dot at range.
         const apparent = MathUtils.radToDeg(2 * Math.atan(this.views.span / 2 / Math.max(dist, 1)));
-        const wanted = apparent * (s.losZoom >= 2 ? 6 : 10);
-        fov = MathUtils.clamp(wanted, 8, fov);
+        // Gentle: the model about 1/25 of the screen's height, at most ~2.5x
+        // zoom (20 deg); strong: about 1/12, at most ~5x (10 deg).
+        const strong = s.losZoom >= 2;
+        const wanted = apparent * (strong ? 12 : 25);
+        fov = MathUtils.clamp(wanted, Math.min(fov, strong ? 10 : 20), fov);
       }
       cam.fov = MathUtils.lerp(cam.fov, fov, 1 - Math.exp(-dt * 4));
       cam.near = 0.1;
