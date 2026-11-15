@@ -294,7 +294,7 @@ export const EFLITE_SE5a_900 = buildSE5a({
   // 12°: at 16° full up at full power stalled it into a flick roll.
   elevatorThrow: 12 * deg,
   // 3513-1100Kv on 4S with a 10x5: ~12,500 rpm loaded, ≈1.25:1 thrust/weight.
-  motor: { staticThrust: 21.6, pitchSpeed: 26, spoolTime: 0.08, torqueFactor: 0.0041, maxRpm: 12500 },
+  motor: { prop: { diameterIn: 10, pitchIn: 5, blades: 2 }, staticThrust: 21.6, pitchSpeed: 26, spoolTime: 0.08, torqueFactor: 0.0041, maxRpm: 12500 },
   battery: { cells: 4, capacity: 2200, maxCurrent: 38, internalResistance: 0.015 * 4 },
   // Small hard wheels close in front of the CG (axle ~65 mm ahead, about under
   // the top wing's leading edge): they drag and catch on grass, so without up

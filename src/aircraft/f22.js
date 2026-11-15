@@ -266,6 +266,7 @@ export function buildF22(style) {
     wingSpan: SPAN,
     downwashGain: style.downwashGain,
     motor: {
+      prop: { diameterIn: style.prop.diameterIn, pitchIn: style.prop.pitchIn, blades: style.prop.blades },
       staticThrust: style.prop.staticThrust,
       pitchSpeed: style.prop.pitchSpeed,
       spoolTime: 0.05,

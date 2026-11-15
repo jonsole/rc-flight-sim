@@ -431,7 +431,8 @@ export class Aircraft {
 
     // --- Battery -----------------------------------------------------------
     const b = def.battery;
-    const current = b.maxCurrent * Math.pow(this.throttleActual, 1.6);
+    // (powerScale: a different prop loads the motor more or less: tuning.)
+    const current = b.maxCurrent * (def.motor.powerScale ?? 1) * Math.pow(this.throttleActual, 1.6);
     this.battery.current = current;
     this.battery.used += (current * dt * 1000) / 3600;
     const soc = Math.max(0, 1 - this.battery.used / b.capacity);

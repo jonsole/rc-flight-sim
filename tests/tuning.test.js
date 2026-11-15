@@ -103,3 +103,38 @@ describe('aircraft tuning: layout', () => {
     expect(restoring(longer)).toBeGreaterThan(restoring(def) * 1.15);
   });
 });
+
+describe('aircraft tuning: propeller', () => {
+  const motorWith = (id, change) => tunedDef(getAircraft(id).def, change).motor;
+  it('the model\'s own prop flies exactly as before', () => {
+    for (const a of AIRCRAFT) {
+      const p = a.def.motor.prop;
+      const m = motorWith(a.id, { propDiameter: p.diameterIn, propPitch: p.pitchIn, propBlades: p.blades });
+      expect(m.staticThrust).toBeCloseTo(a.def.motor.staticThrust, 6);
+      expect(m.pitchSpeed).toBeCloseTo(a.def.motor.pitchSpeed, 6);
+      expect(m.staticThrust * m.torqueFactor).toBeCloseTo(a.def.motor.staticThrust * a.def.motor.torqueFactor, 6);
+    }
+  });
+
+  it('bigger prop: more thrust, slower; coarser pitch: faster, a little less static thrust; more blades: a little more thrust, slower', () => {
+    const id = 'buschtrottel-shockcub';
+    const base = motorWith(id, {});
+    const big = motorWith(id, { propDiameter: 9 });
+    expect(big.staticThrust).toBeGreaterThan(base.staticThrust * 1.1);
+    expect(big.maxRpm).toBeLessThan(base.maxRpm);
+    const coarse = motorWith(id, { propPitch: 8 });
+    expect(coarse.pitchSpeed).toBeGreaterThan(base.pitchSpeed);
+    expect(coarse.staticThrust).toBeLessThan(base.staticThrust);
+    const three = motorWith(id, { propBlades: 3 });
+    expect(three.staticThrust).toBeGreaterThan(base.staticThrust);
+    expect(three.pitchSpeed).toBeLessThan(base.pitchSpeed);
+    // Same motor power in each case.
+    for (const m of [big, coarse, three]) expect(m.powerScale).toBeCloseTo(1, 6);
+  });
+
+  it('a much smaller prop can\'t use all the power: the motor tops out', () => {
+    const tiny = motorWith('buschtrottel-shockcub', { propDiameter: 5 });
+    expect(tiny.powerScale).toBeLessThan(0.9);
+    expect(tiny.maxRpm).toBeCloseTo(getAircraft('buschtrottel-shockcub').def.motor.maxRpm * 1.3, 0);
+  });
+});

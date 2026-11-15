@@ -266,6 +266,7 @@ export function buildBuschtrottel(style) {
     downwashGain: 0.9,
     motor: {
       // AT2308 1450Kv on 3S (~16,000 rpm unloaded), see style.prop.
+      prop: { diameterIn: 8, pitchIn: style.prop.pitchIn, blades: style.prop.blades }, // as fitted (tuning reads it)
       staticThrust: style.prop.staticThrust, // N
       pitchSpeed: style.prop.pitchSpeed,     // m/s = pitch × loaded rpm
       spoolTime: 0.06,

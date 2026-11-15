@@ -53,6 +53,35 @@ function shiftTail(d, axis, metres) {
   }
 }
 
+// --- Propeller ---------------------------------------------------------------
+// A different prop on the same motor. The motor gives about the same power
+// whatever it turns, so a bigger, coarser or more-bladed prop loads it more
+// and turns slower. Scaled from the model's own prop (motor.prop), so the
+// default flies exactly as before:
+//   power absorbed ∝ Bf · (P/D)^1.3 · n³ · D⁵      Bf = (blades / 2)^0.75
+//   static thrust  ∝ Bf^0.85 · (P/D)^0.6 · n² · D⁴
+//   pitch speed    = pitch × n
+// with n settling where the power absorbed matches the motor's, but at most
+// 30% above the original rpm (an unloaded motor only spins so fast).
+const bladeFactor = (b) => (b / 2) ** 0.75;
+function setProp(d, change) {
+  const m = d.motor;
+  const ref = (m.propRef ??= { ...m.prop, staticThrust: m.staticThrust, pitchSpeed: m.pitchSpeed, maxRpm: m.maxRpm, discArea: m.discArea, torque: m.staticThrust * m.torqueFactor });
+  const p = (m.prop = { ...m.prop, ...change });
+  const pd = p.pitchIn / p.diameterIn;
+  const pd0 = ref.pitchIn / ref.diameterIn;
+  const dr = p.diameterIn / ref.diameterIn;
+  const load = (bladeFactor(p.blades) / bladeFactor(ref.blades)) * (pd / pd0) ** 1.3 * dr ** 5;
+  const n = Math.min(1.3, load ** (-1 / 3)); // rpm, relative to the original
+  m.staticThrust = ref.staticThrust * (bladeFactor(p.blades) / bladeFactor(ref.blades)) ** 0.85 * (pd / pd0) ** 0.6 * n * n * dr ** 4;
+  m.pitchSpeed = ref.pitchSpeed * (p.pitchIn / ref.pitchIn) * n;
+  if (ref.maxRpm) m.maxRpm = ref.maxRpm * n;
+  if (ref.discArea) m.discArea = ref.discArea * dr * dr;
+  const power = load * n ** 3; // absorbed, relative (1 unless the motor can't load up)
+  m.powerScale = power;
+  m.torqueFactor = (ref.torque * load * n * n) / m.staticThrust; // torque ∝ load · n²
+}
+
 /** The settings, by group. `get` reads the default from a definition, `set` writes into a copy. */
 export const TUNABLES = [
   { group: 'Weight', key: 'mass', label: 'All-up weight', unit: 'g', min: 0.5, max: 2, rel: true, step: 5,
@@ -86,6 +115,12 @@ export const TUNABLES = [
     get: (d) => (d.motor.downThrust ?? 0) / deg, set: (d, v) => (d.motor.downThrust = v * deg) },
   { group: 'Motor', key: 'rightThrust', label: 'Right-thrust', unit: '°', min: -5, max: 8, step: 0.5,
     get: (d) => (d.motor.rightThrust ?? 0) / deg, set: (d, v) => (d.motor.rightThrust = v * deg) },
+  { group: 'Propeller', key: 'propDiameter', label: 'Diameter', unit: 'in', min: 0.6, max: 1.5, rel: true, step: 0.5,
+    get: (d) => d.motor.prop?.diameterIn ?? null, set: (d, v) => setProp(d, { diameterIn: v }) },
+  { group: 'Propeller', key: 'propPitch', label: 'Pitch', unit: 'in', min: 0.5, max: 2, rel: true, step: 0.5,
+    get: (d) => d.motor.prop?.pitchIn ?? null, set: (d, v) => setProp(d, { pitchIn: v }) },
+  { group: 'Propeller', key: 'propBlades', label: 'Blades', unit: '', min: 2, max: 6, step: 1,
+    get: (d) => d.motor.prop?.blades ?? null, set: (d, v) => setProp(d, { blades: v }) },
   { group: 'Layout', key: 'thrustHeight', label: 'Thrust line vs wing (+ above)', unit: 'mm', min: -150, max: 150, step: 1, around: true,
     get: (d) => (d.motor.position[1] - mean(wingPanels(d), 1)) * 1000,
     set: (d, v) => {
@@ -166,7 +201,7 @@ export function tunedDef(def, values) {
   if (!values || !Object.keys(values).length) return def;
   const d = { ...def };
   for (const k of ['surfaces', 'contacts']) d[k] = def[k].map((x) => structuredClone({ ...x }));
-  d.motor = { ...def.motor };
+  d.motor = { ...def.motor, prop: def.motor.prop && { ...def.motor.prop } };
   d.parasite = { ...def.parasite };
   d.inertia = [...def.inertia];
   for (const t of TUNABLES) if (values[t.key] != null) t.set(d, Number(values[t.key]));
