@@ -270,7 +270,7 @@ export function buildBuschtrottel(style) {
       // Downthrust stops the nose rising with power. These are overpowered
       // (thrust above their weight), so it takes more than on a Cub: set,
       // as builders do, until full throttle mostly adds speed.
-      downThrust: 5 * deg,
+      downThrust: (style.mount === 'low' ? 7 : 5) * deg,
       // No right thrust: it exists to cancel prop swirl/P-factor, which aren't
       // modelled, so here it would yaw the model right in slow, powered flight.
       rightThrust: 0,
