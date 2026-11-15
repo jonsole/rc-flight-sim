@@ -21,6 +21,8 @@
 //                       club: true puts an oval in the club frame. Without a
 //                       list the whole field is short grass.
 //   trees               real sites: extra trees { at: [[x, z], ...], h, r } (grown since the survey)
+//   treeGrowth          real sites: areas whose trees have grown since the survey:
+//                       { x0, x1, z0, z1, grow, minH } (world frame)
 //   flat                ground forced level to y = 0 here (rectangle), fading out over `fade` m
 //   hut, container      club buildings (null for none)
 //   gazebo, table, windsock, fence   (club frame; null for none)
@@ -29,7 +31,9 @@
 //   treeBelts           real sites: tree lines grown since the LIDAR survey:
 //                       { from, to, width, grow, minH, spacing } scales trees within
 //                       width/2 of the line and fills gaps longer than `spacing`
-//   fences              tall fences: { from: [x, z], to: [x, z], height }
+//   fences              site fences: { path: [[x, z], ...] (or from/to), height,
+//                       kind: 'chainlink' (concrete posts) or 'panels' (temporary
+//                       mesh panels on wooden posts) }
 //   bushBelts           real sites: lines of tall bushes: { from, to, width, minH, maxH }
 
 const HOME = {
@@ -56,8 +60,8 @@ const HOME = {
 
 const WATERBEACH = {
   id: 'waterbeach',
-  name: 'Waterbeach',
-  summary: 'The real field at Waterbeach, Cambridgeshire, from Environment Agency LIDAR and OpenStreetMap.',
+  name: 'Barrack Field',
+  summary: 'Barrack Field at Waterbeach, Cambridgeshire: the real field, from Environment Agency LIDAR and OpenStreetMap.',
   load: () => import('../locations/waterbeach.json'),
   layout: {
     // The cricket pitch in the middle of the field is the runway: 28 m,
@@ -81,17 +85,39 @@ const WATERBEACH = {
     table: null,
     windsock: null,
     fence: null,
-    // Young trees along the curved path west of the pitch, grown since the survey.
+    // The curved row of young trees just outside the curved fence west of
+    // the pitch, grown since the survey.
     trees: [{
-      at: [[-21.2, -65.4], [-26.6, -58.3], [-31.6, -51.9], [-35.3, -45.7], [-39.9, -40.1], [-48.2, -32.6], [-56.1, -27.6]],
-      h: 9, r: 3.2,
+      at: [[-12.0, -87.3], [-12.3, -78.8], [-13.1, -69.8], [-14.6, -61.4], [-16.9, -52.7], [-20.7, -43.9], [-26.2, -36.0],
+        [-32.3, -30.1], [-39.6, -24.5], [-46.7, -19.7], [-56.7, -17.3], [-65.9, -15.8], [-74.4, -15.9], [-83.5, -16.2],
+        [-90.1, -17.5], [-98.4, -15.4], [-103.9, -12.0]],
+      h: 12, r: 4.2,
     }],
+    // Trees west and south of the field have grown since the survey too.
+    treeGrowth: [
+      { x0: -180, x1: -50, z0: -140, z1: 110, grow: 1.4, minH: 10 }, // west
+      { x0: -50, x1: 140, z0: 80, z1: 190, grow: 1.4, minH: 10 }, // south
+    ],
     // All deciduous round the field.
     conifers: false,
     // The east hedge's trees have grown a lot since the LIDAR (2022)...
     treeBelts: [{ from: [113.8, -155.5], to: [92.8, 174.5], width: 22, grow: 1.4, minH: 10, spacing: 7 }],
     // ...and there is a 3 m chain-link fence behind them.
-    fences: [{ from: [118.8, -155.5], to: [97.8, 174.5], height: 3 }],
+    fences: [
+      { from: [118.8, -155.5], to: [97.8, 174.5], height: 3, kind: 'chainlink' },
+      // Temporary panels in front of the north trees, to the east fence...
+      { path: [[-16.2, -109.5], [-10, -108], [40, -108], [86, -108], [115.8, -108]], height: 2, kind: 'panels' },
+      // ...and from its west end, round the old concrete hardstanding west of
+      // the pitch under its curved row of trees (52.278638,0.192174 to
+      // 52.278077,0.190781, traced off the map).
+      {
+        path: [[-16.2, -109.5], [-16.4, -89.2], [-17.0, -73.4], [-19.5, -59.7], [-22.5, -49.7], [-28.2, -40.3],
+          [-37.4, -31.4], [-49.8, -23.0], [-65.7, -20.3], [-81.2, -20.4], [-91.0, -21.9], [-101.9, -19.2],
+          [-107.4, -15.0], [-112.0, -10.8], [-109.6, -22.0], [-107.7, -31.6], [-109.3, -44.2]],
+        height: 2,
+        kind: 'panels',
+      },
+    ],
     // High bushes just behind the fence.
     bushBelts: [{ from: [122.8, -155.5], to: [101.8, 174.5], width: 5, minH: 3.5, maxH: 5 }],
   },

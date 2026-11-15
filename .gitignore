@@ -2,3 +2,4 @@ node_modules/
 dist/
 *.log
 .wrangler
+__pycache__/

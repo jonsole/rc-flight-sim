@@ -35,9 +35,9 @@ from pyproj import Transformer
 from scipy import ndimage
 
 SITES = {
-    # Waterbeach (Cambridgeshire): the mown field by the old barracks.
+    # Barrack Field, Waterbeach (Cambridgeshire): by the old barracks.
     'waterbeach': {
-        'name': 'Waterbeach',
+        'name': 'Barrack Field',
         'pilot': (549666.2, 266652.5),  # OSGB easting, northing where the pilot stands (10 m south of the cricket pitch)
         'half': 1000,                    # metres either side of the pilot baked in
     },

@@ -12,9 +12,10 @@ import { clubAngle } from '../sim/location.js';
 import { sunPosition, moonPosition } from './sun.js';
 import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail } from './ground.js';
-import { broadleafCrown, conifer, trunk, coniferTrunk, addLeafShading, leafUniforms } from './trees.js';
+import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
+import { QUALITY } from './quality.js';
 import { CROWN_SEEDS } from '../sim/treeShapes.js';
-import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes, metalFence } from './props.js';
+import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes, siteFence } from './props.js';
 
 const smooth = (e0, e1, x) => {
   const t = MathUtils.clamp((x - e0) / (e1 - e0), 0, 1);
@@ -298,12 +299,19 @@ function cricketPitchTexture(r) {
 
 export class World {
   /** @param {import('../sim/obstacles.js').Obstacles} obstacles */
+  /**
+   * @param {{ quality?: object, viewDistance?: number }} opts  graphics preset
+   *   (src/world/quality.js) and how far scenery is drawn (m)
+   */
   constructor(obstacles, opts = {}) {
     this.obstacles = obstacles;
+    this.quality = opts.quality ?? QUALITY.high;
+    this.viewDistance = opts.viewDistance ?? Infinity;
     this.scene = new Scene();
     this.scene.background = new Color('#9cc3e6');
     // Exponential haze: distant hills fade into the colour of the horizon.
-    this.scene.fog = new FogExp2('#c3d5e8', 0.00028);
+    // A shorter scenery distance closes the haze in to match.
+    this.scene.fog = new FogExp2('#c3d5e8', Math.max(0.00028, 1.3 / (opts.viewDistance ?? Infinity)));
     this.sunDir = new Vector3(); // the sun, even below the horizon
     this.lightDir = new Vector3(); // where the main light comes from (sun, or moon at night)
     this.moonDir = new Vector3();
@@ -536,70 +544,91 @@ export class World {
   }
 
   #trees() {
-    const count = this.obstacles.trees.length;
-    // A few shapes of each kind, picked per tree, so the woods don't repeat.
-    const crownGeos = CROWN_SEEDS.map(broadleafCrown);
-    const coniferGeos = [conifer(5), conifer(17), conifer(29)];
-    const trunkGeos = [trunk(3), trunk(41), trunk(67)];
+    // Full-detail crowns near the pilot, simple ones further out, none
+    // beyond the scenery distance (src/world/quality.js). Same layout and
+    // crown shapes the physics collides with (src/sim/obstacles.js).
+    const q = this.quality;
+    const near = [];
+    const far = [];
+    for (const t of this.obstacles.trees) {
+      const d = Math.hypot(t.x, t.z);
+      if (d > this.viewDistance) continue;
+      (d <= q.nearRadius ? near : far).push(t);
+    }
     const leafMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })));
     this.leafMat = leafMat;
     const barkMat = addCloudShadows(new MeshLambertMaterial({ color: '#5a4632', vertexColors: true }));
-    const mk = (geo, mat) => new InstancedMesh(geo, mat, count);
-    const trunks = trunkGeos.map((g) => mk(g, barkMat));
-    const conTrunks = mk(coniferTrunk(), barkMat);
-    const nTrunk = trunks.map(() => 0);
-    let nConTrunk = 0;
-    const crowns = crownGeos.map((g) => mk(g, leafMat));
     // Conifers are open tiers of boughs: double-sided so their undersides show.
     const needleMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true, side: DoubleSide })));
     needleMat.defines = { CONIFER: '' };
-    const conifers = coniferGeos.map((g) => mk(g, needleMat));
-    const nCrown = crowns.map(() => 0);
-    const nCon = conifers.map(() => 0);
-    const o = new Object3D();
-    const col = new Color();
-    // Same layout the physics collides with (src/sim/obstacles.js).
-    this.obstacles.trees.forEach((t, i) => {
-      const { x, y, z, h } = t;
-      o.rotation.set(0, t.rot, 0);
-      // Trunks are drawn for a 1-unit tree, so scale them by its height.
-      o.position.set(x, y - 0.15, z);
-      o.scale.setScalar(h);
-      o.updateMatrix();
-      if (t.conifer) conTrunks.setMatrixAt(nConTrunk++, o.matrix);
-      else {
-        const k = t.pick % trunks.length;
-        trunks[k].setMatrixAt(nTrunk[k]++, o.matrix);
-      }
-      // Leaf colour per tree, a little brighter than before (the shapes
-      // carry their own shading).
-      col.setHSL(t.hue, t.sat, t.light * 1.12 + 0.02);
-      if (t.conifer) {
-        const k = t.pick % conifers.length;
-        o.position.set(x, y + h * 0.1, z);
-        o.scale.set(h * 0.22, h * 0.95, h * 0.22);
+    const conTrunk = coniferTrunk();
+    const sets = [
+      { trees: near, crowns: CROWN_SEEDS.map((s) => broadleafCrown(s, q.nearDetail)), trunks: [trunk(3), trunk(41), trunk(67)], conifers: [conifer(5), conifer(17), conifer(29)] },
+      { trees: far, crowns: CROWN_SEEDS.map((s) => (q.farDetail === 'blob' ? blobCrown(s) : broadleafCrown(s, q.farDetail))), trunks: [simpleTrunk()], conifers: [conifer(5)] },
+    ];
+    this.trees = { trunks: [], conTrunks: [], crowns: [], conifers: [] };
+    for (const set of sets) {
+      if (!set.trees.length) continue;
+      const count = set.trees.length;
+      const mk = (geo, mat) => new InstancedMesh(geo, mat, count);
+      const trunks = set.trunks.map((g) => mk(g, barkMat));
+      const conTrunks = mk(conTrunk, barkMat);
+      const crowns = set.crowns.map((g) => mk(g, leafMat));
+      const conifers = set.conifers.map((g) => mk(g, needleMat));
+      const nTrunk = trunks.map(() => 0);
+      const nCrown = crowns.map(() => 0);
+      const nCon = conifers.map(() => 0);
+      let nConTrunk = 0;
+      const o = new Object3D();
+      const col = new Color();
+      for (const t of set.trees) {
+        const { x, y, z, h } = t;
+        o.rotation.set(0, t.rot, 0);
+        // Trunks are drawn for a 1-unit tree, so scale them by its height.
+        o.position.set(x, y - 0.15, z);
+        o.scale.setScalar(h);
         o.updateMatrix();
-        conifers[k].setMatrixAt(nCon[k], o.matrix);
-        conifers[k].setColorAt(nCon[k]++, col);
-      } else {
-        const k = t.variant; // the shape the collisions use
-        o.position.set(x, y + h * 0.62, z);
-        o.scale.set(t.crownW * 1.05, h * 0.4, t.crownW * 1.05);
-        o.updateMatrix();
-        crowns[k].setMatrixAt(nCrown[k], o.matrix);
-        crowns[k].setColorAt(nCrown[k]++, col);
+        if (t.conifer) conTrunks.setMatrixAt(nConTrunk++, o.matrix);
+        else {
+          const k = t.pick % trunks.length;
+          trunks[k].setMatrixAt(nTrunk[k]++, o.matrix);
+        }
+        // Leaf colour per tree, a little brighter than before (the shapes
+        // carry their own shading).
+        col.setHSL(t.hue, t.sat, t.light * 1.12 + 0.02);
+        if (t.conifer) {
+          const k = t.pick % conifers.length;
+          o.position.set(x, y + h * 0.1, z);
+          o.scale.set(h * 0.22, h * 0.95, h * 0.22);
+          o.updateMatrix();
+          conifers[k].setMatrixAt(nCon[k], o.matrix);
+          conifers[k].setColorAt(nCon[k]++, col);
+        } else {
+          const k = t.variant; // the shape the collisions use
+          o.position.set(x, y + h * 0.62, z);
+          o.scale.set(t.crownW * 1.05, h * 0.4, t.crownW * 1.05);
+          o.updateMatrix();
+          crowns[k].setMatrixAt(nCrown[k], o.matrix);
+          crowns[k].setColorAt(nCrown[k]++, col);
+        }
       }
-    });
-    crowns.forEach((m, k) => (m.count = nCrown[k]));
-    conifers.forEach((m, k) => (m.count = nCon[k]));
-    trunks.forEach((m, k) => (m.count = nTrunk[k]));
-    conTrunks.count = nConTrunk;
-    for (const m of [...trunks, conTrunks, ...crowns, ...conifers]) {
-      m.castShadow = true;
-      m.receiveShadow = true;
-      this.scene.add(m);
+      crowns.forEach((m, k) => (m.count = nCrown[k]));
+      conifers.forEach((m, k) => (m.count = nCon[k]));
+      trunks.forEach((m, k) => (m.count = nTrunk[k]));
+      conTrunks.count = nConTrunk;
+      for (const m of [...trunks, conTrunks, ...crowns, ...conifers]) {
+        if (!m.count) continue;
+        m.castShadow = true;
+        m.receiveShadow = true;
+        // Cull a whole set when it's out of view (bounds of all its trees).
+        m.computeBoundingSphere();
+        this.scene.add(m);
+      }
+      this.trees.trunks.push(...trunks);
+      this.trees.conTrunks.push(conTrunks);
+      this.trees.crowns.push(...crowns);
+      this.trees.conifers.push(...conifers);
     }
-    this.trees = { trunks, conTrunks, crowns, conifers };
   }
 
   #props() {
@@ -660,11 +689,11 @@ export class World {
       shadowy(o);
       this.club.add(o);
     }
-    for (const o of [...ob.cars.map(car), ...ob.fences.map(metalFence)]) {
+    for (const o of [...ob.cars.map(car), ...ob.fences.map(siteFence)]) {
       shadowy(o);
       this.scene.add(o);
     }
-    for (const b of bushes(this.leafMat)) this.scene.add(b);
+    for (const b of bushes(this.leafMat, { detail: this.quality.bushDetail, distance: this.viewDistance })) this.scene.add(b);
     if (ob.buildings.length) {
       const houses = buildingsMesh(ob.buildings);
       addCloudShadows(houses.material);

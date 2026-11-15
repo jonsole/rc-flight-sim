@@ -9,7 +9,8 @@ import {
 } from 'three';
 import { heightAt } from '../sim/terrain.js';
 import { LOCATION } from '../sim/location.js';
-import { broadleafCrown } from './trees.js';
+import { broadleafCrown, blobCrown } from './trees.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 function rng(seed) {
   let s = seed;
@@ -281,11 +282,15 @@ export function gravelTexture() {
   }, [2, 1.4]);
 }
 
-/** Bushes along the edge of the field, in front of the tree line. */
-export function bushes(material) {
-  if (LOCATION.data) return realBushes(material);
+/**
+ * Bushes along the edge of the field, in front of the tree line.
+ * `detail` is the crown detail (src/world/quality.js); bushes further than
+ * `distance` from the pilot are left out.
+ */
+export function bushes(material, { detail = 1, distance = Infinity } = {}) {
+  if (LOCATION.data) return realBushes(material, detail, distance);
   const rnd = rng(77);
-  const shapes = [broadleafCrown(101), broadleafCrown(131)];
+  const shapes = bushShapes(detail);
   const n = 260;
   const meshes = shapes.map((s) => new InstancedMesh(s, material, n));
   const counts = shapes.map(() => 0);
@@ -314,8 +319,13 @@ export function bushes(material) {
   return meshes;
 }
 
+/** Two bush shapes at a quality's detail (a number, or 'blob'). */
+function bushShapes(detail) {
+  return detail === 'blob' ? [blobCrown(101), blobCrown(131)] : [broadleafCrown(101, detail), broadleafCrown(131, detail)];
+}
+
 /** Hedges and shrubs at a real site: the LIDAR's 1-3 m vegetation. */
-function realBushes(material) {
+function realBushes(material, detail, distance) {
   const rnd = rng(78);
   const pts = [...LOCATION.data.bushes];
   // Belts of tall bushes from the site layout: two staggered rows, 2.5 m apart.
@@ -332,7 +342,7 @@ function realBushes(material) {
     }
   }
   const n = pts.length / 3;
-  const shapes = [broadleafCrown(101), broadleafCrown(131)];
+  const shapes = bushShapes(detail);
   const meshes = shapes.map((s) => new InstancedMesh(s, material, n));
   const counts = shapes.map(() => 0);
   const o = new Object3D();
@@ -342,13 +352,16 @@ function realBushes(material) {
     const z = pts[i + 1] + (rnd() - 0.5) * 1.5;
     const h = pts[i + 2];
     const w = 1.5 + rnd() * 0.8; // half-width: neighbours (3 m apart) overlap into a hedge
+    const turn = rnd() * Math.PI * 2;
+    const tint = [0.24 + rnd() * 0.05, 0.36 + rnd() * 0.12, 0.13 + rnd() * 0.05];
+    if (Math.hypot(x, z) > distance) continue;
     o.position.set(x, heightAt(x, z) + h * 0.5, z);
-    o.rotation.set(0, rnd() * Math.PI * 2, 0);
+    o.rotation.set(0, turn, 0);
     o.scale.set(w, h * 0.55, w);
     o.updateMatrix();
     const k = (i / 3) % shapes.length;
     meshes[k].setMatrixAt(counts[k], o.matrix);
-    col.setHSL(0.24 + rnd() * 0.05, 0.36 + rnd() * 0.12, 0.13 + rnd() * 0.05);
+    col.setHSL(...tint);
     meshes[k].setColorAt(counts[k]++, col);
   }
   meshes.forEach((m, k) => {
@@ -360,14 +373,117 @@ function realBushes(material) {
 }
 
 /**
+ * A site fence along its path (src/sim/location.js): chain link, or
+ * temporary mesh panels.
+ * @param {{ path: number[][], height: number, kind?: string }} f
+ */
+export function siteFence(f) {
+  const g = new Group();
+  for (let i = 1; i < f.path.length; i++) {
+    const stretch = f.kind === 'panels' ? tempPanels : chainLink;
+    g.add(stretch(f.path[i - 1], f.path[i], f.height));
+  }
+  // Hundreds of panels, tubes and posts: one draw call per material.
+  return mergeByMaterial(g);
+}
+
+/** The meshes of a group baked into one mesh per material. */
+function mergeByMaterial(group) {
+  group.updateMatrixWorld(true);
+  const byMat = new Map();
+  group.traverse((o) => {
+    if (!o.isMesh) return;
+    let g = o.geometry.clone().applyMatrix4(o.matrixWorld);
+    if (!g.index) g = g.toNonIndexed();
+    if (!byMat.has(o.material)) byMat.set(o.material, { geos: [], cast: false, receive: false });
+    const e = byMat.get(o.material);
+    e.geos.push(g.index ? g.toNonIndexed() : g);
+    e.cast ||= o.castShadow;
+    e.receive ||= o.receiveShadow;
+  });
+  const out = new Group();
+  for (const [mat, e] of byMat) {
+    const m = new Mesh(mergeGeometries(e.geos), mat);
+    m.castShadow = e.cast;
+    m.receiveShadow = e.receive;
+    out.add(m);
+  }
+  return out;
+}
+
+/**
+ * Temporary fencing: 3.5 m mesh panels in a tube frame, wired to wooden
+ * posts, every panel a little out of line.
+ */
+function tempPanels([ax, az], [bx, bz], height) {
+  const g = new Group();
+  const len = Math.hypot(bx - ax, bz - az);
+  const yaw = Math.atan2(-(bz - az), bx - ax);
+  const steel = new MeshStandardMaterial({ color: '#a4a9ab', roughness: 0.45, metalness: 0.6 });
+  const wood = lambert({ color: '#6e5638' });
+  // Welded mesh, 75 x 225 mm: an upright-rectangle grid of thin wire.
+  const TW = 0.6;
+  const mesh = canvasTex(64, 128, (c, w, h) => {
+    c.clearRect(0, 0, w, h);
+    c.fillStyle = 'rgba(176,180,182,1)';
+    for (let i = 0; i < 8; i++) c.fillRect((i * w) / 8, 0, 1.4, h);
+    for (let j = 0; j < 3; j++) c.fillRect(0, (j * h) / 3 + h / 6, w, 1.4);
+  });
+  const meshMat = new MeshStandardMaterial({ map: mesh, transparent: true, depthWrite: false, side: DoubleSide, roughness: 0.5, metalness: 0.5 });
+  const n = Math.max(1, Math.round(len / 3.5));
+  const pw = len / n;
+  const rnd = rng(Math.round(ax * 7 + az * 13) & 0xffff || 1);
+  const tube = (l, w, h, x, y, rot) => {
+    const m = new Mesh(new BoxGeometry(l, h, w), steel);
+    m.position.set(x, y, 0);
+    m.rotation.z = rot;
+    return m;
+  };
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) / n;
+    const xm = ax + (bx - ax) * t;
+    const zm = az + (bz - az) * t;
+    const y = heightAt(xm, zm);
+    const panel = new Group();
+    const mp = new Mesh(new PlaneGeometry(pw - 0.08, height - 0.08), meshMat);
+    const uv = mp.geometry.attributes.uv.array;
+    for (let k = 0; k < uv.length; k += 2) {
+      uv[k] *= (pw - 0.08) / TW;
+      uv[k + 1] *= (height - 0.08) / (TW * 1.5);
+    }
+    panel.add(mp);
+    // Tube frame round the mesh.
+    panel.add(tube(pw, 0.04, 0.04, 0, height / 2 - 0.02, 0), tube(pw, 0.04, 0.04, 0, -height / 2 + 0.02, 0));
+    panel.add(tube(0.04, 0.04, height, -pw / 2 + 0.02, 0, 0), tube(0.04, 0.04, height, pw / 2 - 0.02, 0, 0));
+    // Raised a little off the ground, leaning and twisted a touch.
+    panel.position.set(xm, y + height / 2 + 0.05, zm);
+    panel.rotation.set(0, yaw + (rnd() - 0.5) * 0.04, (rnd() - 0.5) * 0.02, 'YXZ');
+    panel.rotateX((rnd() - 0.5) * 0.05);
+    panel.traverse((o) => {
+      if (o.isMesh && o.material === steel) o.castShadow = true;
+    });
+    g.add(panel);
+  }
+  // Wooden posts at each joint, a little taller than the panels.
+  const postGeo = new CylinderGeometry(0.05, 0.06, height + 0.25, 7);
+  for (let i = 0; i <= n; i++) {
+    const x = ax + ((bx - ax) * i) / n;
+    const z = az + ((bz - az) * i) / n;
+    const post = new Mesh(postGeo, wood);
+    post.position.set(x, heightAt(x, z) + (height + 0.25) / 2, z);
+    post.castShadow = true;
+    g.add(post);
+  }
+  return g;
+}
+
+/**
  * Tall chain-link fence along a line: galvanised diamond mesh (see-through,
  * a grey haze from a distance) on square concrete posts every 3 m.
- * @param {{ from: number[], to: number[], height: number }} f
  */
-export function metalFence(f) {
+function chainLink([ax, az], [bx, bz], height) {
   const g = new Group();
-  const [ax, az] = f.from;
-  const [bx, bz] = f.to;
+  const f = { height };
   const len = Math.hypot(bx - ax, bz - az);
   const yaw = Math.atan2(-(bz - az), bx - ax); // local x along the fence
   const concrete = lambert({ color: '#b3afa6' });

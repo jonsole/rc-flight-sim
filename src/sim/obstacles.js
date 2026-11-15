@@ -47,6 +47,13 @@ function realTrees() {
   const t = d.trees;
   const raw = [];
   for (let i = 0; i < t.length; i += 4) raw.push({ x: t[i], z: t[i + 1], h: t[i + 2], r: t[i + 3] });
+  for (const g of L.treeGrowth ?? []) {
+    for (const t of raw) {
+      if (t.x < g.x0 || t.x > g.x1 || t.z < g.z0 || t.z > g.z1) continue;
+      t.h = Math.max(g.minH, t.h * g.grow);
+      t.r = Math.max(t.r * g.grow, t.h * 0.3);
+    }
+  }
   for (const belt of L.treeBelts ?? []) growBelt(raw, belt, rand);
   for (const group of L.trees ?? []) {
     for (const [x, z] of group.at) raw.push({ x, z, h: group.h * (0.9 + rand() * 0.2), r: group.r * (0.9 + rand() * 0.2) });
@@ -226,21 +233,26 @@ export class Obstacles {
     // Buildings at a real site.
     this.buildings = (LOCATION.data?.buildings ?? []).map(prepareBuilding);
     for (const b of this.buildings) this.shapes.push({ type: 'building', name: 'a building', b });
-    // Tall fences: a thin slab, solid like a wall (no flying through chain link).
+    // Site fences: thin slabs along each stretch, solid like a wall (no
+    // flying through chain link or mesh panels).
     this.fences = (L.fences ?? []).map((f) => {
-      const [ax, az] = f.from;
-      const [bx, bz] = f.to;
-      const len = Math.hypot(bx - ax, bz - az);
-      const nx = (-(bz - az) / len) * 0.05;
-      const nz = ((bx - ax) / len) * 0.05;
-      const y = Math.min(heightAt(ax, az), heightAt(bx, bz));
-      const pts = [[ax - nx, az - nz], [bx - nx, bz - nz], [bx + nx, bz + nz], [ax + nx, az + nz]];
-      const b = {
-        pts, y0: y - 0.3, eave: y + f.height, ridge: y + f.height, kind: 'fence',
-        x0: Math.min(ax, bx) - 0.1, x1: Math.max(ax, bx) + 0.1, z0: Math.min(az, bz) - 0.1, z1: Math.max(az, bz) + 0.1,
-      };
-      this.shapes.push({ type: 'building', name: 'the chain-link fence', b });
-      return f;
+      const path = f.path ?? [f.from, f.to];
+      const name = f.kind === 'panels' ? 'the temporary fence' : 'the chain-link fence';
+      for (let i = 1; i < path.length; i++) {
+        const [ax, az] = path[i - 1];
+        const [bx, bz] = path[i];
+        const len = Math.hypot(bx - ax, bz - az);
+        const nx = (-(bz - az) / len) * 0.05;
+        const nz = ((bx - ax) / len) * 0.05;
+        const y = Math.min(heightAt(ax, az), heightAt(bx, bz));
+        const pts = [[ax - nx, az - nz], [bx - nx, bz - nz], [bx + nx, bz + nz], [ax + nx, az + nz]];
+        const b = {
+          pts, y0: y - 0.3, eave: y + f.height, ridge: y + f.height, kind: 'fence',
+          x0: Math.min(ax, bx) - 0.1, x1: Math.max(ax, bx) + 0.1, z0: Math.min(az, bz) - 0.1, z1: Math.max(az, bz) + 0.1,
+        };
+        this.shapes.push({ type: 'building', name, b });
+      }
+      return { ...f, path };
     });
 
     // Bounding sphere per shape, for a quick whole-aircraft check first.

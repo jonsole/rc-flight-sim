@@ -29,10 +29,14 @@ function shade(geo, fn) {
   return geo;
 }
 
-/** A billowy broadleaf crown (unit radius): distinct leaf clumps with dark gaps between them. */
-export function broadleafCrown(seed) {
+/**
+ * A billowy broadleaf crown (unit radius): distinct leaf clumps with dark
+ * gaps between them. `detail` 2 is full detail (~2200 triangles); 1 (~550)
+ * and 0 (~140) are for trees further away and slower devices.
+ */
+export function broadleafCrown(seed, detail = 2) {
   // Clump layout shared with the collisions (src/sim/treeShapes.js).
-  const parts = crownClumps(seed).map(([x, y, z, r]) => new IcosahedronGeometry(r, 2).translate(x, y, z));
+  const parts = crownClumps(seed).map(([x, y, z, r]) => new IcosahedronGeometry(r, detail).translate(x, y, z));
   let geo = mergeGeometries(parts.map(ni));
   // Leafy lumps on each clump.
   const p = geo.attributes.position;
@@ -63,6 +67,33 @@ export function broadleafCrown(seed) {
     return [k, k * 1.02, k * 0.9];
   });
   return geo;
+}
+
+/**
+ * A distant broadleaf crown (unit radius): one lumpy blob, ~80 triangles,
+ * shaded like the full crown. Reads as a tree from a few hundred metres.
+ */
+export function blobCrown(seed) {
+  let geo = ni(new IcosahedronGeometry(1, 1));
+  const p = geo.attributes.position;
+  const v = new Vector3();
+  let max = 0;
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    v.multiplyScalar(0.85 + 0.3 * noise3(v.x * 1.7 + seed, v.y * 1.7, v.z * 1.7));
+    p.setXYZ(i, v.x, v.y, v.z);
+    max = Math.max(max, v.length());
+  }
+  geo.scale(1 / max, 1 / max, 1 / max);
+  geo.deleteAttribute('normal');
+  geo.deleteAttribute('uv');
+  geo = mergeVertices(geo, 1e-4);
+  geo.computeVertexNormals();
+  return shade(geo, (pos, nrm) => {
+    const top = 0.62 + 0.28 * (pos.y * 0.5 + 0.5) + 0.12 * Math.max(0, nrm.y);
+    const k = 0.85 * top * (0.9 + 0.2 * noise3(pos.x * 5, pos.y * 5, pos.z * 5 + seed));
+    return [k, k * 1.02, k * 0.9];
+  });
 }
 
 /**
@@ -188,6 +219,16 @@ export function trunk(seed) {
   return shade(geo, (pos) => {
     // Darker at the foot and in the crown's shade, a little mottled.
     const k = (0.7 + 0.5 * Math.min(1, pos.y / 0.3)) * (pos.y > 0.4 ? 0.8 : 1) * (0.9 + 0.2 * noise3(pos.x * 90, pos.y * 40, pos.z * 90));
+    return [k, k, k];
+  });
+}
+
+/** A plain trunk for distant broadleaf trees: a tapering post into the crown. */
+export function simpleTrunk() {
+  const geo = taperedTube([new Vector3(0, 0, 0), new Vector3(0, 0.3, 0), new Vector3(0, 0.56, 0)], 0.022, 0.01, 5, 2);
+  geo.computeVertexNormals();
+  return shade(geo, (pos) => {
+    const k = 0.7 + 0.45 * Math.min(1, pos.y / 0.3);
     return [k, k, k];
   });
 }
