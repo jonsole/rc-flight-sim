@@ -14,7 +14,8 @@ export const DEFAULT_SETTINGS = {
   fpvShake: true,
   fpvAnalog: true,     // analog video noise effect
   // Line of sight
-  losFov: 50,
+  losFov: 80,          // degrees across the screen
+  losFovAcross: true,  // (older saves measured it top to bottom: converted on load)
   losZoom: 1,          // 0 off, 1 gentle, 2 strong
   pilotX: 0,
   pilotZ: 0,
@@ -45,6 +46,13 @@ export const DEFAULT_SETTINGS = {
 export function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
+    if (s && !s.losFovAcross && s.losFov != null) {
+      // Line-of-sight FOV used to be top to bottom: the same view across a
+      // 16:9 screen.
+      const v = (Number(s.losFov) * Math.PI) / 180;
+      s.losFov = Math.round((2 * Math.atan(Math.tan(v / 2) * (16 / 9)) * 180) / Math.PI);
+      s.losFovAcross = true;
+    }
     if (s) return { ...DEFAULT_SETTINGS, ...s };
   } catch {
     /* ignore */
