@@ -109,9 +109,11 @@ const editor = new Editor({
     googleTiles.group.visible = on;
     world.setGoogleMode(on);
   } : null,
+  setGoogleOpacity: googleTiles ? (v) => googleTiles.setOpacity(v) : null,
   onExit: () => {
     if (googleTiles) {
       googleTiles.group.visible = true;
+      googleTiles.setOpacity(1);
       world.setGoogleMode(true);
     }
     document.getElementById('menu-btn').style.display = '';

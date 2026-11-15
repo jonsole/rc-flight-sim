@@ -14,7 +14,7 @@
 // trees and buildings are the baked LIDAR ones.
 
 import { heightAt } from './terrain.js';
-import { CROWN_SEEDS, crownShape, lumpScale } from './treeShapes.js';
+import { CROWN_SEEDS, crownShape, lumpScale, crownOf } from './treeShapes.js';
 import { LOCATION, clubAngle, clubToWorld } from './location.js';
 import { prepareBuilding, roofAt, insideFootprint, nearestWall } from './buildings.js';
 import { applyTreeEdits, applyBuildingEdits, applyFenceEdits } from './edits.js';
@@ -157,12 +157,17 @@ function editedTree(spec, orig) {
   const h = spec.h ?? orig?.h ?? 12;
   const t = { id: spec.id, x: spec.x ?? orig.x, z: spec.z ?? orig.z, h, conifer, rot: orig?.rot ?? rand() * Math.PI * 2 };
   t.y = heightAt(t.x, t.z);
+  const base = spec.base ?? orig?.base;
+  if (base != null) t.base = base;
   if (orig && orig.conifer === conifer) {
     Object.assign(t, { hue: orig.hue, sat: orig.sat, light: orig.light });
-    if (!conifer) t.crownW = spec.r ?? orig.crownW;
+    t.crownW = spec.r ?? orig.crownW;
     return t;
   }
-  return dressTree(t, rand, spec.r ?? h * 0.33);
+  dressTree(t, rand, spec.r ?? h * 0.33);
+  // Conifers keep their own (narrower) default unless given a radius.
+  t.crownW = spec.r ?? (conifer ? undefined : t.crownW);
+  return t;
 }
 
 /** 0..1 from a tree's id, so its crown shape doesn't change when others are edited. */
@@ -185,15 +190,15 @@ export class Obstacles {
       // Trunk (solid): drawn tapering from 0.024 h to under 0.01 h across.
       this.shapes.push({ type: 'cylinder', name: 'a tree trunk', x: t.x, z: t.z, r: t.h * (t.conifer ? 0.014 : 0.019), y0: t.y - 0.2, y1: t.y + t.h * (t.conifer ? 0.2 : 0.42) });
       if (t.conifer) {
-        // As drawn: 0.22 h base radius, from 0.1 h up, 0.95 h tall.
-        this.shapes.push({ type: 'cone', name: 'a tree', x: t.x, z: t.z, r: t.h * 0.22, y0: t.y + t.h * 0.1, h: t.h * 0.95 });
+        // As drawn (crownOf): boughs from `base` up, cone of radius r.
+        const c = crownOf(t);
+        this.shapes.push({ type: 'cone', name: 'a tree', x: t.x, z: t.z, r: c.r, y0: c.y0, h: c.ch });
       } else {
         // The crown's own clumps, placed, sized and turned as drawn
-        // (src/world/world.js): centre 0.62 h up, crownW wide, 0.4 h tall.
-        const sx = t.crownW * 1.05;
-        const sy = t.h * 0.4;
+        // (src/world/world.js, crownOf): from `base` up to the top, crownW wide.
+        const { sx, sy, cy } = crownOf(t);
         this.shapes.push({
-          type: 'crown', name: 'a tree', cx: t.x, cy: t.y + t.h * 0.62, cz: t.z, sx, sy,
+          type: 'crown', name: 'a tree', cx: t.x, cy, cz: t.z, sx, sy,
           cos: Math.cos(t.rot), sin: Math.sin(t.rot), seed: CROWN_SEEDS[t.variant], ...crownShape(CROWN_SEEDS[t.variant]),
         });
       }

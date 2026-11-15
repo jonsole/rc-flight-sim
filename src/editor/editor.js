@@ -14,6 +14,8 @@ import { heightAt } from '../sim/terrain.js';
 import { LOCATION } from '../sim/location.js';
 import { EDITS, saveEdits, replaceEdits, emptyEdits, editCount } from '../sim/edits.js';
 import { insideFootprint } from '../sim/buildings.js';
+import { crownOf } from '../sim/treeShapes.js';
+import { buildingsMesh } from '../world/buildings.js';
 
 const SPEED = 15; // m/s, x4 with Shift
 
@@ -33,7 +35,8 @@ export class Editor {
    * @param {{ world: import('../world/world.js').World, obstacles: import('../sim/obstacles.js').Obstacles,
    *   camera: import('three').PerspectiveCamera, canvas: HTMLCanvasElement, root: HTMLElement,
    *   onRebuilt: () => void, onExit: () => void, setGoogle?: (on: boolean) => void }} o
-   *   setGoogle: show Google's tiles under your scenery while editing (sites with them on)
+   *   setGoogle: show Google's tiles under your scenery while editing (sites with them on);
+   *   setGoogleOpacity: how solid they are (0..1)
    */
   constructor(o) {
     Object.assign(this, o);
@@ -57,9 +60,14 @@ export class Editor {
     this.gizmo.attach(this.proxy);
     this.gizmo.addEventListener('dragging-changed', (e) => {
       this.dragging = e.value;
-      if (e.value) this.dragFrom = this.proxy.position.clone();
-      else this.#moved();
+      if (e.value) this.#dragStart();
+      else {
+        this.#dragEnd();
+        this.#moved();
+      }
     });
+    // Show the move as it happens; it's committed on release.
+    this.gizmo.addEventListener('objectChange', () => this.dragging && this.#dragPreview());
     this.gizmoHelper = this.gizmo.getHelper();
     this.highlight = new Box3Helper(new Box3(), new Color('#ffd400'));
     this.fenceLine = new Line(new BufferGeometry(), new LineBasicMaterial({ color: '#ffd400' }));
@@ -243,7 +251,7 @@ export class Editor {
       let best = null;
       let bd = Infinity;
       for (const t of ob.trees) {
-        const d = Math.hypot(t.x - p.x, t.z - p.z) - (t.crownW ?? t.h * 0.22);
+        const d = Math.hypot(t.x - p.x, t.z - p.z) - crownOf(t).radius;
         if (d < bd) {
           bd = d;
           best = t;
@@ -300,24 +308,74 @@ export class Editor {
     this.highlight.visible = !!o;
     if (o) {
       const box = this.highlight.box;
-      const s = this.selected;
-      if (s.kind === 'tree') {
-        const r = o.crownW ?? o.h * 0.22;
-        box.set(new Vector3(o.x - r, o.y, o.z - r), new Vector3(o.x + r, o.y + o.h, o.z + r));
-      } else if (s.kind === 'building') {
-        box.set(new Vector3(o.x0, o.y0, o.z0), new Vector3(o.x1, o.ridge, o.z1));
-      } else {
-        box.makeEmpty();
-        for (const [x, z] of o.path) {
-          const y = heightAt(x, z);
-          box.expandByPoint(new Vector3(x, y, z));
-          box.expandByPoint(new Vector3(x, y + o.height, z));
-        }
-      }
+      this.#boxFor(this.selected.kind, o, box);
       box.getCenter(this.proxy.position);
       this.proxy.position.y = box.min.y;
     }
     this.#panel();
+  }
+
+  /** The selection's bounds (a tree as `o`, possibly with changes not yet committed). */
+  #boxFor(kind, o, box) {
+    if (kind === 'tree') {
+      const r = crownOf(o).radius;
+      const y = heightAt(o.x, o.z);
+      box.set(new Vector3(o.x - r, y, o.z - r), new Vector3(o.x + r, y + o.h, o.z + r));
+    } else if (kind === 'building') {
+      box.set(new Vector3(o.x0, o.y0, o.z0), new Vector3(o.x1, o.ridge, o.z1));
+    } else {
+      box.makeEmpty();
+      for (const [x, z] of o.path) {
+        const y = heightAt(x, z);
+        box.expandByPoint(new Vector3(x, y, z));
+        box.expandByPoint(new Vector3(x, y + o.height, z));
+      }
+    }
+    return box;
+  }
+
+  // --- Live previews (before the edit is committed) -------------------------
+
+  /** Tree: redraw it with `spec` changed, and box it. */
+  #previewTree(spec) {
+    const o = this.#current();
+    if (!o || this.selected.kind !== 'tree') return;
+    this.world.moveTreeDrawing(o, spec);
+    const p = { ...o, ...spec };
+    this.#boxFor('tree', p, this.highlight.box);
+  }
+
+  #dragStart() {
+    this.dragFrom = this.proxy.position.clone();
+    this.boxFrom = this.highlight.box.clone();
+    const o = this.#current();
+    const s = this.selected;
+    if (s?.kind === 'fence') this.dragObj = this.world.siteObjects.find((g) => g.userData.fenceIndex === o.index);
+    if (s?.kind === 'building') {
+      // The buildings are one mesh: drag a copy of this one.
+      this.dragObj = buildingsMesh([o]);
+      this.world.scene.add(this.dragObj);
+    }
+  }
+
+  #dragPreview() {
+    const dx = this.proxy.position.x - this.dragFrom.x;
+    const dz = this.proxy.position.z - this.dragFrom.z;
+    const o = this.#current();
+    if (!o) return;
+    if (this.selected.kind === 'tree') this.#previewTree({ x: o.x + dx, z: o.z + dz });
+    else {
+      this.dragObj?.position.set(dx, 0, dz);
+      this.highlight.box.copy(this.boxFrom).translate(new Vector3(dx, 0, dz));
+    }
+  }
+
+  #dragEnd() {
+    if (this.selected?.kind === 'building' && this.dragObj) {
+      this.world.scene.remove(this.dragObj);
+      this.dragObj.geometry.dispose();
+    }
+    this.dragObj = null;
   }
 
   // --- Changing things ---------------------------------------------------------
@@ -428,7 +486,9 @@ export class Editor {
         el('button', { onclick: () => fileIn.click(), title: 'Load edits from a file' }, 'Import'),
         el('button', { onclick: () => this.#clearAll(), title: 'Throw away all edits at this field' }, 'Clear all'),
         ...(this.setGoogle ? [el('label', { class: 'ed-google', title: 'Show Google photorealistic tiles with your scenery on top' },
-          el('input', { type: 'checkbox', onchange: (e) => this.setGoogle(e.target.checked) }), ' Google tiles')] : []),
+          el('input', { type: 'checkbox', onchange: (e) => this.setGoogle(e.target.checked) }), ' Google tiles'),
+        el('label', { class: 'ed-google', title: 'How see-through the Google tiles are' }, 'opacity',
+          el('input', { type: 'range', min: 0.1, max: 1, step: 0.05, value: 1, class: 'ed-opacity', oninput: (e) => this.setGoogleOpacity?.(Number(e.target.value)) }))] : []),
         el('button', { class: 'ed-done', onclick: () => this.close() }, 'Done ▶'),
         fileIn),
       this.statusEl,
@@ -453,11 +513,16 @@ export class Editor {
       return;
     }
     this.panelEl.style.display = 'block';
-    const slider = (label, value, min, max, stepV, unit, apply) => {
+    // `live(v)`, if given, previews the value while the slider moves; `apply`
+    // commits it on release.
+    const slider = (label, value, min, max, stepV, unit, apply, live) => {
       const out = el('span', { class: 'ed-val' }, `${value.toFixed(1)} ${unit}`);
       const inp = el('input', {
         type: 'range', min, max, step: stepV, value,
-        oninput: (e) => (out.textContent = `${Number(e.target.value).toFixed(1)} ${unit}`),
+        oninput: (e) => {
+          out.textContent = `${Number(e.target.value).toFixed(1)} ${unit}`;
+          live?.(Number(e.target.value));
+        },
         onchange: (e) => apply(Number(e.target.value)),
       });
       return el('label', { class: 'ed-row' }, el('span', {}, label), inp, out);
@@ -465,8 +530,21 @@ export class Editor {
     const rows = [];
     if (s.kind === 'tree') {
       rows.push(el('h4', {}, 'Tree'));
-      rows.push(slider('Height', o.h, 2, 35, 0.5, 'm', (v) => this.#set({ h: v })));
-      if (!o.conifer) rows.push(slider('Crown radius', o.crownW, 1, 15, 0.25, 'm', (v) => this.#set({ r: v })));
+      const c = crownOf(o);
+      // Live: the tree as the sliders stand (height keeps where the canopy
+      // starts in metres).
+      const live = { h: o.h, crownW: c.radius, base: c.base };
+      const show = (change) => {
+        Object.assign(live, change);
+        this.#previewTree({ ...live });
+      };
+      rows.push(slider('Height', o.h, 2, 35, 0.5, 'm', (v) => this.#set({ h: v, base: round3((c.base * o.h) / v) }),
+        (v) => show({ h: v, base: (c.base * o.h) / v })));
+      rows.push(slider(o.conifer ? 'Base radius' : 'Crown radius', c.radius, 0.5, 15, 0.25, 'm', (v) => this.#set({ r: v }),
+        (v) => show({ crownW: v })));
+      // Where the leaves start, in metres up the trunk (stored as a fraction of the height).
+      rows.push(slider('Canopy starts', c.base * o.h, 0, o.h * 0.7, 0.1, 'm', (v) => this.#set({ base: round3(v / o.h) }),
+        (v) => show({ base: v / live.h })));
       const sel = el('select', { onchange: (e) => this.#set({ conifer: e.target.value === 'conifer' }) },
         el('option', { value: 'broadleaf', selected: !o.conifer }, 'Broadleaf'),
         el('option', { value: 'conifer', selected: o.conifer }, 'Conifer'));
@@ -520,6 +598,7 @@ export class Editor {
 }
 
 const round = (v) => Math.round(v * 10) / 10;
+const round3 = (v) => Math.round(v * 1000) / 1000;
 
 function segDist(px, pz, [ax, az], [bx, bz]) {
   const ex = bx - ax;

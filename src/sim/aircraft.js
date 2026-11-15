@@ -11,6 +11,9 @@ import { Obstacles } from './obstacles.js';
 
 const RHO = 1.225;
 const G = 9.81;
+// Far beyond what any of the models can do: only a numerical blow-up gets here.
+const MAX_SPEED = 120; // m/s
+const MAX_SPIN = 60; // rad/s
 
 const _v = new Vector3();
 const _windCG = new Vector3();
@@ -393,6 +396,18 @@ export class Aircraft {
     w.x += ((_m.x - _tmp.x) / I.x) * dt;
     w.y += ((_m.y - _tmp.y) / I.y) * dt;
     w.z += ((_m.z - _tmp.z) / I.z) * dt;
+
+    // Safety net: a model started with its wheels buried, or wedged between
+    // the ground and a tree, can be shot out by huge contact forces; never let
+    // that run away (speeds of 1e30 also hang the obstacle lookups).
+    if (!(this.velocity.lengthSq() < MAX_SPEED * MAX_SPEED)) {
+      if (Number.isFinite(this.velocity.lengthSq())) this.velocity.setLength(MAX_SPEED);
+      else this.velocity.set(0, 0, 0);
+    }
+    if (!(w.lengthSq() < MAX_SPIN * MAX_SPIN)) {
+      if (Number.isFinite(w.lengthSq())) w.setLength(MAX_SPIN);
+      else w.set(0, 0, 0);
+    }
 
     _q.set(w.x * dt * 0.5, w.y * dt * 0.5, w.z * dt * 0.5, 0);
     _q.premultiply(q); // q * (ω dt / 2)

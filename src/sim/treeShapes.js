@@ -88,3 +88,24 @@ export function crownShape(seed) {
   cache.set(seed, shape);
   return shape;
 }
+
+// Where a tree's leaves are, shared by the drawing (src/world/world.js), the
+// collisions (src/sim/obstacles.js), the wind and the editor.
+//   base     fraction of the height where the canopy starts (editable)
+//   crownW   broadleaf: crown radius; conifer: radius of the bottom boughs
+export const DEFAULT_BASE = { broadleaf: 0.1, conifer: 0.06 };
+
+/**
+ * Broadleaf: { cy, sx, sy } (crown centre height, horizontal and vertical
+ * half-size); conifer: { y0, r, ch } (bough base height, base radius, cone
+ * height up to just over the top). Both also give `base` and `radius`.
+ */
+export function crownOf(t) {
+  const base = t.base ?? (t.conifer ? DEFAULT_BASE.conifer : DEFAULT_BASE.broadleaf);
+  if (t.conifer) {
+    const r = t.crownW ?? t.h * 0.22;
+    return { base, radius: r, r, y0: t.y + t.h * base, ch: t.h * (1.05 - base) };
+  }
+  const sy = (t.h * (1.02 - base)) / 2;
+  return { base, radius: t.crownW, sx: t.crownW * 1.05, sy, cy: t.y + t.h * base + sy };
+}

@@ -3,7 +3,7 @@ import {
   Scene, Color, FogExp2, HemisphereLight, Points, PointsMaterial, BufferGeometry, Sprite, SpriteMaterial, DirectionalLight, Mesh, PlaneGeometry, MeshStandardMaterial,
   CanvasTexture, RepeatWrapping, SRGBColorSpace, InstancedMesh, CylinderGeometry, IcosahedronGeometry,
   Object3D, BoxGeometry, ConeGeometry, Group, Vector3, MathUtils, DoubleSide, Float32BufferAttribute,
-  MeshBasicMaterial, ShaderMaterial, SphereGeometry, BackSide, MeshLambertMaterial,
+  MeshBasicMaterial, ShaderMaterial, SphereGeometry, BackSide, MeshLambertMaterial, Matrix4,
 } from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY, PILOT_PAD } from '../sim/terrain.js';
@@ -14,7 +14,7 @@ import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail } from './ground.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
 import { QUALITY } from './quality.js';
-import { CROWN_SEEDS } from '../sim/treeShapes.js';
+import { CROWN_SEEDS, crownOf } from '../sim/treeShapes.js';
 import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes, siteFence } from './props.js';
 
 const smooth = (e0, e1, x) => {
@@ -295,6 +295,28 @@ function cricketPitchTexture(r) {
   t.colorSpace = SRGBColorSpace;
   t.anisotropy = 8;
   return t;
+}
+
+const _trunkM = new Matrix4();
+const _crownM = new Matrix4();
+
+/** A tree's trunk and crown matrices (unit trunk scaled by height; crown from crownOf). */
+function treeMatrices(t, o, trunkM, crownM) {
+  o.rotation.set(0, t.rot, 0);
+  o.position.set(t.x, t.y - 0.15, t.z);
+  o.scale.setScalar(t.h);
+  o.updateMatrix();
+  trunkM.copy(o.matrix);
+  const c = crownOf(t);
+  if (t.conifer) {
+    o.position.set(t.x, c.y0, t.z);
+    o.scale.set(c.r, c.ch, c.r);
+  } else {
+    o.position.set(t.x, c.cy, t.z);
+    o.scale.set(c.sx, c.sy, c.sx);
+  }
+  o.updateMatrix();
+  crownM.copy(o.matrix);
 }
 
 /** Built scenery still drawn over Google's tiles. */
@@ -586,6 +608,7 @@ export class World {
     for (const f of ob.fences) {
       const o = siteFence(f);
       o.userData.kind = 'fence';
+      o.userData.fenceIndex = f.index;
       o.traverse((m) => {
         if (!m.isMesh) return;
         m.userData.kind = 'fence';
@@ -610,6 +633,28 @@ export class World {
     this.#site();
     if (this.googleMode) this.setGoogleMode(true);
     if (this.shadows) this.shadows.dirty = true;
+  }
+
+  /**
+   * Redraw one tree as `spec` (its own x, z, h, crownW, base...), in the
+   * slots it was drawn in: instant, for the editor while dragging or sliding.
+   * The obstacles aren't changed until the edit is committed.
+   */
+  moveTreeDrawing(t, spec) {
+    if (!t.drawn) return;
+    const p = { ...t, ...spec };
+    p.y = heightAt(p.x, p.z);
+    const o = new Object3D();
+    treeMatrices(p, o, _trunkM, _crownM);
+    const [tm, ti] = t.drawn.trunk;
+    const [cm, ci] = t.drawn.crown;
+    tm.setMatrixAt(ti, _trunkM);
+    cm.setMatrixAt(ci, _crownM);
+    tm.instanceMatrix.needsUpdate = true;
+    cm.instanceMatrix.needsUpdate = true;
+    // Moved out of its set's bounds: don't let it be culled.
+    tm.frustumCulled = false;
+    cm.frustumCulled = false;
   }
 
   #trees() {
@@ -651,35 +696,20 @@ export class World {
       const o = new Object3D();
       const col = new Color();
       for (const t of set.trees) {
-        const { x, y, z, h } = t;
-        o.rotation.set(0, t.rot, 0);
-        // Trunks are drawn for a 1-unit tree, so scale them by its height.
-        o.position.set(x, y - 0.15, z);
-        o.scale.setScalar(h);
-        o.updateMatrix();
-        if (t.conifer) conTrunks.setMatrixAt(nConTrunk++, o.matrix);
-        else {
-          const k = t.pick % trunks.length;
-          trunks[k].setMatrixAt(nTrunk[k]++, o.matrix);
-        }
+        // Where this tree's trunk and crown are drawn: kept, so the editor
+        // can move and resize it on the spot (moveTreeDrawing).
+        const trunkMesh = t.conifer ? conTrunks : trunks[t.pick % trunks.length];
+        const trunkSlot = t.conifer ? nConTrunk++ : nTrunk[t.pick % trunks.length]++;
+        const crownMesh = t.conifer ? conifers[t.pick % conifers.length] : crowns[t.variant]; // the shape the collisions use
+        const crownSlot = t.conifer ? nCon[t.pick % conifers.length]++ : nCrown[t.variant]++;
+        t.drawn = { trunk: [trunkMesh, trunkSlot], crown: [crownMesh, crownSlot] };
+        treeMatrices(t, o, _trunkM, _crownM);
+        trunkMesh.setMatrixAt(trunkSlot, _trunkM);
+        crownMesh.setMatrixAt(crownSlot, _crownM);
         // Leaf colour per tree, a little brighter than before (the shapes
         // carry their own shading).
         col.setHSL(t.hue, t.sat, t.light * 1.12 + 0.02);
-        if (t.conifer) {
-          const k = t.pick % conifers.length;
-          o.position.set(x, y + h * 0.1, z);
-          o.scale.set(h * 0.22, h * 0.95, h * 0.22);
-          o.updateMatrix();
-          conifers[k].setMatrixAt(nCon[k], o.matrix);
-          conifers[k].setColorAt(nCon[k]++, col);
-        } else {
-          const k = t.variant; // the shape the collisions use
-          o.position.set(x, y + h * 0.62, z);
-          o.scale.set(t.crownW * 1.05, h * 0.4, t.crownW * 1.05);
-          o.updateMatrix();
-          crowns[k].setMatrixAt(nCrown[k], o.matrix);
-          crowns[k].setColorAt(nCrown[k]++, col);
-        }
+        crownMesh.setColorAt(crownSlot, col);
       }
       crowns.forEach((m, k) => (m.count = nCrown[k]));
       conifers.forEach((m, k) => (m.count = nCon[k]));

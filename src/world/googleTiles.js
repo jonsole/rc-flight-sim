@@ -48,6 +48,9 @@ export class GoogleTiles {
       if (!this.error) this.#showError(`Google 3D tiles: ${String(e?.error?.message ?? e?.error ?? 'load error')}`);
     });
     this.#checkKey(apiKey);
+    // See-through tiles (editor): applied to each tile as it loads.
+    this.opacity = 1;
+    tiles.addEventListener('load-model', ({ scene }) => this.#fade(scene));
     this.tiles = tiles;
     // The plugin puts the pilot spot at the origin with +y up, +z north and
     // +x west; the sim has -z (grid) north and +x east: turn half round, and
@@ -126,6 +129,24 @@ export class GoogleTiles {
       this.lastCredits = html;
     }
     this.creditEl.style.display = 'block';
+  }
+
+  /** How solid the tiles are, 0 (invisible) to 1. */
+  setOpacity(v) {
+    this.opacity = v;
+    this.tiles.group.traverse((o) => this.#fade(o));
+  }
+
+  #fade(root) {
+    const v = this.opacity;
+    root.traverse((o) => {
+      if (!o.material) return;
+      for (const m of [o.material].flat()) {
+        m.transparent = v < 1;
+        m.opacity = v;
+        m.depthWrite = v >= 1;
+      }
+    });
   }
 
   dispose() {
