@@ -103,8 +103,9 @@ function layout(style) {
     // roll stability (keel effect) though the wing itself is flat. 3° keeps
     // it close to spirally neutral like a real Cub-type (from a 30° bank,
     // hands off, it is at ~17° after 5 s) without full rudder rolling it
-    // hard (25° in a second; it was 41° at 12°).
-    aeroDihedral: (high ? 3 : 6) * deg,
+    // hard (25° in a second; it was 41° at 12°). Low wing (Agro): its 5° of
+    // dihedral less the low-wing effect (rudder rolled it 46° at 6°; ~28 now).
+    aeroDihedral: 3 * deg,
     rootZ: high ? 0 : 0.04,        // low wing joins the fuselage side
     slats: style.slats ? { from: high ? 0.05 : 0.045, to: 0.42 } : null, // spanwise extent (m)
     hinge: high ? 0.68 : 0.75,     // aileron hinge, fraction of chord (plan: 70 mm flaperons)
@@ -262,9 +263,6 @@ export function buildBuschtrottel(style) {
     wingAspectRatio: AR,
     wingArea: SPAN * CHORD,
     wingSpan: SPAN,
-    // Roll stability the tests hold it to: the high-wing models fly close to
-    // spirally neutral (a Cub-type), so less than the other models.
-    rollStability: style.mount === 'low' ? undefined : { minClBeta: 0.06, maxBankAfterRelease: 20 },
     downwashGain: 0.9,
     motor: {
       // AT2308 1450Kv on 3S (~16,000 rpm unloaded), see style.prop.

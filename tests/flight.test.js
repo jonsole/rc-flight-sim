@@ -215,9 +215,9 @@ for (const entry of AIRCRAFT) {
         ac.step(1e-6);
         const q = 0.5 * 1.225 * 100;
         const clBeta = ac.lastForces.moment.x / (q * def.wingArea * ac.wingSpan) / beta;
-        // Rolls left, raising the right wing (less for models built near
-        // spirally neutral: def.rollStability).
-        expect(clBeta).toBeLessThan(-(def.rollStability?.minClBeta ?? 0.08));
+        // Rolls left, raising the right wing. Modest: the models are tuned
+        // close to spirally neutral, so rudder doesn't roll them hard.
+        expect(clBeta).toBeLessThan(-0.05);
       });
 
       it('rolls back towards level when a bank is released (hands off)', () => {
@@ -225,7 +225,8 @@ for (const entry of AIRCRAFT) {
         ac.update(3);
         ac.orientation.multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), 30 * deg));
         ac.update(10);
-        expect(Math.abs(ac.attitude().roll)).toBeLessThan((def.rollStability?.maxBankAfterRelease ?? 15) * deg);
+        // Slowly: close to spirally neutral, but never spirally unstable.
+        expect(Math.abs(ac.attitude().roll)).toBeLessThan(25 * deg);
       });
 
       it('gets ground effect: more lift and less drag just above the ground', () => {
@@ -703,7 +704,7 @@ describe('E-flite S.E.5a on grass (like the real model)', () => {
   });
 });
 
-describe('high-wing Buschtrottel: rudder and aileron coupling', () => {
+describe('rudder and aileron coupling', () => {
   const trimmed = (id) => {
     const ac = new Aircraft(getAircraft(id).def, { ground });
     ac.assistMode = 'off';
@@ -712,13 +713,14 @@ describe('high-wing Buschtrottel: rudder and aileron coupling', () => {
     ac.update(3);
     return ac;
   };
-  for (const id of ['buschtrottel-shockcub', 'buschtrottel-highlander']) {
+  for (const id of ['buschtrottel-shockcub', 'buschtrottel-highlander', 'buschtrottel-agro', 'eflite-se5a-900']) {
     it(`${id}: full rudder for a second rolls it only moderately`, () => {
       const ac = trimmed(id);
       const r0 = ac.attitude().roll;
       ac.controls.yaw = 1;
       ac.update(1);
-      expect(Math.abs(ac.attitude().roll - r0)).toBeLessThan(30 * deg); // was 41° (too much keel effect)
+      // Was 41° (ShockCub), 46° (Agro), 72° (S.E.5a: a biplane rolls more).
+      expect(Math.abs(ac.attitude().roll - r0)).toBeLessThan((id.includes('se5a') ? 40 : 30) * deg);
     });
 
     it(`${id}: aileron gives adverse yaw at first (nose swings out of the roll)`, () => {

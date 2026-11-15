@@ -28,7 +28,7 @@ function referenceLayout(cgFromUpperLeRef) {
     upperLeX,
     lowerY: -0.10,
     upperY: 0.17,
-    dihedral: 4.5 * deg,
+    dihedral: 2.5 * deg, // as on the model (4.5 made rudder roll it 72° in a second)
     incidence: 2.0 * deg,
     lowerRootZ: 0.08,
     // Tailplane, nose and cockpit measured off a 3D model of the S.E.5a
@@ -302,7 +302,7 @@ export const EFLITE_SE5a_900 = buildSE5a({
     wheelX: 0.065, rollScale: 1.8, bumpScale: 2,
   },
   trim: { roll: 0.002 }, // aileron trim against motor torque at cruise
-  upperWingDihedralEffect: 5 * deg, // top wing well above the CG acts like a high wing
+  upperWingDihedralEffect: 1 * deg, // top wing well above the CG acts a little like a high wing
   visualDihedral: 2.5 * deg, // as it looks on the model
   defaultAssist: 'as3x',
 });
