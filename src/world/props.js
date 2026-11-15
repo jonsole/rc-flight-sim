@@ -8,6 +8,7 @@ import {
   Float32BufferAttribute, Shape, ShapeGeometry, ExtrudeGeometry, Vector2, Vector3, Matrix4,
 } from 'three';
 import { heightAt } from '../sim/terrain.js';
+import { LOCATION } from '../sim/location.js';
 import { broadleafCrown } from './trees.js';
 
 function rng(seed) {
@@ -216,7 +217,7 @@ export function car(c) {
     w.castShadow = true;
     g.add(w);
   }
-  g.position.set(c.x, 0, c.z);
+  g.position.set(c.x, heightAt(c.x, c.z), c.z);
   g.rotation.y = (c.x * 7.3) % 0.12; // not parked perfectly straight
   return g;
 }
@@ -282,6 +283,7 @@ export function gravelTexture() {
 
 /** Bushes along the edge of the field, in front of the tree line. */
 export function bushes(material) {
+  if (LOCATION.data) return realBushes(material);
   const rnd = rng(77);
   const shapes = [broadleafCrown(101), broadleafCrown(131)];
   const n = 260;
@@ -308,6 +310,38 @@ export function bushes(material) {
   meshes.forEach((m, k) => {
     m.count = counts[k];
     m.receiveShadow = true;
+  });
+  return meshes;
+}
+
+/** Hedges and shrubs at a real site: the LIDAR's 1-3 m vegetation. */
+function realBushes(material) {
+  const rnd = rng(78);
+  const pts = LOCATION.data.bushes;
+  const n = pts.length / 3;
+  const shapes = [broadleafCrown(101), broadleafCrown(131)];
+  const meshes = shapes.map((s) => new InstancedMesh(s, material, n));
+  const counts = shapes.map(() => 0);
+  const o = new Object3D();
+  const col = new Color();
+  for (let i = 0; i < pts.length; i += 3) {
+    const x = pts[i] + (rnd() - 0.5) * 1.5;
+    const z = pts[i + 1] + (rnd() - 0.5) * 1.5;
+    const h = pts[i + 2];
+    const w = 1.5 + rnd() * 0.8; // half-width: neighbours (3 m apart) overlap into a hedge
+    o.position.set(x, heightAt(x, z) + h * 0.5, z);
+    o.rotation.set(0, rnd() * Math.PI * 2, 0);
+    o.scale.set(w, h * 0.55, w);
+    o.updateMatrix();
+    const k = (i / 3) % shapes.length;
+    meshes[k].setMatrixAt(counts[k], o.matrix);
+    col.setHSL(0.24 + rnd() * 0.05, 0.36 + rnd() * 0.12, 0.13 + rnd() * 0.05);
+    meshes[k].setColorAt(counts[k]++, col);
+  }
+  meshes.forEach((m, k) => {
+    m.count = counts[k];
+    m.receiveShadow = true;
+    m.castShadow = true;
   });
   return meshes;
 }

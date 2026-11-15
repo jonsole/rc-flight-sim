@@ -70,6 +70,34 @@ Releasing: merge the dev branch into `main` with a merge commit
 already deployed, so fast-forwarding `main` to a commit the dev branch already
 published leaves the live page on the older build.
 
+## Flying fields
+
+Pick the field on the start screen or under *Menu → Flying → Flying field*
+(changing it reloads the page; `?field=waterbeach` in the URL works too):
+
+| Field | Notes |
+| --- | --- |
+| **Club field** | Made up: a mown field in rolling country. |
+| **Waterbeach** | The real field at Waterbeach, Cambridgeshire. 2 × 2 km of scenery around it is built from Environment Agency 1 m LIDAR (ground, ~3500 trees at their measured heights and crown sizes, hedges, building heights) and OpenStreetMap (building outlines, roads, paths, water, gardens, farmland). |
+
+Real fields are baked by `tools/bake_location.py` into `src/locations/<id>.json`
+(about 2.6 MB), so nothing is fetched at run time and no API key is needed:
+
+```bash
+pip install numpy scipy pyproj tifffile pillow
+python3 tools/bake_location.py waterbeach --cache /tmp/waterbeach-data
+```
+
+To add a field in England, add it to `SITES` in the script (the OSGB
+easting/northing where the pilot stands) and its layout (runway, pilot box,
+fence, windsock, cars) to `src/sim/location.js`. Players in multiplayer only
+meet others at the same field.
+
+Waterbeach scenery contains Environment Agency LIDAR data © Environment Agency
+copyright and/or database right, licensed under the
+[Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/),
+and map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL).
+
 ## Flying with your transmitter
 
 Most transmitters can act as a USB game controller:

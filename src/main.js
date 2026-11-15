@@ -21,6 +21,7 @@ import { OSD } from './ui/osd.js';
 import { Panel } from './ui/panel.js';
 import { loadSettings, saveSettings } from './ui/settings.js';
 import { EngineSound } from './audio/engine.js';
+import { LOCATION, LOCATIONS } from './sim/location.js';
 
 // Development builds (the /dev/ page) are badged so they're never mistaken for live.
 if (import.meta.env.VITE_CHANNEL === 'dev') {
@@ -222,7 +223,8 @@ function openChat() {
 }
 function mpConnect() {
   if (!settings.mpRoom) return;
-  mp.connect(mpServer(), settings.mpRoom, settings.mpName, entry.id);
+  mp.connect(mpServer(), fieldRoom(settings.mpRoom), settings.mpName, entry.id);
+  mp.baseRoom = settings.mpRoom;
 }
 mp.onEvent = (type, p, m) => {
   if (type === 'chat') {
@@ -252,6 +254,20 @@ mp.onEvent = (type, p, m) => {
   mpBadge.textContent = `Room ${mp.room} · ${mp.peers.size + 1} ${mp.peers.size ? 'pilots' : 'pilot'}`;
   if (panel?.visible && panel.tab === 'mp') panel.render();
 };
+/** Reload at another flying field (keeping any invite room). */
+function changeField(id) {
+  if (id === LOCATION.id) return;
+  settings.location = id;
+  saveSettings(settings);
+  const q = new URLSearchParams(location.search);
+  q.set('field', id);
+  if (mp.connected) q.set('room', mp.baseRoom ?? settings.mpRoom);
+  location.search = q.toString();
+}
+// Players only meet others at the same field: the room on the server is
+// the code plus the field (none for the made-up field).
+const fieldRoom = (room) => (LOCATION.data ? `${room.slice(0, 20)}-${LOCATION.id.slice(0, 3).toUpperCase()}` : room);
+
 function newRoomCode() {
   const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   return Array.from({ length: 5 }, () => a[Math.floor(Math.random() * a.length)]).join('');
@@ -263,7 +279,7 @@ const panel = new Panel(document.getElementById('panel'), {
   mp,
   defaultServer: DEFAULT_MP_SERVER,
   newRoomCode,
-  inviteLink: () => `${location.origin}${location.pathname}?room=${encodeURIComponent(mp.room)}`,
+  inviteLink: () => `${location.origin}${location.pathname}?room=${encodeURIComponent(mp.baseRoom ?? mp.room)}${LOCATION.data ? `&field=${LOCATION.id}` : ''}`,
   onMpConnect: () => {
     mpConnect();
     panel.render();
@@ -281,6 +297,7 @@ const panel = new Panel(document.getElementById('panel'), {
     applySettings();
     saveSettings(settings);
     if (key === 'aircraft') selectAircraft(value);
+    if (key === 'location') changeField(value);
     if (key === 'startMode') resetAircraft();
   },
   onReset: resetAircraft,
@@ -357,6 +374,10 @@ const splashSelect = document.getElementById('splash-aircraft');
 const splashSummary = document.getElementById('splash-summary');
 for (const a of AIRCRAFT) splashSelect.append(new Option(a.name, a.id));
 splashSelect.addEventListener('change', (e) => selectAircraft(e.target.value));
+const splashField = document.getElementById('splash-field');
+for (const l of LOCATIONS) splashField.append(new Option(l.name, l.id));
+splashField.value = LOCATION.id;
+splashField.addEventListener('change', (e) => changeField(e.target.value));
 function updateSplash() {
   if (!splashSelect.isConnected) return;
   splashSelect.value = entry.id;
@@ -390,12 +411,13 @@ paused = true; // until the splash is dismissed
 // --- Main loop -------------------------------------------------------------------
 let last = performance.now();
 const windTmp = new Vector3();
-const windsockPos = new Vector3(-35, 5, -42);
+const windsockPos = new Vector3(obstacles.windsock.x, obstacles.windsock.height, obstacles.windsock.z);
 let rssi = 99;
 
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.05, (now - last) / 1000);
+  // (The first frame's timestamp can be just before `last`.)
+  const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
   last = now;
 
   const ctl = input.update(dt);

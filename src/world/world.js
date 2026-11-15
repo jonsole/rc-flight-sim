@@ -6,7 +6,8 @@ import {
   MeshBasicMaterial, ShaderMaterial, SphereGeometry, BackSide, MeshLambertMaterial,
 } from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
-import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY } from '../sim/terrain.js';
+import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY, PILOT_PAD } from '../sim/terrain.js';
+import { buildingsMesh } from './buildings.js';
 import { sunPosition, moonPosition } from './sun.js';
 import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail } from './ground.js';
@@ -435,25 +436,26 @@ export class World {
     this.scene.add(rw);
 
     // Pilot box (gravel pad) and safety fence line
-    const pad = new Mesh(new PlaneGeometry(6, 4), addCloudShadows(new MeshLambertMaterial({ map: gravelTexture(), polygonOffset: true, polygonOffsetFactor: -2 })));
+    const pad = new Mesh(new PlaneGeometry(PILOT_PAD.length, PILOT_PAD.width), addCloudShadows(new MeshLambertMaterial({ map: gravelTexture(), polygonOffset: true, polygonOffsetFactor: -2 })));
     pad.rotation.x = -Math.PI / 2;
-    pad.position.set(0, 0.002, 0.5);
+    pad.position.set(PILOT_PAD.x, 0.002, PILOT_PAD.z);
     pad.receiveShadow = true;
     this.scene.add(pad);
 
     const postGeo = new CylinderGeometry(0.04, 0.04, 1.1, 6);
     const postMat = new MeshStandardMaterial({ color: '#6b5b45' });
-    const posts = new InstancedMesh(postGeo, postMat, 40);
+    const fence = this.obstacles.fence;
+    const posts = new InstancedMesh(postGeo, postMat, fence.posts.length);
     const o = new Object3D();
-    for (let i = 0; i < 40; i++) {
-      o.position.set(-100 + i * 5.1, 0.55, 6);
+    fence.posts.forEach((x, i) => {
+      o.position.set(x, 0.55, fence.z);
       o.updateMatrix();
       posts.setMatrixAt(i, o.matrix);
-    }
+    });
     posts.castShadow = true;
     this.scene.add(posts);
-    const rail = new Mesh(new BoxGeometry(200, 0.04, 0.04), postMat);
-    rail.position.set(0, 1.0, 6);
+    const rail = new Mesh(new BoxGeometry(fence.x1 - fence.x0, 0.04, 0.04), postMat);
+    rail.position.set((fence.x0 + fence.x1) / 2, 1.0, fence.z);
     this.scene.add(rail);
   }
 
@@ -562,7 +564,8 @@ export class World {
     sockMesh.castShadow = true;
     sock.add(sockMesh);
     ws.add(sock);
-    ws.position.set(-35, 0, -42);
+    const wsAt = this.obstacles.windsock;
+    ws.position.set(wsAt.x, 0, wsAt.z);
     this.scene.add(ws);
     this.windsock = sock;
     this.sockMesh = sockMesh;
@@ -579,21 +582,31 @@ export class World {
         m.material.userData.clouds = true;
       }
     });
-    for (const o of [clubhouse(ob.hut), shippingContainer(ob.container), gazebo(ob.gazebo), ...ob.cars.map(car)]) {
+    const club = [gazebo(ob.gazebo), ...ob.cars.map(car)];
+    if (ob.hut) club.push(clubhouse(ob.hut));
+    if (ob.container) club.push(shippingContainer(ob.container));
+    for (const o of club) {
       shadowy(o);
       this.scene.add(o);
     }
     for (const b of bushes(this.leafMat)) this.scene.add(b);
+    if (ob.buildings.length) {
+      const houses = buildingsMesh(ob.buildings);
+      addCloudShadows(houses.material);
+      this.scene.add(houses);
+    }
 
     // Flight-line table
+    const tx = ob.table.x;
+    const tz = ob.table.z;
     const table = new Mesh(new BoxGeometry(2, 0.06, 0.8), new MeshStandardMaterial({ color: '#c8c8c8' }));
-    table.position.set(6, 0.75, 3);
+    table.position.set(tx, 0.75, tz);
     table.castShadow = true;
     this.scene.add(table);
     for (const dx of [-0.9, 0.9]) {
       for (const dz of [-0.3, 0.3]) {
         const leg = new Mesh(new CylinderGeometry(0.02, 0.02, 0.75), table.material);
-        leg.position.set(6 + dx, 0.375, 3 + dz);
+        leg.position.set(tx + dx, 0.375, tz + dz);
         this.scene.add(leg);
       }
     }

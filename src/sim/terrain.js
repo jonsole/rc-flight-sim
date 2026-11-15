@@ -1,7 +1,10 @@
 // Terrain height field shared by physics and rendering.
 //
-// The flying field (a ~400 m circle around the pilot) is flat at y = 0;
-// beyond it, gentle rolling hills rise towards the horizon.
+// Made-up club field: the flying field (a ~400 m circle around the pilot) is
+// flat at y = 0; beyond it, gentle rolling hills rise towards the horizon.
+// Real sites (src/sim/location.js): the LIDAR ground, levelled on the mown
+// field, fading into gentle made-up country beyond the baked area.
+import { LOCATION, inField } from './location.js';
 
 const FIELD_RADIUS = 260;
 const BLEND = 200;
@@ -37,8 +40,8 @@ function fbm(x, z) {
   return sum / 1.875;
 }
 
-/** The analytic terrain shape, before it is sampled onto the grid. */
-function shapeHeight(x, z) {
+/** The made-up field's terrain shape, before it is sampled onto the grid. */
+function homeHeight(x, z) {
   const r = Math.hypot(x, z + 40);
   if (r < FIELD_RADIUS) return 0;
   const t = Math.min(1, (r - FIELD_RADIUS) / BLEND);
@@ -46,6 +49,66 @@ function shapeHeight(x, z) {
   const hills = fbm(x / 220, z / 220) * 55 + fbm(x / 60, z / 60) * 6;
   const far = Math.max(0, (r - 900) / 1200) * 120 * fbm(x / 600 + 7, z / 600 + 3);
   return blend * (hills - 8) + far;
+}
+
+// --- Real sites ------------------------------------------------------------------
+// The baked ground: heights in centimetres on a square grid of `cell` m.
+let real = null;
+function realTerrain() {
+  const t = LOCATION.data.terrain;
+  const bytes = Uint8Array.from(atob(t.cm), (c) => c.charCodeAt(0));
+  const cm = new Int16Array(bytes.buffer);
+  // The baked area's edge height, which the country beyond carries on at.
+  let sum = 0;
+  let cnt = 0;
+  for (let i = 0; i < t.n; i++) {
+    for (const k of [i, (t.n - 1) * t.n + i, i * t.n, i * t.n + t.n - 1]) {
+      sum += cm[k];
+      cnt++;
+    }
+  }
+  return { ...t, cm, edge: sum / cnt / 100, half: ((t.n - 1) * t.cell) / 2 };
+}
+
+function sampleReal(x, z) {
+  const t = real;
+  const fx = Math.min(t.n - 1.001, Math.max(0, (x - t.x0) / t.cell));
+  const fz = Math.min(t.n - 1.001, Math.max(0, (z - t.z0) / t.cell));
+  const ix = Math.floor(fx);
+  const iz = Math.floor(fz);
+  const u = fx - ix;
+  const v = fz - iz;
+  const k = iz * t.n + ix;
+  const a = t.cm[k] + (t.cm[k + 1] - t.cm[k]) * u;
+  const b = t.cm[k + t.n] + (t.cm[k + t.n + 1] - t.cm[k + t.n]) * u;
+  return (a + (b - a) * v) / 100;
+}
+
+function realHeight(x, z) {
+  real ??= realTerrain();
+  const t = real;
+  // Beyond the baked area: flat country at the edge height with a little
+  // gentle relief, blended in over the last 150 m.
+  const cx = t.x0 + t.half;
+  const cz = t.z0 + t.half;
+  const out = Math.max(Math.abs(x - cx), Math.abs(z - cz)) - t.half;
+  const beyond = t.edge + (fbm(x / 400, z / 400) - 0.5) * 6 + Math.max(0, out) / 200;
+  const w = Math.min(1, Math.max(0, (out + 150) / 150));
+  let h = w >= 1 ? beyond : sampleReal(x, z) * (1 - w * w * (3 - 2 * w)) + beyond * (w * w * (3 - 2 * w));
+  // The club's field is levelled (it is within a few cm anyway).
+  const f = LOCATION.layout.flat;
+  if (f) {
+    const dx = Math.max(f.x0 - x, 0, x - f.x1);
+    const dz = Math.max(f.z0 - z, 0, z - f.z1);
+    const s = Math.min(1, Math.hypot(dx, dz) / f.fade);
+    h *= s * s * (3 - 2 * s);
+  }
+  return h;
+}
+
+/** The terrain shape, before it is sampled onto the grid. */
+function shapeHeight(x, z) {
+  return LOCATION.data ? realHeight(x, z) : homeHeight(x, z);
 }
 
 // --- Triangulated terrain -------------------------------------------------
@@ -98,8 +161,8 @@ export function normalAt(x, z, out) {
 // load; `stiction` is how much more it takes to break a parked model away;
 // `drag` scales sliding friction (skids, belly slides) in longer grass;
 // `bump` is the amplitude (m) of the uneven ground the gear rolls over.
-export const RUNWAY = { x: 0, z: -22, length: 180, width: 18 };
-export const PILOT_PAD = { x: 0, z: 0.5, length: 6, width: 4 };
+export const RUNWAY = LOCATION.layout.runway;
+export const PILOT_PAD = LOCATION.layout.pilotPad;
 
 export const SURFACES = {
   runway: { name: 'mown runway', roll: 0.06, stiction: 2, drag: 1.0, bump: 0.006 },
@@ -113,7 +176,7 @@ const inRect = (r, x, z) => Math.abs(x - r.x) <= r.length / 2 && Math.abs(z - r.
 export function surfaceAt(x, z) {
   if (inRect(RUNWAY, x, z)) return SURFACES.runway;
   if (inRect(PILOT_PAD, x, z)) return SURFACES.pad;
-  return Math.hypot(x, z + 40) < FIELD_RADIUS ? SURFACES.grass : SURFACES.rough;
+  return inField(x, z) ? SURFACES.grass : SURFACES.rough;
 }
 
 // Small bumps (~0.7 m across) on top of the terrain. Too small to see on the

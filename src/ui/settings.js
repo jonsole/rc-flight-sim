@@ -5,6 +5,7 @@ export const DEFAULT_SETTINGS = {
   cameraMode: 'los',
   aircraft: 'eflite-se5a-900', // see src/aircraft/index.js
   startMode: 'runway', // 'runway' | 'air'
+  location: 'home',    // flying field, see src/sim/location.js
   assist: 'as3x',      // 'off' | 'as3x' | 'safe'
   // FPV
   fpvMount: 'cockpit', // 'cockpit' | 'wing'
