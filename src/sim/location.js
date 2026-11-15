@@ -85,9 +85,12 @@ const WATERBEACH = {
     table: null,
     windsock: null,
     fence: null,
-    // Young trees along the curved path west of the pitch, grown since the survey.
+    // The curved row of young trees just outside the curved fence west of
+    // the pitch, grown since the survey.
     trees: [{
-      at: [[-21.2, -65.4], [-26.6, -58.3], [-31.6, -51.9], [-35.3, -45.7], [-39.9, -40.1], [-48.2, -32.6], [-56.1, -27.6]],
+      at: [[-12.0, -87.3], [-12.3, -78.8], [-13.1, -69.8], [-14.6, -61.4], [-16.9, -52.7], [-20.7, -43.9], [-26.2, -36.0],
+        [-32.3, -30.1], [-39.6, -24.5], [-46.7, -19.7], [-56.7, -17.3], [-65.9, -15.8], [-74.4, -15.9], [-83.5, -16.2],
+        [-90.1, -17.5], [-98.4, -15.4], [-103.9, -12.0]],
       h: 12, r: 4.2,
     }],
     // Trees west and south of the field have grown since the survey too.
@@ -103,9 +106,17 @@ const WATERBEACH = {
     fences: [
       { from: [118.8, -155.5], to: [97.8, 174.5], height: 3, kind: 'chainlink' },
       // Temporary panels in front of the north trees, to the east fence...
-      { path: [[-10, -108], [40, -108], [86, -108], [115.8, -108]], height: 2, kind: 'panels' },
-      // ...and under the curved row of trees in the NE, off the north fence.
-      { path: [[86, -108], [84.5, -114], [81, -122], [76, -130], [70, -136]], height: 2, kind: 'panels' },
+      { path: [[-16.2, -109.5], [-10, -108], [40, -108], [86, -108], [115.8, -108]], height: 2, kind: 'panels' },
+      // ...and from its west end, round the old concrete hardstanding west of
+      // the pitch under its curved row of trees (52.278638,0.192174 to
+      // 52.278077,0.190781, traced off the map).
+      {
+        path: [[-16.2, -109.5], [-16.4, -89.2], [-17.0, -73.4], [-19.5, -59.7], [-22.5, -49.7], [-28.2, -40.3],
+          [-37.4, -31.4], [-49.8, -23.0], [-65.7, -20.3], [-81.2, -20.4], [-91.0, -21.9], [-101.9, -19.2],
+          [-107.4, -15.0], [-112.0, -10.8], [-109.6, -22.0], [-107.7, -31.6], [-109.3, -44.2]],
+        height: 2,
+        kind: 'panels',
+      },
     ],
     // High bushes just behind the fence.
     bushBelts: [{ from: [122.8, -155.5], to: [101.8, 174.5], width: 5, minH: 3.5, maxH: 5 }],
