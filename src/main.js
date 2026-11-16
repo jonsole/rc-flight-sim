@@ -87,7 +87,7 @@ renderer.shadowMap.type = PCFSoftShadowMap;
 // Scenery edits for this field (src/sim/edits.js), before anything is built.
 loadEdits(LOCATION.id, LOCATION.layout.edits);
 const obstacles = new Obstacles();
-const world = new World(obstacles, { quality, viewDistance: viewDistance(settings), treeStyle: settings.treeStyle });
+const world = new World(obstacles, { quality, viewDistance: viewDistance(settings), treeStyle: settings.treeStyle, renderer });
 const wind = new Wind();
 wind.setTrees(obstacles.trees); // trees shelter the field and stir up the air behind them
 const input = new Input();

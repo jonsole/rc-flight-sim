@@ -16,12 +16,13 @@
 //   leafy        leafy trees and bushes (src/world/fluffy.js): within `radius`
 //                of the pilot (solid ones beyond), with `detail` leaf cards
 //                (2 most, 'blob' fewest); `smooth` soft-edged leaves
-//                (anti-aliased cut-outs: a little more work for the GPU)
+//                (anti-aliased cut-outs: a little more work for the GPU);
+//                beyond, pre-drawn pictures (src/world/impostor.js) of `tile` pixels
 
 export const QUALITY = {
-  low: { name: 'Low (phones)', pixelRatio: 1, shadowMap: 1024, nearRadius: 150, nearDetail: 1, farDetail: 'blob', bushDetail: 'blob', bushNear: 'blob', bushDistance: 300, leafy: { radius: 110, detail: 'blob', smooth: false } },
-  medium: { name: 'Medium', pixelRatio: 1.5, shadowMap: 2048, nearRadius: 250, nearDetail: 2, farDetail: 'blob', bushDetail: 'blob', bushNear: 0, bushDistance: 600, leafy: { radius: 220, detail: 1, smooth: true } },
-  high: { name: 'High', pixelRatio: 2, shadowMap: 4096, nearRadius: 500, nearDetail: 2, farDetail: 0, bushDetail: 'blob', bushNear: 1, bushDistance: 1000, leafy: { radius: 400, detail: 2, smooth: true } },
+  low: { name: 'Low (phones)', pixelRatio: 1, shadowMap: 1024, nearRadius: 150, nearDetail: 1, farDetail: 'blob', bushDetail: 'blob', bushNear: 'blob', bushDistance: 300, leafy: { radius: 110, detail: 'blob', smooth: false, tile: 96 } },
+  medium: { name: 'Medium', pixelRatio: 1.5, shadowMap: 2048, nearRadius: 250, nearDetail: 2, farDetail: 'blob', bushDetail: 'blob', bushNear: 0, bushDistance: 600, leafy: { radius: 220, detail: 1, smooth: true, tile: 128 } },
+  high: { name: 'High', pixelRatio: 2, shadowMap: 4096, nearRadius: 500, nearDetail: 2, farDetail: 0, bushDetail: 'blob', bushNear: 1, bushDistance: 1000, leafy: { radius: 400, detail: 2, smooth: true, tile: 160 } },
 };
 
 /** Scenery distance choices (m); 0 = as far as there is scenery. */

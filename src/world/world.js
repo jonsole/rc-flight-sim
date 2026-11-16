@@ -16,6 +16,7 @@ import { seasonFor } from './seasons.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
 import { fluffyCrown, crownBranches, makeFluffy, fluffyDepthMaterial, pickAsBall } from './fluffy.js';
 import { CrownLod } from './lod.js';
+import { bakeImpostors, impostorGeometry, makeImpostor } from './impostor.js';
 import { QUALITY } from './quality.js';
 import { CROWN_SEEDS, crownOf } from '../sim/treeShapes.js';
 import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes, bushMatrix, siteFence, bushShapes, leafyBushShapes, bushTwigShapes } from './props.js';
@@ -340,6 +341,7 @@ export class World {
     this.viewDistance = opts.viewDistance ?? Infinity;
     // Leafy crowns and bushes (src/world/fluffy.js), or the classic solid ones.
     this.fluffy = opts.treeStyle !== 'classic';
+    this.renderer = opts.renderer; // for drawing the distant trees' pictures (impostors)
     this.twigMeshes = [];
     this.scene = new Scene();
     this.scene.background = new Color('#9cc3e6');
@@ -390,6 +392,9 @@ export class World {
     // is redrawn only when it moves (shadows.js).
     const sun = new DirectionalLight('#fff3df', 2.6);
     this.sun = sun;
+    // Layer 1: drawn into the shadow map only (the distant leafy trees'
+    // shadows come from plain shapes; their pictures cast none).
+    sun.shadow.camera.layers.enable(1);
     this.scene.add(sun, sun.target);
   }
 
@@ -613,7 +618,7 @@ export class World {
       this.leafy = leafy;
       // (Classic crowns only: leafy ones lose their shadow with their leaves.)
       for (const m of this.trees?.crowns ?? []) if (!m.userData.leafCards) m.castShadow = leafy;
-      for (const o of this.siteObjects ?? []) if (o.userData.kind === 'bush') o.castShadow = leafy;
+      for (const o of this.siteObjects ?? []) if (o.userData.kind === 'bush' && !o.userData.leafCards) o.castShadow = leafy;
       if (this.shadows) this.shadows.dirty = true;
     }
   }
@@ -648,12 +653,12 @@ export class World {
         color: (b, out) => out.setHSL(...b.tint),
         shape: (b) => b.shape,
         leafy: leafyBushShapes(q.leafy.detail),
-        solid: bushShapes(q.bushDetail),
+        solid: [0, 1].map((k) => impostorGeometry(CROWN_SEEDS.length + k)),
         leafyMat: this.cardMat,
-        solidMat: this.leafMat,
+        solidMat: this.#impostorMat(),
         radius: Math.min(q.leafy.radius, 250),
         onDraw: (b, mesh, slot) => (b.drawn = [mesh, slot]),
-      }), bushTwigShapes(), 'bush', list);
+      }), bushTwigShapes(), bushShapes('blob'), 'bush', list);
     } else {
       for (const m of bushes(this.leafMat, ob.bushes, { detail: q.bushDetail, ...near, distance: bushFar })) {
         m.userData.kind = 'bush';
@@ -840,14 +845,14 @@ export class World {
         color: (t, out) => out.setHSL(t.hue, t.sat, t.light * 1.12 + 0.02),
         shape: (t) => t.variant, // the shape the collisions use
         leafy: CROWN_SEEDS.map((sd) => fluffyCrown(sd, q.leafy.detail)),
-        solid: CROWN_SEEDS.map((sd) => (q.farDetail === 'blob' ? blobCrown(sd) : broadleafCrown(sd, q.farDetail))),
+        solid: CROWN_SEEDS.map((_, k) => impostorGeometry(k)),
         leafyMat: cardMat,
-        solidMat: leafMat,
+        solidMat: this.#impostorMat(),
         radius: q.leafy.radius,
         onDraw: (t, mesh, slot) => (t.drawn.crown = [mesh, slot]),
       });
-      this.#addLod(lod, CROWN_SEEDS.map((sd) => crownBranches(sd)), 'tree', lodTrees);
-      this.trees.crowns.push(...lod.meshes);
+      this.#addLod(lod, CROWN_SEEDS.map((sd) => crownBranches(sd)), CROWN_SEEDS.map((sd) => blobCrown(sd)), 'tree', lodTrees);
+      this.trees.crowns.push(...lod.meshes, ...lod.shadows);
     }
   }
 
@@ -855,8 +860,20 @@ export class World {
    * Add a level-of-detail crown set to the scene: its leafy meshes cast
    * leaf-card shadows and get bare branches (sharing their matrices).
    */
-  #addLod(lod, twigShapes, kind, list) {
+  #addLod(lod, twigShapes, shadowShapes, kind, list) {
     this.lods.push(lod);
+    // The pictures: no shadows of their own (and none falling on them, which
+    // would cut across the card); plain shapes cast them instead.
+    for (const m of lod.solid) {
+      m.userData.leafCards = true;
+      pickAsBall(m);
+    }
+    lod.shadows = lod.solid.map((m, k) => {
+      const sh = new InstancedMesh(shadowShapes[k], this.leafMat, 1);
+      sh.instanceMatrix = m.instanceMatrix;
+      sh.layers.set(1);
+      return sh;
+    });
     lod.twigs = lod.leafy.map((m, k) => {
       m.userData.leafCards = true;
       m.customDepthMaterial = fluffyDepthMaterial();
@@ -868,9 +885,9 @@ export class World {
     });
     lod.update(this.lodAt?.x ?? 0, this.lodAt?.z ?? 0, true);
     this.#syncTwigs(lod);
-    for (const m of [...lod.meshes, ...lod.twigs]) {
-      m.castShadow = true;
-      m.receiveShadow = true;
+    for (const m of [...lod.meshes, ...lod.twigs, ...lod.shadows]) {
+      m.castShadow = !lod.solid.includes(m);
+      m.receiveShadow = !lod.solid.includes(m) && !lod.shadows.includes(m);
       m.userData.kind = kind;
       if (kind === 'tree') m.userData.trees = list;
       this.scene.add(m);
@@ -883,6 +900,22 @@ export class World {
       tw.count = lod.leafy[k].count;
       tw.computeBoundingSphere();
     });
+    lod.shadows.forEach((sh, k) => {
+      sh.count = lod.solid[k].count;
+      sh.computeBoundingSphere();
+    });
+  }
+
+  /** The distant trees' material: pictures of the leafy crowns, drawn once. */
+  #impostorMat() {
+    if (this.impMat) return this.impMat;
+    const shapes = [
+      ...CROWN_SEEDS.map((sd) => ({ leafy: fluffyCrown(sd, 2), twigs: crownBranches(sd) })),
+      ...leafyBushShapes(2).map((g, k) => ({ leafy: g, twigs: bushTwigShapes()[k] })),
+    ];
+    const atlas = bakeImpostors(this.renderer, shapes, this.quality.leafy.tile);
+    this.impMat = makeImpostor(addLeafShading(addCloudShadows(new MeshLambertMaterial())), atlas);
+    return this.impMat;
   }
 
   /** Leafy crowns follow the camera (src/world/lod.js): call every frame. */
