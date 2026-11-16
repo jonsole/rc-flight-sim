@@ -42,7 +42,9 @@ export function leafTexture(detail = 2) {
   // underneath darker, so the cluster has some depth.
   for (let i = 0; i < count; i++) {
     const a = rnd() * Math.PI * 2;
-    const d = Math.sqrt(rnd()) * S * 0.36;
+    // Thinning out towards a ragged edge (an even disc of small leaves
+    // reads as a clipped ball), a few strays reaching further.
+    const d = S * (rnd() < 0.12 ? 0.3 + rnd() * 0.15 : 0.4 * Math.pow(rnd(), 0.75));
     const x = S / 2 + Math.cos(a) * d;
     const y = S / 2 + Math.sin(a) * d;
     const len = (S * (0.07 + rnd() * 0.05) * LEAF) / scale;
@@ -62,7 +64,10 @@ export function leafTexture(detail = 2) {
     g.restore();
   }
   const t = new CanvasTexture(c);
-  // (Not colour: brightness and fall time, read by LEAF_FRAGMENT.)
+  // (Not colour: brightness and fall time, read by LEAF_FRAGMENT, which
+  // divides them by coverage: so they're stored multiplied by it, which
+  // also keeps the smaller copies (mipmaps) right at the leaves' edges.)
+  t.premultiplyAlpha = true;
   t.anisotropy = 4;
   leafTex[detail] = t;
   return t;
