@@ -9,7 +9,7 @@
 //   to a strong green by June, a little darker and duller
 //   in late summer
 //   autumn colour from late September through October      (turn: days later)
-//   leaves fall late October to late November              (also by turn)
+//   leaves fall mid October to mid December                (also by turn)
 //
 // Horse chestnut leafs early and browns early (from August: leaf miner);
 // oak and ash leaf late, oak holds its leaves into November.
@@ -54,7 +54,7 @@ export function speciesAt(x, z) {
     }
     r -= w;
   }
-  return { name, days: (hash(x, z, 2) - 0.5) * 12, tone: hash(x, z, 3) - 0.5 };
+  return { name, days: (hash(x, z, 2) - 0.5) * 20, tone: hash(x, z, 3) - 0.5 };
 }
 
 const smooth = (a, b, x) => {
@@ -83,14 +83,14 @@ export function leafState(who, day, out = new Color()) {
   const o = sp.out + who.days;
   const t = sp.turn + who.days;
   const leafOut = smooth(92 + o, 135 + o, day);
-  const fall = smooth(300 + t, 332 + t, day);
+  const fall = smooth(285 + t, 345 + t, day); // two months or so, leaf by leaf
   const bare = Math.min(1, Math.max(0, 1 - leafOut + fall));
   // Colour: lime when new, deepening to the summer green; a little darker
   // and duller in late summer; then turning, and browning before falling.
   const fresh = 1 - smooth(110 + o, 165 + o, day);
   const late = smooth(195, 245, day);
   const turn = smooth(262 + t, 300 + t, day);
-  const dead = smooth(292 + t, 318 + t, day);
+  const dead = smooth(285 + t, 330 + t, day);
   const tone = who.tone * 0.05; // a little lighter or darker, tree by tree
   hsl(out, sp.summer, tone - late * 0.025);
   // (Duller late in the summer.)
@@ -103,7 +103,7 @@ export function leafState(who, day, out = new Color()) {
 
 /** A bush or hedge (hawthorn), with its own few days and tone. */
 export function bushSpeciesAt(x, z) {
-  return { name: 'hawthorn', days: (hash(x, z, 5) - 0.5) * 12, tone: hash(x, z, 6) - 0.5 };
+  return { name: 'hawthorn', days: (hash(x, z, 5) - 0.5) * 20, tone: hash(x, z, 6) - 0.5 };
 }
 
 /** The default bark (conifers, and trees of no species). */
