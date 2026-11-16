@@ -88,9 +88,10 @@ vec4 vfAlong(vec3 from, vec3 to, vec3 hazeCol) {
   } else if (from.y > ymax) t1 = 0.0;
   float odMist = 0.0, odCloud = 0.0;
   if (t1 > t0) {
-    // A few samples, jittered per pixel (no banding).
-    const int N = 7;
-    float j = vfHash(gl_FragCoord.xy * 1.37 + 0.5); // (random: no stripes)
+    // Evenly spaced samples, the same for every pixel (per-pixel jitter
+    // showed as grain).
+    const int N = 10;
+    float j = 0.5;
     float step = (t1 - t0) / float(N);
     for (int i = 0; i < N; i++) {
       vec3 p = from + dir * (t0 + (float(i) + j) * step);
