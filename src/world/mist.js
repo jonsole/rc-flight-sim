@@ -83,15 +83,16 @@ export class LowCloud {
     const py = (z + this.offset.y) / 260;
     const n = (0.5 * vnoise(px, py) + 0.25 * vnoise(px * 2.1 + 5.3, py * 2.1 + 1.7)) / 0.75;
     const t = 0.7 + (0.16 - 0.7) * this.amount;
-    return smooth(t, t + 0.12, n);
+    return smooth(t - 0.12, t + 0.3, n); // (as volfog.js: a wide edge)
   }
 
   /** How far into the cloud a point is (0 clear .. 1 inside). */
   inside(p) {
     if (this.amount <= 0) return 0;
-    const inBand = smooth(this.base - 6, this.base + 4, p.y) * (1 - smooth(this.top - 4, this.top + 6, p.y));
+    const inBand = smooth(this.base - 10, this.base + 10, p.y) * (1 - smooth(this.top - 12, this.top + 6, p.y));
     if (inBand <= 0) return 0;
-    return inBand * smooth(0.3, 0.7, this.coverAt(p.x, p.z));
+    const c = this.coverAt(p.x, p.z);
+    return inBand * c * c; // (thin towards its edges, as drawn)
   }
 
   set(amount, base, top) {

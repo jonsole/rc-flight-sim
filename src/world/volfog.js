@@ -49,7 +49,8 @@ float vfCover(vec2 xz) {
   float n = 0.5 * vfNoise(p) + 0.25 * vfNoise(p * 2.1 + vec2(5.3, 1.7));
   n *= 1.0 / 0.75;
   float t = mix(0.7, 0.16, fogMistA.z);
-  return smoothstep(t, t + 0.12, n);
+  // (A wide edge: from wisps at the fringes into the cloud.)
+  return smoothstep(t - 0.12, t + 0.3, n);
 }
 // Mist and cloud density (/m) at a point; cloud's share in .y.
 vec2 vfDensity(vec3 p, float ground) {
@@ -66,8 +67,11 @@ vec2 vfDensity(vec3 p, float ground) {
     if (c > 0.0) {
       // Lumpy base and top: thickest where the cover is.
       float lump = (c - 0.5) * 14.0;
-      float band = smoothstep(fogMistB.x - lump - 6.0, fogMistB.x - lump + 6.0, p.y) * (1.0 - smoothstep(fogMistB.y + lump - 8.0, fogMistB.y + lump + 4.0, p.y));
-      d.y = fogMistA.w * c * band;
+      float band = smoothstep(fogMistB.x - lump - 10.0, fogMistB.x - lump + 10.0, p.y) * (1.0 - smoothstep(fogMistB.y + lump - 12.0, fogMistB.y + lump + 6.0, p.y));
+      // Thin towards its edges (cover squared), thicker and thinner patches
+      // within (denser cores, wispy parts).
+      float thick = 0.4 + 1.0 * vfNoise((p.xz + fogMistB.zw) / 70.0 + 3.0);
+      d.y = fogMistA.w * c * c * thick * band;
     }
   }
   return d;
