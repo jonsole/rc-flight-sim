@@ -9,7 +9,7 @@ import {
 } from 'three';
 import { heightAt } from '../sim/terrain.js';
 import { broadleafCrown, blobCrown } from './trees.js';
-import { fluffyCrown, crownBranches, fluffyDepthMaterial, pickAsBall } from './fluffy.js';
+import { fluffyCrown, crownBranches } from './fluffy.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 function rng(seed) {
@@ -285,15 +285,14 @@ export function gravelTexture() {
 /**
  * The bushes and hedges (src/sim/obstacles.js makeBushes, with edits).
  * `detail` is the crown detail (src/world/quality.js); bushes further than
- * `distance` from the pilot are left out. `fluffy`: the bark material, for
- * leafy bushes (src/world/fluffy.js) with bare twigs (mesh.userData.twigs). Each bush drawn remembers where
+ * `distance` from the pilot are left out. Each bush drawn remembers where
  * (b.drawn), so the editor can move and resize it on the spot.
  */
-export function bushes(material, list, { detail = 1, nearDetail = 1, nearRadius = 0, distance = Infinity, fluffy = null } = {}) {
+export function bushes(material, list, { detail = 1, nearDetail = 1, nearRadius = 0, distance = Infinity } = {}) {
   // Leafy close to the pilot (where they're seen up close), simpler beyond.
   const sets = [
-    { shapes: bushShapes(nearDetail, !!fluffy), test: (d) => d <= nearRadius },
-    { shapes: bushShapes(detail, !!fluffy), test: (d) => d > nearRadius && d <= distance },
+    { shapes: bushShapes(nearDetail), test: (d) => d <= nearRadius },
+    { shapes: bushShapes(detail), test: (d) => d > nearRadius && d <= distance },
   ];
   const m4 = new Matrix4();
   const col = new Color();
@@ -315,18 +314,6 @@ export function bushes(material, list, { detail = 1, nearDetail = 1, nearRadius 
       m.receiveShadow = true;
       m.castShadow = true;
       m.computeBoundingSphere();
-      if (fluffy && m.count) {
-        m.customDepthMaterial = fluffyDepthMaterial();
-        pickAsBall(m);
-        // Bare twigs from the ground up, with the bush's matrices (shared).
-        const tw = new InstancedMesh(BUSH_TWIGS[k](), fluffy, 1);
-        tw.instanceMatrix = m.instanceMatrix;
-        tw.count = m.count;
-        tw.castShadow = true;
-        tw.receiveShadow = true;
-        tw.computeBoundingSphere();
-        m.userData.twigs = tw;
-      }
       if (m.count) out.push(m);
     });
   }
@@ -344,13 +331,14 @@ export function bushMatrix(b, out) {
 }
 
 /** Two bush shapes at a quality's detail (a number, or 'blob'). */
-function bushShapes(detail, fluffy) {
-  if (fluffy) return [fluffyCrown(101, detail), fluffyCrown(131, detail)];
+export function bushShapes(detail) {
   return detail === 'blob' ? [blobCrown(101), blobCrown(131)] : [broadleafCrown(101, detail), broadleafCrown(131, detail)];
 }
-// A bush's twigs start at the ground: y -0.9 in its unit shape (bushMatrix).
-const twigCache = {};
-const BUSH_TWIGS = [101, 131].map((seed) => () => (twigCache[seed] ||= crownBranches(seed, { from: -0.9 })));
+
+/** The leafy bush shapes (src/world/fluffy.js), and their bare twigs from the ground (y -0.9 in the unit shape, see bushMatrix). */
+export const BUSH_SEEDS = [101, 131];
+export const leafyBushShapes = (detail) => BUSH_SEEDS.map((s) => fluffyCrown(s, detail));
+export const bushTwigShapes = () => BUSH_SEEDS.map((s) => crownBranches(s, { from: -0.9 }));
 
 /**
  * A site fence along its path (src/sim/location.js): chain link, or

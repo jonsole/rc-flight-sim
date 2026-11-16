@@ -302,16 +302,21 @@ export function addLeafShading(material) {
       .replace('#include <color_fragment>', `#include <color_fragment>
         {
           vec3 wp = vCloudWorld;
+          // (Leaf cards have their texture's own mottling: spared the work.)
+          #ifndef FLUFFY
           float m = cNoise(wp.xz * 0.45 + wp.y * 0.6) * 0.6 + cNoise(wp.xz * 1.7 - wp.y * 1.3) * 0.4;
           diffuseColor.rgb *= mix(vec3(0.84, 0.86, 0.86), vec3(1.12, 1.12, 0.96), m);
+          #endif
           #ifndef CONIFER
           float lum = dot(diffuseColor.rgb, vec3(0.3, 0.55, 0.15));
           // Each tree turns its own colour in autumn (by where it stands),
           // from yellow through orange to brown, some later than others.
-          float tone = cNoise(wp.xz * 0.09 + 7.0);
-          float turn = uAutumn * smoothstep(0.15, 0.6, tone + uAutumn * 0.6);
-          vec3 autumnCol = mix(vec3(2.3, 1.85, 0.55), mix(vec3(2.4, 1.15, 0.35), vec3(1.5, 0.95, 0.55), step(0.7, tone)), smoothstep(0.35, 0.65, tone));
-          diffuseColor.rgb = mix(diffuseColor.rgb, lum * autumnCol, turn);
+          if (uAutumn > 0.0) {
+            float tone = cNoise(wp.xz * 0.09 + 7.0);
+            float turn = uAutumn * smoothstep(0.15, 0.6, tone + uAutumn * 0.6);
+            vec3 autumnCol = mix(vec3(2.3, 1.85, 0.55), mix(vec3(2.4, 1.15, 0.35), vec3(1.5, 0.95, 0.55), step(0.7, tone)), smoothstep(0.35, 0.65, tone));
+            diffuseColor.rgb = mix(diffuseColor.rgb, lum * autumnCol, turn);
+          }
           // New leaves in spring: paler, fresher green.
           diffuseColor.rgb = mix(diffuseColor.rgb, lum * vec3(1.15, 1.75, 0.6), uFresh * 0.5);
           // Winter: bare. Most of the crown goes (see-through), what's left

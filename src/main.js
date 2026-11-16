@@ -632,6 +632,7 @@ function frame(now) {
   }
   world.updateShadows();
   world.updateTrees(now / 1000, wind.speed + wind.gust.length() * 0.5, wind.directionDeg);
+  world.updateLod(rig.camera.position); // leafy crowns near the camera (src/world/lod.js)
   planeShadow.update(renderer, aircraft.position, world.lightDir, shadowDark);
   world.updateWindsock(wind.at(windsockPos, 0, windTmp), dt, now / 1000);
   if (!paused) world.updateClouds(dt, windTmp);

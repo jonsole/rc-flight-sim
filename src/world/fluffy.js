@@ -81,7 +81,7 @@ export function fluffyCrown(seed, detail = 2) {
   const sizeK = 0.95 * Math.sqrt(CARDS[2] / per);
   clumps.forEach(([cx, cy, cz, r], ci) => {
     const core = ci === clumps.length - 1; // the big one in the middle: mostly hidden
-    const count = core ? Math.ceil(per * 0.6) : per;
+    const count = core ? Math.ceil(per * 0.35) : per;
     for (let k = 0; k < count; k++) {
       // A point in the clump, mostly towards its surface, more on top.
       let ux;
@@ -158,26 +158,31 @@ function tube(points, r0, r1, radial, segs) {
  * for far away.
  */
 export function crownBranches(seed, { from, twigs = true } = {}) {
-  const { clumps, lo } = crownShape(seed);
+  const { clumps } = crownShape(seed);
   const rnd = rng(seed * 13 + 5);
-  const y0 = from ?? lo - 0.1;
+  // A tree's trunk reaches about the middle of its crown (y 0); limbs
+  // leave it at different heights up to there. A bush's stems all start at
+  // the ground.
+  const bush = from != null;
   const parts = [];
-  const start = new Vector3(0, y0, 0);
   for (const [cx, cy, cz, r] of clumps.slice(0, -1)) {
-    const end = new Vector3(cx, cy, cz).multiplyScalar(0.9);
+    const start = new Vector3(0, bush ? from : -0.35 + rnd() * 0.4, 0);
+    const end = new Vector3(cx, cy, cz).multiplyScalar(0.85 + rnd() * 0.1);
+    if (end.y < start.y + 0.1) start.y = end.y - 0.1; // low limbs leave the trunk lower
     const mid = start.clone().lerp(end, 0.5);
-    mid.y += 0.08; // bowing upwards
-    mid.x *= 0.8;
-    mid.z *= 0.8;
-    parts.push(tube([start.clone().add(new Vector3(cx, 0, cz).multiplyScalar(0.05)), mid, end], 0.03, 0.012, twigs ? 4 : 3, twigs ? 3 : 2));
+    mid.y += 0.06 + rnd() * 0.06; // bowing upwards
+    mid.x *= 0.85;
+    mid.z *= 0.85;
+    parts.push(tube([start, mid, end], bush ? 0.016 : 0.02, 0.008, twigs ? 4 : 3, twigs ? 3 : 2));
     if (!twigs) continue;
     for (let k = 0; k < 3; k++) {
       const a = rnd() * Math.PI * 2;
-      const up = 0.2 + rnd() * 0.9;
-      const d = new Vector3(Math.cos(a) * Math.cos(up), Math.sin(up), Math.sin(a) * Math.cos(up));
-      const tip = end.clone().addScaledVector(d, r * (0.7 + rnd() * 0.3));
-      const bend = end.clone().lerp(tip, 0.5).add(new Vector3(0, r * 0.08, 0));
-      parts.push(tube([end, bend, tip], 0.011, 0.003, 3, 2));
+      const up = 0.15 + rnd() * 1.0;
+      const d = new Vector3(Math.cos(a) * Math.cos(up), Math.sin(up), Math.sin(a) * Math.cos(up)).add(end.clone().normalize().multiplyScalar(0.6)).normalize();
+      const from2 = mid.clone().lerp(end, 0.5 + rnd() * 0.5);
+      const tip = from2.clone().addScaledVector(d, r * (0.8 + rnd() * 0.5));
+      const bend = from2.clone().lerp(tip, 0.5).add(new Vector3(0, r * 0.1, 0));
+      parts.push(tube([from2, bend, tip], 0.007, 0.0025, 3, 2));
     }
   }
   const geo = mergeGeometries(parts);
@@ -186,9 +191,10 @@ export function crownBranches(seed, { from, twigs = true } = {}) {
   const col = new Float32Array(n * 3);
   const pp = geo.attributes.position;
   for (let i = 0; i < n; i++) {
-    // Grey-brown, lighter towards the twig tips.
-    const k = 0.95 + 0.35 * Math.min(1, Math.hypot(pp.getX(i), pp.getY(i) - y0, pp.getZ(i)));
-    col.set([k * 1.05, k, k * 0.95], i * 3);
+    // Grey-brown bark (the bark material is a dark brown: lifted and greyed),
+    // lighter out towards the twigs.
+    const k = 1.35 + 0.45 * Math.min(1, Math.hypot(pp.getX(i), pp.getZ(i)) * 1.2);
+    col.set([k, k * 1.08, k * 1.18], i * 3);
   }
   geo.setAttribute('color', new Float32BufferAttribute(col, 3));
   return geo;
@@ -222,10 +228,11 @@ const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nuniform floa
  * Turn a leaf material (after addCloudShadows and addLeafShading) into the
  * leafy-card one: cut-out leaf texture, cards facing the camera.
  */
-export function makeFluffy(material) {
+export function makeFluffy(material, { smooth = true } = {}) {
   material.map = leafTexture();
   material.alphaTest = 0.5;
-  material.alphaToCoverage = true; // soft cut-out edges with the screen's anti-aliasing
+  // Soft cut-out edges with the screen's anti-aliasing (skipped on phones).
+  material.alphaToCoverage = smooth;
   material.side = DoubleSide;
   material.defines = { ...(material.defines || {}), FLUFFY: '' };
   const prev = material.onBeforeCompile;
