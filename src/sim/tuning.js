@@ -37,6 +37,23 @@ function setDihedral(def, value) {
   }
 }
 
+// The wing's root chord: the innermost panel (the top wing's on a biplane),
+// whose position is its quarter-chord point.
+function rootPanel(d) {
+  const w = d.surfaces.filter((s) => s.wing);
+  const minZ = Math.min(...w.map((s) => Math.abs(s.pos[2])));
+  return w.filter((s) => Math.abs(s.pos[2]) - minZ < 0.02).reduce((b, s) => (s.pos[1] > b.pos[1] ? s : b));
+}
+const rootChord = (d) => rootPanel(d).chordLen ?? 0.2;
+/** How far the root chord's leading edge is ahead of the CG (m). */
+const rootLE = (d) => rootPanel(d).pos[0] + 0.25 * rootChord(d);
+/** Move everything but the CG along x (the CG moves the other way relative to them). */
+function shiftAll(d, dx) {
+  for (const s of d.surfaces) s.pos = [s.pos[0] + dx, s.pos[1], s.pos[2]];
+  for (const c of d.contacts) c.pos = [c.pos[0] + dx, c.pos[1], c.pos[2]];
+  d.motor.position = [d.motor.position[0] + dx, d.motor.position[1], d.motor.position[2]];
+}
+
 // Geometry relative to the wing: the wing's mean panel position and
 // incidence, and the tail surfaces (tailplane 'stab…', fin 'fin…').
 const wingPanels = (d) => d.surfaces.filter((s) => s.wing);
@@ -155,15 +172,12 @@ export const TUNABLES = [
       d.mass = v / 1000;
       d.inertia = d.inertia.map((i) => i * k); // heavier: harder to turn, in proportion
     } },
-  { group: 'Weight', key: 'cg', label: 'CG forward (+) / back (−)', unit: 'mm', min: -30, max: 30, step: 1,
-    get: () => 0,
-    set: (d, v) => {
-      // Everything is placed relative to the CG: moving it forward moves the rest back.
-      const dx = v / 1000;
-      for (const s of d.surfaces) s.pos = [s.pos[0] - dx, s.pos[1], s.pos[2]];
-      for (const c of d.contacts) c.pos = [c.pos[0] - dx, c.pos[1], c.pos[2]];
-      d.motor.position = [d.motor.position[0] - dx, d.motor.position[1], d.motor.position[2]];
-    } },
+  { group: 'Weight', key: 'cgFromLE', label: 'CG behind the leading edge', unit: 'mm', min: -40, max: 40, step: 1, around: true,
+    get: (d) => rootLE(d) * 1000,
+    note: (d, v) => `${Math.round((v / 1000 / rootChord(d)) * 100)}% of the root chord`,
+    set: (d, v) => shiftAll(d, (v - rootLE(d) * 1000) / 1000) },
+  // (Older saves: CG moved forward by mm.)
+  { group: 'Weight', key: 'cg', hidden: true, get: () => 0, set: (d, v) => shiftAll(d, -v / 1000) },
   { group: 'Motor', key: 'thrust', label: 'Static thrust', unit: 'N', min: 0.3, max: 2.5, rel: true, step: 0.1,
     get: (d) => d.motor.staticThrust,
     set: (d, v) => {
@@ -236,7 +250,7 @@ export const TUNABLES = [
 
 /** The tunables a model has (some have no rudder, say), with their defaults and ranges. */
 export function tunablesFor(def) {
-  return TUNABLES.map((t) => {
+  return TUNABLES.filter((t) => !t.hidden).map((t) => {
     const dflt = t.get(def);
     if (dflt == null) return null;
     // `rel` ranges are multiples of the default; `around` ranges are either

@@ -167,3 +167,18 @@ describe('aircraft tuning: propeller', () => {
     expect(ac.thrust).toBeLessThan(fresh * 0.85);
   });
 });
+
+describe('aircraft tuning: CG from the leading edge', () => {
+  it('reads the CG behind the root chord\'s leading edge, as the manuals give it', () => {
+    expect(value(getAircraft('eflite-se5a-900').def, 'cgFromLE')).toBeCloseTo(72, 0); // E-flite: 72 mm behind the top wing's LE
+    expect(value(getAircraft('buschtrottel-shockcub').def, 'cgFromLE')).toBeCloseTo(76, 0);
+  });
+
+  it('moving the CG back moves everything else forward relative to it', () => {
+    const def = getAircraft('buschtrottel-shockcub').def;
+    const d = tunedDef(def, { cgFromLE: value(def, 'cgFromLE') + 10 });
+    expect(value(d, 'cgFromLE')).toBeCloseTo(value(def, 'cgFromLE') + 10);
+    expect(d.surfaces[0].pos[0]).toBeCloseTo(def.surfaces[0].pos[0] + 0.01);
+    expect(d.motor.position[0]).toBeCloseTo(def.motor.position[0] + 0.01);
+  });
+});

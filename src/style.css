@@ -179,3 +179,25 @@ body.touch #splash .keys-only { display: none; }
 .row .lbl small { color: #8a93a0; font-weight: normal; }
 .tune-reset { padding: 2px 8px; margin-left: 6px; }
 .tune-reset:disabled { opacity: 0.3; cursor: default; }
+/* Tuning tab: collapsible groups, rows with - / + steps */
+.tune-group { border: 1px solid #343b42; border-radius: 8px; margin: 8px 0; background: #1d2226; }
+.tune-group > summary { cursor: pointer; padding: 9px 12px; font-weight: 600; color: #e0a030; list-style: none; display: flex; align-items: center; gap: 8px; user-select: none; }
+.tune-group > summary::-webkit-details-marker { display: none; }
+.tune-group > summary::before { content: '▸'; color: #8a93a0; transition: transform 0.15s; }
+.tune-group[open] > summary::before { transform: rotate(90deg); }
+.tune-count { margin-left: auto; font-size: 12px; font-weight: normal; color: #ffd38a; background: #3a3220; padding: 1px 8px; border-radius: 10px; }
+.tune-group > .tune-row, .tune-group > .hint { margin: 0 12px; }
+.tune-row { padding: 8px 0; border-top: 1px solid #2b3238; }
+.tune-head { display: flex; align-items: baseline; gap: 8px; }
+.tune-lbl { flex: 1; }
+.tune-head small { color: #8a93a0; }
+.tune-row.tuned .tune-lbl { color: #ffd38a; }
+.tune-ctl { display: grid; grid-template-columns: 40px 1fr 40px 84px; gap: 8px; align-items: center; margin-top: 6px; }
+.tune-ctl input[type=range] { width: 100%; min-width: 0; }
+.tune-ctl .val { text-align: right; }
+.tune-step { padding: 6px 0; font-size: 18px; line-height: 1; touch-action: manipulation; }
+.tune-reset { padding: 2px 8px; }
+.tune-reset:disabled { opacity: 0.3; cursor: default; }
+.tune-note { display: block; color: #8a93a0; margin-top: 4px; text-align: right; }
+.tune-group > .hint { padding-bottom: 10px; }
+.tune-files { margin-top: 10px; gap: 8px; }

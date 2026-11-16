@@ -111,55 +111,100 @@ export class Panel {
     ];
   }
 
-  /** Tuning: the flight settings of the model you're flying (src/sim/tuning.js). */
+  /** Tuning: the flight settings of the model you're flying (src/sim/tuning.js), in collapsible groups. */
   tab_tune() {
     const entry = this.opts.aircraftEntry();
     const values = loadTuning(entry.id);
     const decimals = (step) => (step >= 1 ? 0 : step >= 0.1 ? 1 : 2);
-    const fmt = (t, v) => `${Number(v).toFixed(decimals(t.step))}${t.unit ? ` ${t.unit}` : ""}`;
+    const fmt = (t, v) => `${Number(v).toFixed(decimals(t.step))}${t.unit ? ` ${t.unit}` : ''}`;
+    // Which groups are open (remembered in this browser).
+    let open = {};
+    try {
+      open = JSON.parse(localStorage.getItem('rcsim.tuneOpen')) ?? {};
+    } catch {
+      /* none */
+    }
+    const saveOpen = () => {
+      try {
+        localStorage.setItem('rcsim.tuneOpen', JSON.stringify(open));
+      } catch {
+        /* storage blocked */
+      }
+    };
+    // Save, rebuild the flight model, and redraw where you were.
     const commit = () => {
       saveTuning(entry.id, values);
       this.opts.onRetune();
+      const body = this.root.querySelector('.body');
+      const top = body?.scrollTop ?? 0;
+      this.render();
+      const b2 = this.root.querySelector('.body');
+      if (b2) b2.scrollTop = top;
     };
-    const out = [
-      el('p', { class: 'hint' }, `${entry.name}. Changes apply as you let go of a slider, in flight too, and are saved in this browser for this model. Export them to send in and have them built in.`),
-    ];
-    let group = '';
-    for (const t of tunablesFor(entry.def)) {
-      if (t.group !== group) {
-        group = t.group;
-        out.push(el('h3', {}, group));
-      }
+    const setValue = (t, v) => {
+      const nv = Math.min(t.max, Math.max(t.min, Math.round(v / t.step) * t.step));
+      if (Math.abs(nv - t.dflt) < t.step / 2) delete values[t.key];
+      else values[t.key] = Number(nv.toFixed(6));
+      commit();
+    };
+    const tuned = tunedDef(entry.def, values);
+
+    const row = (t) => {
       const v = values[t.key] ?? t.dflt;
-      const show = el('span', { class: 'val' }, fmt(t, v));
       const changed = values[t.key] != null;
+      const show = el('span', { class: 'val' }, fmt(t, v));
+      const note = t.note ? el('small', { class: 'tune-note' }, t.note(tuned, v)) : null;
       const input = el('input', {
         type: 'range', min: t.min, max: t.max, step: t.step, value: v,
-        oninput: (e) => (show.textContent = fmt(t, e.target.value)),
-        onchange: (e) => {
-          const nv = Number(e.target.value);
-          if (Math.abs(nv - t.dflt) < t.step / 2) delete values[t.key];
-          else values[t.key] = nv;
-          commit();
-          this.render();
+        oninput: (e) => {
+          show.textContent = fmt(t, e.target.value);
+          if (note) note.textContent = t.note(tuned, Number(e.target.value));
         },
+        onchange: (e) => setValue(t, Number(e.target.value)),
       });
-      const reset = el('button', {
-        class: 'tune-reset', title: `Back to ${fmt(t, t.dflt)}`, disabled: !changed,
-        onclick: () => {
-          delete values[t.key];
-          commit();
-          this.render();
-        },
-      }, '↺');
-      out.push(el('label', { class: changed ? 'row tuned' : 'row' },
-        el('span', { class: 'lbl' }, t.label, el('small', {}, ` (default ${fmt(t, t.dflt)})`)), input, show, reset));
-      if (t.key === 'cellResistance') {
-        // What this prop, motor and battery give at full throttle (src/sim/tuning.js).
-        const p = powerSummary(tunedDef(entry.def, values));
-        out.push(el('p', { class: 'hint' }, `Full throttle on a fresh pack: ${Math.round(p.rpm / 100) * 100} rpm, ${p.current.toFixed(1)} A, ${Math.round(p.watts)} W; ${p.thrust.toFixed(1)} N static thrust, ${p.pitchSpeed.toFixed(1)} m/s pitch speed. Battery about ${Math.round(p.batteryGrams)} g (bigger packs add weight); about ${p.fullThrottleMinutes.toFixed(1)} min at full throttle.`));
-      }
+      const btn = (label, d, title) => el('button', { class: 'tune-step', title, onclick: (e) => { e.preventDefault(); setValue(t, v + d * t.step); } }, label);
+      return el('div', { class: changed ? 'tune-row tuned' : 'tune-row' },
+        el('div', { class: 'tune-head' },
+          el('span', { class: 'tune-lbl' }, t.label),
+          el('small', {}, `default ${fmt(t, t.dflt)}`),
+          el('button', {
+            class: 'tune-reset', title: `Back to ${fmt(t, t.dflt)}`, disabled: !changed,
+            onclick: () => { delete values[t.key]; commit(); },
+          }, '↺')),
+        el('div', { class: 'tune-ctl' }, btn('−', -1, 'Less'), input, btn('+', 1, 'More'), show),
+        note);
+    };
+
+    // Summaries shown at the end of a group.
+    const after = {
+      Battery: () => {
+        const p = powerSummary(tuned);
+        return el('p', { class: 'hint' }, `Full throttle on a fresh pack: ${Math.round(p.rpm / 100) * 100} rpm, ${p.current.toFixed(1)} A, ${Math.round(p.watts)} W; ${p.thrust.toFixed(1)} N static thrust, ${p.pitchSpeed.toFixed(1)} m/s pitch speed. Battery about ${Math.round(p.batteryGrams)} g (bigger packs add weight); about ${p.fullThrottleMinutes.toFixed(1)} min at full throttle.`);
+      },
+    };
+
+    const groups = [];
+    for (const t of tunablesFor(entry.def)) {
+      let g = groups.find((x) => x.name === t.group);
+      if (!g) groups.push((g = { name: t.group, items: [] }));
+      g.items.push(t);
     }
+    const out = [
+      el('p', { class: 'hint' }, `${entry.name}. Changes apply straight away, in flight too, and are saved in this browser for this model. Export them to send in and have them built in.`),
+    ];
+    for (const g of groups) {
+      const n = g.items.filter((t) => values[t.key] != null).length;
+      const det = el('details', { class: 'tune-group', open: !!open[g.name] },
+        el('summary', {}, g.name, n ? el('span', { class: 'tune-count' }, `${n} changed`) : null),
+        ...g.items.map(row),
+        after[g.name]?.());
+      det.addEventListener('toggle', () => {
+        open[g.name] = det.open;
+        saveOpen();
+      });
+      out.push(det);
+    }
+
     const fileIn = el('input', {
       type: 'file', accept: '.json,application/json', style: 'display:none',
       onchange: async (e) => {
@@ -172,28 +217,26 @@ export class Panel {
           for (const k of Object.keys(values)) delete values[k];
           Object.assign(values, j.tuning ?? j);
           commit();
-          this.render();
         } catch (err) {
           alert(`Couldn't read that file: ${err.message}`);
         }
       },
     });
-    out.push(el('div', { class: 'row' },
+    out.push(el('div', { class: 'row tune-files' },
       el('button', {
         onclick: () => {
           if (!Object.keys(values).length || !confirm(`Put all the ${entry.name}'s settings back to default?`)) return;
           for (const k of Object.keys(values)) delete values[k];
           commit();
-          this.render();
         },
       }, 'Reset all'),
       el('button', {
         onclick: () => {
           const blob = new Blob([JSON.stringify({ aircraft: entry.id, tuning: values }, null, 1)], { type: 'application/json' });
-          const a = el('a', { href: URL.createObjectURL(blob), download: `${entry.id}-tuning.json` });
-          document.body.append(a);
-          a.click();
-          a.remove();
+          const a2 = el('a', { href: URL.createObjectURL(blob), download: `${entry.id}-tuning.json` });
+          document.body.append(a2);
+          a2.click();
+          a2.remove();
         },
       }, 'Export'),
       el('button', { onclick: () => fileIn.click() }, 'Import'),
