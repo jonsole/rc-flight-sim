@@ -27,6 +27,7 @@ import { QUALITY, qualityPreset, viewDistance } from './world/quality.js';
 import { tunedDef, loadTuning } from './sim/tuning.js';
 import { GoogleTiles } from './world/googleTiles.js';
 import { cardUniforms } from './world/fluffy.js';
+import { SunGlare } from './view/glare.js';
 import { loadEdits } from './sim/edits.js';
 import { Editor } from './editor/editor.js';
 
@@ -98,6 +99,8 @@ const rig = new CameraRig(settings);
 // and the aeroplane's own shadow, drawn every frame.
 world.attachShadows(new Shadows(world.sun, { mapSize: quality.shadowMap }));
 const planeShadow = new PlaneShadow(world.scene, ground);
+// Looking into the sun washes the picture out (src/view/glare.js).
+const glare = new SunGlare();
 
 // Google Photorealistic 3D Tiles in place of the built ground and buildings,
 // at real sites, with a key set (Menu → View → Graphics, or O to switch).
@@ -649,6 +652,7 @@ function frame(now) {
   rssi = Math.max(0, Math.min(99, Math.round(99 - dist / 8)));
   analog.style.opacity = fpv && settings.fpvAnalog ? String(0.06 + Math.max(0, (dist - 250) / 900)) : '0';
 
+  glare.update(rig.camera, world, obstacles, dt, settings.sunGlare !== false && !editor?.active);
   renderer.render(world.scene, rig.camera);
   if (editor.active) osd.clear();
   else osd.draw(rig.mode, aircraft, {

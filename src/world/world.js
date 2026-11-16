@@ -41,7 +41,7 @@ const HAZE = [
   [-5, new Color('#28334f')],
   [0, new Color('#d39a72')],
   [8, new Color('#e3c7a4')],
-  [20, new Color('#c3d5e8')],
+  [20, new Color('#b2cdec')],
 ];
 function hazeColour(el, out) {
   if (el <= HAZE[0][0]) return out.copy(HAZE[0][1]);
@@ -385,10 +385,24 @@ export class World {
     const sky = new Sky();
     sky.scale.setScalar(20000);
     const u = sky.material.uniforms;
-    u.turbidity.value = 4;
-    u.rayleigh.value = 1.2;
-    u.mieCoefficient.value = 0.004;
+    // Clear English summer air: a deeper blue overhead (less haze, more
+    // Rayleigh blue), paler only down towards the horizon.
+    u.turbidity.value = 2.2;
+    u.rayleigh.value = 2.0;
+    u.mieCoefficient.value = 0.0025;
     u.mieDirectionalG.value = 0.85;
+    // The Preetham sky comes out very bright; tone mapping squeezed that to
+    // a pale, almost white blue. Scaled down (and its blue deepened a
+    // touch) before tone mapping, the blue survives.
+    u.skyGain = { value: 0.42 };
+    sky.material.fragmentShader = sky.material.fragmentShader
+      .replace('void main() {', 'uniform float skyGain;\nvoid main() {')
+      .replace('#include <tonemapping_fragment>', `{
+        vec3 c = gl_FragColor.rgb * skyGain;
+        float l = dot(c, vec3(0.3, 0.55, 0.15));
+        gl_FragColor.rgb = max(mix(vec3(l), c, 1.25), 0.0);
+      }
+      #include <tonemapping_fragment>`);
     this.sky = sky;
     this.scene.add(sky);
     this.nightDome = nightDome();

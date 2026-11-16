@@ -322,6 +322,7 @@ export class Panel {
       this.#select('Scenery distance', 'viewDistance', DISTANCES),
       this.#select('Trees and bushes', 'treeStyle', { fluffy: 'Leafy', classic: 'Classic (solid)' }),
       this.#check('Leaves face the camera (off: face the screen, as before)', 'cardsFaceCamera'),
+      this.#check('Sun glare', 'sunGlare'),
       el('p', { class: 'hint' }, 'Lower these if the picture is jerky. Low draws simpler trees and fewer pixels; a shorter distance leaves out far trees and brings the haze in. Leafy trees lose their leaves in winter; classic ones are a little quicker to draw. Changing any of these reloads the simulator.'),
       ...(LOCATION.data ? [
         this.#select('Scenery', 'scenery', { built: 'Built in (LIDAR and OpenStreetMap)', google: 'Google photorealistic 3D' }),
