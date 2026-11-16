@@ -86,23 +86,38 @@ export class EngineSound {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     const rpm = aircraft.propBroken ? 0 : aircraft.rpm;
-    const thr = aircraft.throttleActual;
+    const m = aircraft.def.motor;
+    // The prop as fitted or tuned (Menu → Tuning).
+    const blades = m.prop?.blades || m.blades || 2;
+    const dia = m.prop?.diameterIn ? m.prop.diameterIn * 0.0254 : 2 * Math.sqrt((m.discArea || 0.03) / Math.PI);
     const motorHz = 40 + (rpm / 60) * 7; // 14-pole motor electrical freq / 2
-    const bladeHz = Math.max(1, (rpm / 60) * (aircraft.def.motor.blades || 2));
+    const bladeHz = Math.max(1, (rpm / 60) * blades);
+    // How hard the motor works: the power from the battery, from a gentle
+    // ~60 W to a hot setup's 600 W+ (none while the prop windmills).
+    const watts = Math.max(0, (aircraft.battery?.current || 0) * (aircraft.battery?.voltage || 0));
+    const load = Math.min(1.8, Math.sqrt(watts / 250));
+    // Prop noise climbs steeply with blade tip speed (windmilling too).
+    const tip = (rpm / 60) * Math.PI * dia;
+    const whoosh = Math.min(1.6, (tip / 110) ** 2);
     this.motor.frequency.setTargetAtTime(motorHz, t, 0.05);
     this.motor2.frequency.setTargetAtTime(motorHz * 1.502, t, 0.05);
     this.motorFilter.frequency.setTargetAtTime(motorHz * 1.5, t, 0.05);
     this.am.frequency.setTargetAtTime(bladeHz, t, 0.05);
     const on = rpm > 50 ? 1 : 0;
-    this.motorGain.gain.setTargetAtTime(on * (0.04 + thr * 0.1), t, 0.05);
-    this.noiseGain.gain.setTargetAtTime(on * thr * 0.25, t, 0.05);
-    this.amGain.gain.setTargetAtTime(on * thr * 0.2, t, 0.05);
-    // The buzz reaches up to the blade-pass frequency.
-    this.noiseFilter.frequency.setTargetAtTime(Math.max(400 + thr * 1500, bladeHz * 1.6), t, 0.1);
+    // Motor whine with the power going in; a faint tick when freewheeling.
+    this.motorGain.gain.setTargetAtTime(on * (0.012 * Math.min(1, rpm / (m.maxRpm || 10000)) + 0.09 * load), t, 0.05);
+    // Prop buzz: louder with tip speed and with how hard it's pushing.
+    // A windmilling prop just whirrs softly.
+    const buzz = on * Math.min(0.4, whoosh * (0.08 + 0.13 * Math.min(1.5, load)) + 0.04 * Math.min(1, tip / 30));
+    this.noiseGain.gain.setTargetAtTime(buzz, t, 0.05);
+    this.amGain.gain.setTargetAtTime(buzz * 0.8, t, 0.05);
+    // Big props sound deeper (a whoosh), small ones sharper (a buzz); the
+    // buzz reaches up to the blade-pass frequency.
+    const tone = (0.2032 / dia) ** 0.7; // 1 for an 8" prop
+    this.noiseFilter.frequency.setTargetAtTime(Math.max((350 + 1500 * Math.min(1, load + 0.15)) * tone, bladeHz * 1.6), t, 0.1);
     // Two-blade props: the buzz alone; each extra blade adds whine.
-    const blades = aircraft.def.motor.blades || 2;
     this.blade.frequency.setTargetAtTime(bladeHz, t, 0.05);
-    this.bladeGain.gain.setTargetAtTime(on * thr * 0.025 * Math.max(0, blades - 2), t, 0.05);
+    this.bladeGain.gain.setTargetAtTime(on * whoosh * 0.025 * Math.max(0, blades - 2) * (0.4 + 0.6 * Math.min(1, load)), t, 0.05);
     const ws = Math.min(1, aircraft.airspeed / 25);
     this.windGain.gain.setTargetAtTime(fpv ? ws * ws * 0.35 : ws * ws * 0.05, t, 0.1);
     this.windFilter.frequency.setTargetAtTime(300 + ws * 900, t, 0.1);

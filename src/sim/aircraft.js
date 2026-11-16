@@ -14,6 +14,12 @@ const G = 9.81;
 // Far beyond what any of the models can do: only a numerical blow-up gets here.
 const MAX_SPEED = 120; // m/s
 const MAX_SPIN = 60; // rad/s
+// Windmilling prop (see step): turns at this fraction of its pitch speed,
+// from this airspeed (m/s), dragging this fraction of static thrust at the
+// prop's pitch speed.
+const WINDMILL_SLIP = 0.7;
+const WINDMILL_START = 3;
+const WINDMILL_DRAG = 0.12;
 
 const _v = new Vector3();
 const _windCG = new Vector3();
@@ -114,6 +120,7 @@ export class Aircraft {
     this.thrust = 0;
     this.propWash = 0;
     this.rpm = 0;
+    this.motorRpm = 0;
     this.time = 0;
 
     this.battery = { used: 0, voltage: def.battery.cells * 4.2, current: 0 };
@@ -247,12 +254,22 @@ export class Aircraft {
     // A draining battery's voltage drops, and the motor's rpm with it
     // (1 on a fresh pack: the model's figures are for a fresh one).
     const rpmFrac = Math.pow(this.throttleActual, 0.75) * (this.battery.restFrac ?? 1);
-    const thrust = Math.max(
+    const powered = Math.max(
       -0.1 * def.motor.staticThrust * rpmFrac,
       def.motor.staticThrust * (rpmFrac * rpmFrac - (rpmFrac * vAxial) / def.motor.pitchSpeed),
     );
+    // Windmilling: with the motor slower than the airflow would turn it, the
+    // air drives the prop round (about 70% of the rpm that would screw it
+    // through the air at its pitch; the motor's cogging holds it still below
+    // ~3 m/s) and the prop drags.
+    const windFrac = this.propBroken ? 0 : (WINDMILL_SLIP * Math.max(0, vAxial - WINDMILL_START)) / def.motor.pitchSpeed;
+    const driven = Math.max(0, windFrac - rpmFrac) / WINDMILL_SLIP;
+    const thrust = powered - WINDMILL_DRAG * def.motor.staticThrust * driven * driven;
     this.thrust = thrust;
-    this.rpm = rpmFrac * def.motor.maxRpm;
+    // Turned by the motor (what breaks a prop on a strike) ...
+    this.motorRpm = rpmFrac * def.motor.maxRpm;
+    // ... and as it actually turns, windmilling included (drawn and heard).
+    this.rpm = Math.max(rpmFrac, windFrac) * def.motor.maxRpm;
     // Momentum theory: fully developed slipstream velocity increment.
     this.propWash = Math.sqrt(vAxial * vAxial + (2 * Math.max(0, thrust)) / (RHO * def.motor.discArea)) - vAxial;
 
@@ -524,7 +541,7 @@ export class Aircraft {
         } else {
           _n.set(hit.nx, hit.ny, hit.nz);
           const vn = _vt.dot(_n);
-          if (c.type === 'prop' && this.rpm > 500) {
+          if (c.type === 'prop' && this.motorRpm > 500) {
             this.propBroken = true;
             this.crash(`Prop hit ${s.name}`);
             this.breakAt(c, Math.max(-vn, 1));
@@ -579,7 +596,7 @@ export class Aircraft {
 
       // Crash detection on impact speed.
       if (c.type === 'prop') {
-        if (this.throttleActual > 0.05 || this.rpm > 500) {
+        if (this.throttleActual > 0.05 || this.motorRpm > 500) {
           this.propBroken = true;
           if (this.velocity.length() > 2 || this.throttleActual > 0.3) {
             this.crash('Prop strike');
