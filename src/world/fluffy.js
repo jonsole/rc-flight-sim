@@ -21,24 +21,32 @@ import { leafUniforms } from './trees.js';
 /** Cards per clump for a detail level (2 full, 1, 0, 'blob' for far away). */
 const CARDS = { 2: 16, 1: 10, 0: 6, blob: 4 };
 
-let leafTex = null;
-/** A cluster of small leaves, white-ish (tinted per tree), cut out round its edge. */
-export function leafTexture() {
-  if (leafTex) return leafTex;
-  const S = 128;
+/** Leaf size: 1 was the first, rather big, leaves. */
+const LEAF = 0.55;
+const leafTex = {};
+/**
+ * A cluster of small leaves, white-ish (tinted per tree), cut out round its
+ * edge. Fewer, bigger cards (lower `detail`) get more, smaller leaves in
+ * their picture, so the leaves come out the same size at every quality.
+ */
+export function leafTexture(detail = 2) {
+  if (leafTex[detail]) return leafTex[detail];
+  const scale = Math.sqrt(CARDS[2] / (CARDS[detail] ?? CARDS[2])); // this card size / the full-detail one
+  const count = Math.round((70 / (LEAF * LEAF)) * scale * scale);
+  const S = 256;
   const c = document.createElement('canvas');
   c.width = c.height = S;
   const g = c.getContext('2d');
   const rnd = rng(77);
   // Leaves scattered over a round cluster, denser in the middle; the ones
   // underneath darker, so the cluster has some depth.
-  for (let i = 0; i < 70; i++) {
+  for (let i = 0; i < count; i++) {
     const a = rnd() * Math.PI * 2;
     const d = Math.sqrt(rnd()) * S * 0.36;
     const x = S / 2 + Math.cos(a) * d;
     const y = S / 2 + Math.sin(a) * d;
-    const len = S * (0.07 + rnd() * 0.05);
-    const k = Math.round(150 + (i / 70) * 80 + rnd() * 25);
+    const len = (S * (0.07 + rnd() * 0.05) * LEAF) / scale;
+    const k = Math.round(150 + (i / count) * 80 + rnd() * 25);
     g.fillStyle = `rgb(${k},${k},${Math.round(k * 0.92)})`;
     g.save();
     g.translate(x, y);
@@ -51,10 +59,11 @@ export function leafTexture() {
     g.fill();
     g.restore();
   }
-  leafTex = new CanvasTexture(c);
-  leafTex.colorSpace = SRGBColorSpace;
-  leafTex.anisotropy = 4;
-  return leafTex;
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  t.anisotropy = 4;
+  leafTex[detail] = t;
+  return t;
 }
 
 /**
@@ -228,8 +237,8 @@ const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nuniform floa
  * Turn a leaf material (after addCloudShadows and addLeafShading) into the
  * leafy-card one: cut-out leaf texture, cards facing the camera.
  */
-export function makeFluffy(material, { smooth = true } = {}) {
-  material.map = leafTexture();
+export function makeFluffy(material, { smooth = true, detail = 2 } = {}) {
+  material.map = leafTexture(detail);
   material.alphaTest = 0.5;
   // Soft cut-out edges with the screen's anti-aliasing (skipped on phones).
   material.alphaToCoverage = smooth;
@@ -259,11 +268,12 @@ export function makeFluffy(material, { smooth = true } = {}) {
   return material;
 }
 
-let depthMat = null;
-/** For the shadow map: the same cards, facing the sun. */
-export function fluffyDepthMaterial() {
-  if (depthMat) return depthMat;
-  depthMat = new MeshDepthMaterial({ depthPacking: RGBADepthPacking, map: leafTexture(), alphaTest: 0.5 });
+const depthMats = {};
+/** For the shadow map: the same cards (at this detail), facing the sun. */
+export function fluffyDepthMaterial(detail = 2) {
+  if (depthMats[detail]) return depthMats[detail];
+  const depthMat = new MeshDepthMaterial({ depthPacking: RGBADepthPacking, map: leafTexture(detail), alphaTest: 0.5 });
+  depthMats[detail] = depthMat;
   depthMat.onBeforeCompile = (shader) => {
     shader.uniforms.uBare = leafUniforms.uBare;
     shader.vertexShader = shader.vertexShader

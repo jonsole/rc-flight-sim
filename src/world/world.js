@@ -763,7 +763,7 @@ export class World {
     }
     const leafMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })));
     this.leafMat = leafMat;
-    const cardMat = this.fluffy ? addLodFade(makeFluffy(addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true }))), { smooth: q.leafy.smooth }), false) : null;
+    const cardMat = this.fluffy ? addLodFade(makeFluffy(addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true }))), { smooth: q.leafy.smooth, detail: q.leafy.detail }), false) : null;
     this.cardMat = cardMat;
     const barkMat = addCloudShadows(new MeshLambertMaterial({ color: '#5a4632', vertexColors: true }));
     this.barkMat = barkMat;
@@ -876,7 +876,7 @@ export class World {
     });
     lod.twigs = lod.leafy.map((m, k) => {
       m.userData.leafCards = true;
-      m.customDepthMaterial = fluffyDepthMaterial();
+      m.customDepthMaterial = fluffyDepthMaterial(this.quality.leafy.detail);
       pickAsBall(m);
       this.twigMat ||= addLodFade(addCloudShadows(new MeshLambertMaterial({ color: '#5a4632', vertexColors: true })), false);
       const tw = new InstancedMesh(twigShapes[k], this.twigMat, 1);
