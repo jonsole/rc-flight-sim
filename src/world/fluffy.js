@@ -414,11 +414,16 @@ function heading(rnd, up, out, outK) {
 export function crownWood(seed, { from, wood = DEFAULT_WOOD, close = false, twigs = true } = {}) {
   const W = { ...DEFAULT_WOOD, ...wood };
   const { clumps, hi } = crownShape(seed);
+  // Two sets of random choices: the skeleton (limbs and side branches),
+  // made the same way plain or close up, so the two match and switching
+  // between them doesn't rearrange the tree; and the close-up extras (bends,
+  // fine twigs) apart from it.
   const rnd = rng(seed * 13 + 5);
+  const rx = rng(seed * 29 + 11);
   const bush = from != null;
   const parts = [];
   const T = close ? roundTube : (pts, r0, r1, radial, segs) => tube(pts, r0, r1, Math.max(3, radial - 2), Math.max(2, segs - 2));
-  const path = (a, b, n, bow, crookK) => (close ? crooked(rnd, a, b, n, bow, crookK) : [a, a.clone().lerp(b, 0.5).add(new Vector3(0, bow * a.distanceTo(b), 0)), b]);
+  const path = (a, b, n, bow, crookK) => (close ? crooked(rx, a, b, n, bow, crookK) : [a, a.clone().lerp(b, 0.5).add(new Vector3(0, bow * a.distanceTo(b), 0)), b]);
   // A leader: one stem on up through the crown.
   if (W.leader && !bush) {
     parts.push(T(path(new Vector3(0, -0.6, 0), new Vector3(0, hi * 0.95, 0), 5, 0, 0.03), 0.02 * W.thick, 0.003, 7, 8));
@@ -437,11 +442,12 @@ export function crownWood(seed, { from, wood = DEFAULT_WOOD, close = false, twig
       // ... carrying on past the end as a twig, so no limb ends in a stub.
       const dir = curve.getTangentAt(1);
       const tipEnd = end.clone().addScaledVector(dir, r * 0.55).add(new Vector3(0, r * (0.1 - W.twigDroop * 0.3), 0));
-      parts.push(T(crooked(rnd, end, tipEnd, 2, 0.05, 0.2), 0.0042 * Math.sqrt(W.thick), 0.0009, 5, 4));
+      parts.push(T(crooked(rx, end, tipEnd, 2, 0.05, 0.2), 0.0042 * Math.sqrt(W.thick), 0.0009, 5, 4));
     }
     if (!twigs) continue;
-    // Side branches along the limb (plain: fewer), each with its twigs.
-    const nSide = Math.max(close ? 0 : 1, Math.round(intBetween(rnd, W.sides) * (close ? 1 : 0.6)));
+    // Side branches along the limb (the same plain or close up), and close
+    // up their twigs.
+    const nSide = intBetween(rnd, W.sides);
     for (let k = 0; k < nSide; k++) {
       const at = curve.getPointAt(Math.min(0.97, 0.3 + ((k + rnd() * 0.8) / nSide) * 0.65));
       const d = heading(rnd, between(rnd, W.sideUp), end, 0.8);
@@ -452,14 +458,14 @@ export function crownWood(seed, { from, wood = DEFAULT_WOOD, close = false, twig
       parts.push(T(side, 0.0048, 0.0018, 5, 5));
       if (!close) continue;
       const sc = new CatmullRomCurve3(side);
-      const nTwig = intBetween(rnd, W.twigs);
+      const nTwig = intBetween(rx, W.twigs);
       for (let j = 0; j < nTwig; j++) {
-        const at2 = sc.getPointAt(Math.min(0.95, 0.3 + ((j + rnd() * 0.8) / Math.max(1, nTwig)) * 0.6));
-        const d2 = heading(rnd, between(rnd, W.twigUp), d, 0.9);
-        const l2 = r * between(rnd, W.twigLen);
+        const at2 = sc.getPointAt(Math.min(0.95, 0.3 + ((j + rx() * 0.8) / Math.max(1, nTwig)) * 0.6));
+        const d2 = heading(rx, between(rx, W.twigUp), d, 0.9);
+        const l2 = r * between(rx, W.twigLen);
         const tip2 = at2.clone().addScaledVector(d2, l2);
         tip2.y -= W.twigDroop * l2;
-        parts.push(T(crooked(rnd, at2, tip2, 2, 0.06 + W.twigDroop * 0.3, 0.25), 0.0018 * W.twigThick, 0.0008 * W.twigThick, 4, 3));
+        parts.push(T(crooked(rx, at2, tip2, 2, 0.06 + W.twigDroop * 0.3, 0.25), 0.0018 * W.twigThick, 0.0008 * W.twigThick, 4, 3));
       }
     }
   }
@@ -518,10 +524,13 @@ const CARD_VERTEX = /* glsl */ `
     // (unit crown, its leaves about -0.6 to 0.7), so it runs smoothly across
     // the cards rather than shading each as a ball of its own.
     vCardUp = clamp((transformed.y + 0.6) / 1.3, 0.0, 1.0);
+    // For soft depth (makeFluffy): where on the card, and its half-size (m).
+    vCardXY = aCorner;
+    vCardR = h / max(uCardTypical, 1e-4) * aCard.x * grow;
   }
 `;
-const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nattribute vec3 aFlat;\nattribute float aBare;\nattribute float aSpecies;\nuniform float uBare;\nuniform float uCardTypical;\nvarying float vCardUp;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;';
-const CARD_FRAG_DECLS = 'varying float vLeafDrop;\nvarying vec2 vLeafCell;\nvarying float vCardUp;';
+const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nattribute vec3 aFlat;\nattribute float aBare;\nattribute float aSpecies;\nuniform float uBare;\nuniform float uCardTypical;\nvarying float vCardUp;\nvarying vec2 vCardXY;\nvarying float vCardR;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;';
+const CARD_FRAG_DECLS = 'varying float vLeafDrop;\nvarying vec2 vLeafCell;\nvarying float vCardUp;\nvarying vec2 vCardXY;\nvarying float vCardR;';
 
 /**
  * Read the leaf picture (see leafTexture): its brightness (as colour) into
@@ -549,7 +558,7 @@ export const LEAF_FRAGMENT = /* glsl */ `
  * Turn a leaf material (after addCloudShadows and addLeafShading) into the
  * leafy-card one: cut-out leaf texture, cards facing the camera.
  */
-export function makeFluffy(material, { smooth = true, detail = 2 } = {}) {
+export function makeFluffy(material, { smooth = true, detail = 2, softDepth = false } = {}) {
   material.map = leafTexture();
   material.alphaTest = 0.5;
   // Soft cut-out edges with the screen's anti-aliasing (skipped on phones).
@@ -558,6 +567,12 @@ export function makeFluffy(material, { smooth = true, detail = 2 } = {}) {
   // SPECIES: each tree's colour through the year is its instance colour
   // (src/world/species.js), not worked out here.
   material.defines = { ...(material.defines || {}), FLUFFY: '', SPECIES: '' };
+  // Soft depth: each card is a gentle dome in depth (its middle nearer the
+  // camera than its edges), so where cards overlap the boundary is a curve
+  // that slides as you move, not the whole overlap flipping from one card
+  // to the other as the view turns. Costs the GPU its early depth test on
+  // leaves (fine on desktops; off on Low).
+  if (softDepth) material.defines.SOFT_DEPTH = '';
   const prev = material.onBeforeCompile;
   const cardTypical = { value: typicalCard(detail) };
   material.onBeforeCompile = (shader, renderer) => {
@@ -575,7 +590,17 @@ export function makeFluffy(material, { smooth = true, detail = 2 } = {}) {
     // their darker hollows without the blocks.
     shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_begin>', ShaderChunk.lights_fragment_begin.replace(
       'directionalLightShadow.shadowIntensity,', 'directionalLightShadow.shadowIntensity * LEAF_SHADOW,'));
-    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\n#define LEAF_SHADOW 0.45\n${CARD_FRAG_DECLS}`).replace('#include <map_fragment>', `${LEAF_FRAGMENT}
+    shader.fragmentShader = shader.fragmentShader.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+      #ifdef SOFT_DEPTH
+      {
+        float rr = dot(vCardXY, vCardXY) * 0.5; // 0 in the middle, 1 at the corners
+        vec3 vp = -vViewPosition;
+        vp.z += vCardR * 0.7 * sqrt(max(0.0, 1.0 - rr)); // (nearer the camera)
+        vec4 cp = projectionMatrix * vec4(vp, 1.0);
+        gl_FragDepth = (cp.z / cp.w) * 0.5 + 0.5;
+      }
+      #endif`);
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\n#define LEAF_SHADOW 0.45\nuniform mat4 projectionMatrix;\n${CARD_FRAG_DECLS}`).replace('#include <map_fragment>', `${LEAF_FRAGMENT}
       {
         vec2 tsz = vec2(textureSize(map, 0));
         vec2 ddx = dFdx(vMapUv * tsz / ${LEAF_GRID});

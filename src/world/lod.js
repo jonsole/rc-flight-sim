@@ -24,6 +24,8 @@ export const lodFadeUniforms = { uLodTime: { value: 0 } };
  * position (addCloseSwitch), so the plain and detailed never both show.
  */
 export const closeUniforms = { uCloseR: { value: 0 } };
+/** The plain and detailed wood fade into each other over this either side of uCloseR (m). */
+const CLOSE_BAND = 4;
 
 /**
  * Draw a material's instances only near the camera (`near` true: the
@@ -36,15 +38,29 @@ export function addCloseSwitch(material, near) {
     prev?.(shader, renderer);
     Object.assign(shader.uniforms, closeUniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uCloseR;')
+      .replace('#include <common>', '#include <common>\nuniform float uCloseR;\nvarying float vCloseD;')
       .replace('#include <project_vertex>', `
         #ifdef USE_INSTANCING
         {
           float d = length(cameraPosition.xz - (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xz);
-          if (${near ? 'd > uCloseR' : 'd < uCloseR'}) transformed = vec3(0.0);
+          vCloseD = d;
+          // Out of its range (and the fade band): folded away to nothing.
+          if (${near ? 'd > uCloseR + CLOSE_BAND' : 'd < uCloseR - CLOSE_BAND'}) transformed = vec3(0.0);
         }
+        #else
+          vCloseD = 1e6;
         #endif
-        #include <project_vertex>`);
+        #include <project_vertex>`)
+      .replace('#include <common>', `#define CLOSE_BAND ${CLOSE_BAND.toFixed(1)}\n#include <common>`);
+    // Across the band, plain and detailed share it pixel by pixel.
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\nuniform float uCloseR;\nvarying float vCloseD;\n#define CLOSE_BAND ${CLOSE_BAND.toFixed(1)}`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+        {
+          float farK = smoothstep(uCloseR - CLOSE_BAND, uCloseR + CLOSE_BAND, vCloseD); // 0 close .. 1 far
+          float n = fract(sin(dot(floor(gl_FragCoord.xy), vec2(91.345, 47.853))) * 24634.6345);
+          ${near ? 'if (n < farK) discard;' : 'if (n >= farK) discard;'}
+        }`);
   };
   const prevKey = material.customProgramCacheKey?.bind(material);
   material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|close${near ? 'In' : 'Out'}`;

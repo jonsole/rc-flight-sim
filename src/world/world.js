@@ -790,7 +790,7 @@ export class World {
     }
     const leafMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })));
     this.leafMat = leafMat;
-    const cardMat = this.fluffy ? addLodFade(makeFluffy(addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true }))), { smooth: q.leafy.smooth, detail: q.leafy.detail }), false) : null;
+    const cardMat = this.fluffy ? addLodFade(makeFluffy(addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true }))), { smooth: q.leafy.smooth, detail: q.leafy.detail, softDepth: q.leafy.softDepth }), false) : null;
     this.cardMat = cardMat;
     // Bark: its colour per tree (instance colour, by species).
     const barkMat = addCloudShadows(new MeshLambertMaterial({ vertexColors: true }));
