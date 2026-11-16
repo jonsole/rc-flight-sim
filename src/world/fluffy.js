@@ -337,7 +337,8 @@ export function crownBranches(seed, { from, twigs = true } = {}) {
     mid.z *= 0.85;
     parts.push(tube([start, mid, end], bush ? 0.011 : 0.014, 0.005, twigs ? 4 : 3, twigs ? 3 : 2));
     if (!twigs) continue;
-    for (let k = 0; k < 3; k++) {
+    const nTwig = 1 + Math.floor(rnd() * 4); // (1-4, varying)
+    for (let k = 0; k < nTwig; k++) {
       const a = rnd() * Math.PI * 2;
       const up = 0.15 + rnd() * 1.0;
       const d = new Vector3(Math.cos(a) * Math.cos(up), Math.sin(up), Math.sin(a) * Math.cos(up)).add(end.clone().normalize().multiplyScalar(0.6)).normalize();
@@ -597,8 +598,10 @@ export function detailedBranches(seed, { from } = {}) {
     const tipEnd = end.clone().addScaledVector(dir, r * 0.55).add(new Vector3(0, r * 0.1, 0));
     parts.push(roundTube(crooked(rnd, end, tipEnd, 2, 0.05, 0.2), 0.0042, 0.0009, 5, 4));
     // Side branches from along the limb, each with a few fine twigs.
-    for (let k = 0; k < 3; k++) {
-      const at = curve.getPointAt(0.45 + k * 0.18 + rnd() * 0.08);
+    // A varying number of side branches (1-5), spread along the limb.
+    const nSide = 1 + Math.floor(rnd() * 5);
+    for (let k = 0; k < nSide; k++) {
+      const at = curve.getPointAt(Math.min(0.97, 0.35 + ((k + rnd() * 0.8) / nSide) * 0.6));
       const a = rnd() * Math.PI * 2;
       const up = 0.15 + rnd() * 0.9;
       const d = new Vector3(Math.cos(a) * Math.cos(up), Math.sin(up), Math.sin(a) * Math.cos(up)).add(end.clone().normalize().multiplyScalar(0.7)).normalize();
@@ -606,8 +609,10 @@ export function detailedBranches(seed, { from } = {}) {
       const side = crooked(rnd, at, tip, 3, 0.1, 0.2);
       parts.push(roundTube(side, 0.0048, 0.0018, 5, 5));
       const sc = new CatmullRomCurve3(side);
-      for (let j = 0; j < 2; j++) {
-        const at2 = sc.getPointAt(0.4 + j * 0.3 + rnd() * 0.1);
+      // ... each with its own few twigs (0-4).
+      const nTwig = Math.floor(rnd() * 5);
+      for (let j = 0; j < nTwig; j++) {
+        const at2 = sc.getPointAt(Math.min(0.95, 0.3 + ((j + rnd() * 0.8) / Math.max(1, nTwig)) * 0.6));
         const a2 = rnd() * Math.PI * 2;
         const d2 = d.clone().add(new Vector3(Math.cos(a2), 0.4 + rnd() * 0.6, Math.sin(a2)).multiplyScalar(0.9)).normalize();
         const tip2 = at2.clone().addScaledVector(d2, r * (0.25 + rnd() * 0.25));
