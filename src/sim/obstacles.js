@@ -71,12 +71,16 @@ function realTrees() {
   }
   for (const belt of L.treeBelts ?? []) growBelt(raw, belt, rand);
   for (const group of L.trees ?? []) {
-    for (const [x, z] of group.at) raw.push({ x, z, h: group.h * (0.9 + rand() * 0.2), r: group.r * (0.9 + rand() * 0.2) });
+    for (const [x, z] of group.at) raw.push({ x, z, h: group.h * (0.9 + rand() * 0.2), r: group.r * (0.9 + rand() * 0.2), species: group.species });
   }
-  for (const { x, z, h, r } of raw) {
+  for (const { x, z, h, r, species } of raw) {
     // Narrow for its height: probably a conifer (or a Lombardy poplar).
     const conifer = L.conifers !== false && r < h * 0.17 && h > 8;
-    trees.push(dressTree({ x, y: heightAt(x, z), z, h, conifer, rot: rand() * Math.PI * 2 }, rand, Math.max(1.2, r)));
+    const t = dressTree({ x, y: heightAt(x, z), z, h, conifer, rot: rand() * Math.PI * 2 }, rand, Math.max(1.2, r));
+    // Its species, if the site says (else a natural mix: src/world/species.js).
+    const area = (L.treeSpecies ?? []).find((a) => x >= a.x0 && x <= a.x1 && z >= a.z0 && z <= a.z1);
+    if (!conifer && (species || area)) t.species = species ?? area.species;
+    trees.push(t);
   }
   // Clumps of woodland on the skyline, outside the baked area.
   const half = d.size / 2;
@@ -229,7 +233,7 @@ function editedBush(spec, orig) {
   };
 }
 
-/** A whole tree from an edited or added one ({ x, z, h, r, conifer }), keeping what it can of `orig`. */
+/** A whole tree from an edited or added one ({ x, z, h, r, conifer, species }), keeping what it can of `orig`. */
 function editedTree(spec, orig) {
   let rnd = Math.floor(hashId(spec.id) * 2147483646) + 1;
   const rand = () => ((rnd = (rnd * 16807) % 2147483647) / 2147483647);
@@ -237,6 +241,9 @@ function editedTree(spec, orig) {
   const h = spec.h ?? orig?.h ?? 12;
   const t = { id: spec.id, x: spec.x ?? orig.x, z: spec.z ?? orig.z, h, conifer, rot: orig?.rot ?? rand() * Math.PI * 2 };
   t.y = heightAt(t.x, t.z);
+  // Its species: set in the editor ('mixed' for the natural mix), else as it was.
+  const species = spec.species !== undefined ? spec.species : orig?.species;
+  if (species && species !== 'mixed' && !conifer) t.species = species;
   const base = spec.base ?? orig?.base;
   if (base != null) t.base = base;
   if (orig && orig.conifer === conifer) {

@@ -16,7 +16,7 @@ import {
   WebGLRenderTarget, OrthographicCamera, Scene, Mesh, ShaderMaterial, BufferGeometry,
   Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, DoubleSide, Color,
 } from 'three';
-import { leafTexture } from './fluffy.js';
+import { leafTexture, LEAF_ROWS } from './fluffy.js';
 import { leafUniforms } from './trees.js';
 
 /** Viewing heights drawn (degrees above level). */
@@ -48,6 +48,7 @@ const BAKE_VERT = /* glsl */ `
     gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
   }`;
 const BAKE_FRAG = /* glsl */ `
+  #define LEAF_GRID vec2(4.0, ${LEAF_ROWS.length}.0)
   uniform sampler2D uLeaf;
   uniform float uMode; // 0 colour, 1 normal and when
   uniform float uLeafy;
@@ -62,7 +63,7 @@ const BAKE_FRAG = /* glsl */ `
       // The leaf picture (src/world/fluffy.js leafTexture): brightness, and
       // the leaf's fall time, here turned into the season's leaf fall
       // (uBare) at which it has gone (fluffy.js LEAF_FALL, solved for it).
-      vec4 t = texture2D(uLeaf, (vUv + vec2(1.0, 0.0)) * 0.5); // (the second leaf picture: typical crowns)
+      vec4 t = texture2D(uLeaf, (vUv + vec2(1.0, ${LEAF_ROWS.indexOf('beech')}.0)) / LEAF_GRID); // (beech leaves, the second size: typical crowns, far off)
       if (t.a < 0.5) discard;
       float kk = pow(t.r / t.a, 2.2);
       c *= vec3(kk, kk, kk * 0.83);

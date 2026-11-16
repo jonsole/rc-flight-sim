@@ -14,9 +14,9 @@ import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail, groundUniforms } from './ground.js';
 import { seasonFor } from './seasons.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
-import { fluffyCrown, crownBranches, makeFluffy, fluffyDepthMaterial, pickAsBall } from './fluffy.js';
+import { fluffyCrown, crownBranches, makeFluffy, fluffyDepthMaterial, pickAsBall, setLeafDetail } from './fluffy.js';
 import { CrownLod, addLodFade } from './lod.js';
-import { speciesAt, bushSpeciesAt } from './species.js';
+import { speciesOf, bushSpeciesAt } from './species.js';
 import { bakeImpostors, impostorGeometry, makeImpostor } from './impostor.js';
 import { QUALITY } from './quality.js';
 import { CROWN_SEEDS, crownOf } from '../sim/treeShapes.js';
@@ -343,6 +343,7 @@ export class World {
     // Leafy crowns and bushes (src/world/fluffy.js), or the classic solid ones.
     this.fluffy = opts.treeStyle !== 'classic';
     this.renderer = opts.renderer; // for drawing the distant trees' pictures (impostors)
+    if (this.quality.leafy?.leafPx) setLeafDetail(this.quality.leafy.leafPx);
     this.twigMeshes = [];
     this.scene = new Scene();
     this.scene.background = new Color('#9cc3e6');
@@ -852,7 +853,7 @@ export class World {
         // A little brighter than the solid shapes (which carry their own shading).
         color: (t, out) => out.setHSL(t.hue, t.sat, t.light * 1.12 + 0.02),
         shape: (t) => t.variant, // the shape the collisions use
-        species: (t) => speciesAt(t.x, t.z),
+        species: (t) => speciesOf(t),
         leafy: CROWN_SEEDS.map((sd) => fluffyCrown(sd, q.leafy.detail)),
         solid: CROWN_SEEDS.map((_, k) => impostorGeometry(k)),
         leafyMat: cardMat,
@@ -899,7 +900,11 @@ export class World {
     this.#syncTwigs(lod);
     for (const m of [...lod.meshes, ...lod.twigs, ...lod.shadows]) {
       m.castShadow = !lod.solid.includes(m);
-      m.receiveShadow = !lod.solid.includes(m) && !lod.shadows.includes(m);
+      // Leaf cards cast shadows (on the ground, the model...) but don't take
+      // them: cards facing the camera and the shadow map's cards facing the
+      // sun cut straight lines through each other. The cards carry their own
+      // shading (darker inside and underneath) instead.
+      m.receiveShadow = lod.twigs.includes(m);
       m.userData.kind = kind;
       if (kind === 'tree') m.userData.trees = list;
       this.scene.add(m);

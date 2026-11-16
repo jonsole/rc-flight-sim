@@ -24,56 +24,150 @@ const CARDS = { 2: 16, 1: 10, 0: 6, blob: 4 };
 /**
  * Leaves: about LEAF_M long on every tree and bush. A card's leaf picture
  * scales with the card, and cards with their tree, so the picture comes in
- * four versions (an atlas, 2 x 2), from big leaves to many small ones, and
- * each card picks the one that gives leaves of that size (CARD_VERTEX).
+ * four versions, from big leaves to many small ones, and each card picks the
+ * one that gives leaves of that size (CARD_VERTEX). And each species has its
+ * own leaf shape: one row of the atlas each (LEAF_ROWS, src/world/species.js).
  */
 const LEAF_M = 0.22;
-/** The versions' leaf sizes, relative to the first. */
+/** The versions' leaf sizes, relative to the first (the atlas's columns). */
 const LEAF_SIZES = [1, 0.7, 0.5, 0.35];
 /** Leaf length in the first version, as a fraction of the card's width. */
 const LEAF_FRAC = 0.1;
+/** The atlas's rows: a leaf shape each (in the species' order, SPECIES_ORDER). */
+export const LEAF_ROWS = ['oak', 'ash', 'beech', 'sycamore', 'horseChestnut', 'birch', 'hawthorn'];
+/**
+ * Each species' leaf: how big against the 22 cm average, how many more to
+ * cover as much (open, compound leaves need more), and its outline, drawn
+ * tip up from (0, -len) to the stalk at (0, len).
+ */
+const LEAF_FORMS = {
+  // Lobed, wavy edged.
+  oak: { size: 1, more: 1.15, draw: (g, len) => outline(g, len, (t) => 0.42 * Math.sin(Math.PI * Math.pow(t, 0.8)) * (0.62 + 0.38 * Math.abs(Math.sin(t * Math.PI * 4.5)))) },
+  // Rows of small pointed leaflets along a stalk.
+  ash: { size: 1.25, more: 1.7, draw: (g, len) => {
+    for (let k = 0; k < 4; k++) {
+      const y = -len * 0.55 + k * len * 0.42;
+      for (const sd of [-1, 1]) leaflet(g, sd * len * 0.2, y, len * 0.3, len * 0.09, sd * (Math.PI / 2 - 0.5));
+    }
+    leaflet(g, 0, -len * 0.8, len * 0.28, len * 0.09, 0);
+    g.fillRect(-len * 0.02, -len * 0.7, len * 0.04, len * 1.6);
+  } },
+  // Plain oval.
+  beech: { size: 0.9, more: 1, draw: (g, len) => outline(g, len, (t) => 0.36 * Math.pow(Math.sin(Math.PI * t), 0.75)) },
+  // Five pointed lobes, like a maple's.
+  sycamore: { size: 1.15, more: 1.1, draw: (g, len) => palmate(g, len, 5, 0.42, 1.1) },
+  // A hand of five to seven broad leaflets.
+  horseChestnut: { size: 1.5, more: 1.8, draw: (g, len) => {
+    for (let k = 0; k < 7; k++) {
+      const a = (k - 3) * 0.42;
+      const l = len * (k === 3 ? 0.95 : 0.8 - Math.abs(k - 3) * 0.08);
+      leaflet(g, Math.sin(a) * l * 0.5, len * 0.45 - Math.cos(a) * l * 0.5, l * 0.5, l * 0.17, a);
+    }
+  } },
+  // Small, triangular, pointed.
+  birch: { size: 0.7, more: 1, draw: (g, len) => outline(g, len, (t) => 0.4 * Math.min(1, t * 1.25) * Math.pow(1 - t, 0.35)) },
+  // Small and deeply lobed.
+  hawthorn: { size: 0.7, more: 1.25, draw: (g, len) => palmate(g, len, 3, 0.3, 0.85) },
+};
+
+/** A leaf from its half-width along it (t 0 at the tip, 1 at the stalk), x len. */
+function outline(g, len, half) {
+  const N = 20;
+  g.beginPath();
+  g.moveTo(0, -len);
+  for (let i = 1; i <= N; i++) g.lineTo(half(i / N) * len * 2, -len + (2 * len * i) / N);
+  for (let i = N - 1; i >= 1; i--) g.lineTo(-half(i / N) * len * 2, -len + (2 * len * i) / N);
+  g.closePath();
+  g.fill();
+}
+
+/** A small pointed oval at (x, y), half-length l, half-width w, turned by a. */
+function leaflet(g, x, y, l, w, a) {
+  g.save();
+  g.translate(x, y);
+  g.rotate(a);
+  g.beginPath();
+  g.moveTo(0, -l);
+  g.quadraticCurveTo(w * 2, 0, 0, l);
+  g.quadraticCurveTo(-w * 2, 0, 0, -l);
+  g.fill();
+  g.restore();
+}
+
+/** A palmate leaf: `n` pointed lobes fanned over the top, `deep` how far the gaps cut in. */
+function palmate(g, len, n, deep, spread) {
+  const N = 48;
+  g.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const a = (t - 0.5) * Math.PI * spread * 1.6; // fan, centred on straight up
+    const lobe = Math.pow(Math.abs(Math.cos((t - 0.5) * Math.PI * n)), 3);
+    const r = len * (1 - deep + deep * lobe);
+    const x = Math.sin(a) * r;
+    const y = len * 0.35 - Math.cos(a) * r;
+    if (i === 0) g.moveTo(x, y);
+    else g.lineTo(x, y);
+  }
+  g.lineTo(0, len);
+  g.closePath();
+  g.fill();
+}
+
 let leafTex = null;
+let leafPx = 192;
+/** Pixels per picture in the leaf atlas (set before the first leafy tree: smaller on phones). */
+export function setLeafDetail(px) {
+  if (!leafTex) leafPx = px;
+}
 /**
  * The leaf pictures: clusters of small leaves, white-ish (tinted per tree),
- * cut out round a ragged edge.
+ * cut out round a ragged edge; a row per species, a column per leaf size.
  */
 export function leafTexture() {
   if (leafTex) return leafTex;
-  const T = 320; // each version
+  const T = leafPx;
+  const cols = LEAF_SIZES.length;
+  const rows = LEAF_ROWS.length;
   const c = document.createElement('canvas');
-  c.width = c.height = T * 2;
+  c.width = T * cols;
+  c.height = T * rows;
   const g = c.getContext('2d');
   const rnd = rng(77);
-  LEAF_SIZES.forEach((size, v) => {
-    const ox = (v % 2) * T;
-    // (Canvas rows run downwards; texture rows upwards.)
-    const oy = (1 - Math.floor(v / 2)) * T;
-    // The same coverage whatever the leaf size: more, smaller ones.
-    const count = Math.round(230 / (size * size));
-    for (let i = 0; i < count; i++) {
-      const a = rnd() * Math.PI * 2;
-      // Thinning out towards a ragged edge (an even disc of small leaves
-      // reads as a clipped ball), a few strays reaching further.
-      const d = T * (rnd() < 0.12 ? 0.3 + rnd() * 0.15 : 0.4 * Math.pow(rnd(), 0.75));
-      const x = ox + T / 2 + Math.cos(a) * d;
-      const y = oy + T / 2 + Math.sin(a) * d;
-      // Half the length (tip to middle), varying a little.
-      const len = (T * LEAF_FRAC * size * (0.88 + rnd() * 0.24)) / 2;
-      const k = Math.round(150 + (i / count) * 80 + rnd() * 25);
-      // Red: the leaf's brightness. Green: when it falls (it's gone once the
-      // season's leaf fall passes this; see LEAF_FALL).
-      g.fillStyle = `rgb(${k},${Math.round(5 + rnd() * 250)},0)`;
+  LEAF_ROWS.forEach((name, row) => {
+    const form = LEAF_FORMS[name];
+    LEAF_SIZES.forEach((size, col) => {
+      const ox = col * T;
+      // (Canvas rows run downwards; texture rows upwards.)
+      const oy = (rows - 1 - row) * T;
+      const sz = size * form.size;
+      // About the same cover whatever the leaf size: more, smaller ones.
+      const count = Math.round((230 * form.more) / (sz * sz));
       g.save();
-      g.translate(x, y);
-      // Leaves point roughly outwards from the middle.
-      g.rotate(a + Math.PI / 2 + (rnd() - 0.5) * 1.6);
       g.beginPath();
-      g.moveTo(0, -len);
-      g.quadraticCurveTo(len * 0.55, -len * 0.1, 0, len);
-      g.quadraticCurveTo(-len * 0.55, -len * 0.1, 0, -len);
-      g.fill();
+      g.rect(ox, oy, T, T); // (leaves stay in their own picture)
+      g.clip();
+      for (let i = 0; i < count; i++) {
+        const a = rnd() * Math.PI * 2;
+        // Thinning out towards a ragged edge (an even disc of small leaves
+        // reads as a clipped ball), a few strays reaching further.
+        const d = T * (rnd() < 0.12 ? 0.3 + rnd() * 0.12 : 0.38 * Math.pow(rnd(), 0.75));
+        const x = ox + T / 2 + Math.cos(a) * d;
+        const y = oy + T / 2 + Math.sin(a) * d;
+        // Half the length (tip to stalk), varying a little.
+        const len = (T * LEAF_FRAC * sz * (0.88 + rnd() * 0.24)) / 2;
+        const k = Math.round(150 + (i / count) * 80 + rnd() * 25);
+        // Red: the leaf's brightness. Green: when it falls (it's gone once the
+        // season's leaf fall passes this; see LEAF_FALL).
+        g.fillStyle = `rgb(${k},${Math.round(5 + rnd() * 250)},0)`;
+        g.save();
+        g.translate(x, y);
+        // Leaves point roughly outwards from the middle.
+        g.rotate(a + Math.PI / 2 + (rnd() - 0.5) * 1.6);
+        form.draw(g, len);
+        g.restore();
+      }
       g.restore();
-    }
+    });
   });
   const t = new CanvasTexture(c);
   // (Not colour: brightness and fall time, read by LEAF_FRAGMENT, which
@@ -85,16 +179,20 @@ export function leafTexture() {
   return t;
 }
 
+/** The atlas's grid (columns, rows), for the shaders. */
+const LEAF_GRID = `vec2(${LEAF_SIZES.length}.0, ${LEAF_ROWS.length}.0)`;
+
 /**
  * Which leaf picture (atlas cell, see leafTexture) a card of half-size h
- * metres shows: leaves of about LEAF_M whatever the card's size.
+ * metres shows: its species' row (aSpecies), and the column giving leaves of
+ * about LEAF_M whatever the card's size.
  */
 function leafCellGlsl() {
   // Leaf length = LEAF_FRAC x card width x version size = LEAF_FRAC 2h size.
   // Switch half way between the versions.
   const want = (size) => LEAF_M / (LEAF_FRAC * 2 * size); // h at which a version is just right
   const edges = [0, 1, 2].map((k) => Math.sqrt(want(LEAF_SIZES[k]) * want(LEAF_SIZES[k + 1])).toFixed(3));
-  return `vLeafCell = h < ${edges[0]} ? vec2(0.0, 0.0) : h < ${edges[1]} ? vec2(1.0, 0.0) : h < ${edges[2]} ? vec2(0.0, 1.0) : vec2(1.0, 1.0);`;
+  return `vLeafCell = vec2(h < ${edges[0]} ? 0.0 : h < ${edges[1]} ? 1.0 : h < ${edges[2]} ? 2.0 : 3.0, aSpecies);`;
 }
 
 /**
@@ -271,7 +369,7 @@ const CARD_VERTEX = /* glsl */ `
     ${leafCellGlsl()}
   }
 `;
-const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nattribute float aBare;\nuniform float uBare;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;';
+const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nattribute float aBare;\nattribute float aSpecies;\nuniform float uBare;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;';
 const CARD_FRAG_DECLS = 'varying float vLeafDrop;\nvarying vec2 vLeafCell;';
 
 /**
@@ -282,7 +380,7 @@ const CARD_FRAG_DECLS = 'varying float vLeafDrop;\nvarying vec2 vLeafCell;';
  */
 export const LEAF_FRAGMENT = /* glsl */ `
   {
-    vec4 tx = texture2D(map, (vMapUv + vLeafCell) * 0.5);
+    vec4 tx = texture2D(map, (vMapUv + vLeafCell) / ${LEAF_GRID});
     float cov = max(tx.a, 0.01);
     float kk = pow(tx.r / cov, 2.2);
     diffuseColor.rgb *= vec3(kk, kk, kk * 0.83);
@@ -316,8 +414,8 @@ export function makeFluffy(material, { smooth = true, detail = 2 } = {}) {
     shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\n${CARD_FRAG_DECLS}`).replace('#include <map_fragment>', `${LEAF_FRAGMENT}
       {
         vec2 tsz = vec2(textureSize(map, 0));
-        vec2 ddx = dFdx(vMapUv * tsz * 0.5);
-        vec2 ddy = dFdy(vMapUv * tsz * 0.5);
+        vec2 ddx = dFdx(vMapUv * tsz / ${LEAF_GRID});
+        vec2 ddy = dFdy(vMapUv * tsz / ${LEAF_GRID});
         float lod = 0.5 * log2(max(max(dot(ddx, ddx), dot(ddy, ddy)), 1e-6));
         diffuseColor.a *= 1.0 + max(lod, 0.0) * 0.35;
       }`);

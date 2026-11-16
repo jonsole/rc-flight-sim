@@ -21,6 +21,9 @@ import { crownOf } from '../sim/treeShapes.js';
 import { buildingsMesh } from '../world/buildings.js';
 import { pilotSpot } from '../sim/location.js';
 
+/** Tree types in the editor (species: src/world/species.js). */
+const TREE_KINDS = { mixed: 'Broadleaf (mixed)', oak: 'Oak', ash: 'Ash', sycamore: 'Sycamore', birch: 'Birch', beech: 'Beech', horseChestnut: 'Horse chestnut', conifer: 'Conifer' };
+
 const SPEED = 15; // m/s, x4 with Shift
 // Where each kind's edits are kept (src/sim/edits.js).
 const GROUP = { tree: 'trees', bush: 'bushes', building: 'buildings', fence: 'fences' };
@@ -661,9 +664,14 @@ export class Editor {
       // Where the leaves start, in metres up the trunk (stored as a fraction of the height).
       rows.push(slider('Canopy starts', c.base * o.h, 0, o.h * 0.7, 0.1, 'm', (v) => this.#set({ base: round3(v / o.h) }),
         (v) => show({ base: v / live.h })));
-      const sel = el('select', { onchange: (e) => this.#set({ conifer: e.target.value === 'conifer' }) },
-        el('option', { value: 'broadleaf', selected: !o.conifer }, 'Broadleaf'),
-        el('option', { value: 'conifer', selected: o.conifer }, 'Conifer'));
+      // Broadleaf (one species, or the natural mix) or conifer.
+      const kind = o.conifer ? 'conifer' : o.species ?? 'mixed';
+      const sel = el('select', {
+        onchange: (e) => {
+          const v = e.target.value;
+          this.#set(v === 'conifer' ? { conifer: true } : { conifer: false, species: v });
+        },
+      }, ...Object.entries(TREE_KINDS).map(([v, label]) => el('option', { value: v, selected: v === kind }, label)));
       rows.push(el('label', { class: 'ed-row' }, el('span', {}, 'Type'), sel));
     } else if (s.kind === 'bush') {
       const live = { h: o.h, w: o.w };

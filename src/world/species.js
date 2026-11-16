@@ -59,6 +59,13 @@ const smooth = (a, b, x) => {
   return t * t * (3 - 2 * t);
 };
 
+/** A tree's species: as the map or editor set it (t.species), or from where it stands. */
+export function speciesOf(t) {
+  const who = speciesAt(t.x, t.z);
+  if (t.species && SPECIES[t.species]) who.name = t.species;
+  return who;
+}
+
 const _a = new Color();
 const _b = new Color();
 const hsl = (out, [h, s, l], dl = 0) => out.setHSL(h, s, Math.max(0.02, l + dl));

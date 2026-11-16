@@ -5,6 +5,7 @@
 // its trees in leafy.
 import { InstancedMesh, Color, Matrix4, InstancedBufferAttribute, Sphere, Vector3, Box3 } from 'three';
 import { leafState } from './species.js';
+import { LEAF_ROWS } from './fluffy.js';
 
 const _c = new Color();
 /**
@@ -77,6 +78,8 @@ export class CrownLod {
       m.geometry.setAttribute('aLod', new InstancedBufferAttribute(new Float32Array(n), 1));
       // Per instance: how bare its leaves are (its species' own year).
       m.geometry.setAttribute('aBare', new InstancedBufferAttribute(new Float32Array(n), 1));
+      // ... and its leaf shape (row of the leaf atlas, by species).
+      m.geometry.setAttribute('aSpecies', new InstancedBufferAttribute(new Float32Array(n), 1));
     }
     // Each item's matrix, colour and shape, worked out once.
     this.m = items.map((it) => o.matrix(it, new Matrix4()));
@@ -85,6 +88,7 @@ export class CrownLod {
     // Species (src/world/species.js): colours and leaf fall through the year.
     this.who = o.species ? items.map((it) => o.species(it)) : null;
     this.bare = new Float32Array(items.length);
+    this.leafRow = items.map((_, i) => Math.max(0, LEAF_ROWS.indexOf(this.who?.[i]?.name)));
     this.pos = items.map((it, i) => [this.m[i].elements[12], this.m[i].elements[14]]);
     // Bounds of the whole set, for culling: worked out once (re-sorting
     // often, recomputing them each time would be the slow part).
@@ -134,6 +138,7 @@ export class CrownLod {
       mesh.setColorAt(slot, _c.copy(this.col[i]));
       mesh.geometry.attributes.aLod.array[slot] = lod;
       mesh.geometry.attributes.aBare.array[slot] = this.bare[i];
+      mesh.geometry.attributes.aSpecies.array[slot] = this.leafRow[i];
       return [mesh, slot];
     };
     for (let i = 0; i < this.items.length; i++) {
@@ -159,6 +164,7 @@ export class CrownLod {
       m.count = counts[k];
       m.geometry.attributes.aLod.needsUpdate = true;
       m.geometry.attributes.aBare.needsUpdate = true;
+      m.geometry.attributes.aSpecies.needsUpdate = true;
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
       m.boundingSphere = this.sphere;
