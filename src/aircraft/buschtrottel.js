@@ -17,6 +17,7 @@
 
 import { liftSlope } from '../sim/aero.js';
 import { Group } from 'three';
+import { propGeometry } from './prop.js';
 import { createBuschtrottelModel } from './buschtrottelModel.js';
 
 const deg = Math.PI / 180;
@@ -266,6 +267,8 @@ export function buildBuschtrottel(style) {
     downwashGain: 0.9,
     motor: {
       // AT2308 1450Kv on 3S (~16,000 rpm unloaded), see style.prop.
+      prop: { diameterIn: 8, pitchIn: style.prop.pitchIn, blades: style.prop.blades }, // as fitted (tuning reads it)
+      kv: 1450, noLoadCurrent: 0.6, // AT2308 1450Kv (tuning; winding resistance worked out from the current)
       staticThrust: style.prop.staticThrust, // N
       pitchSpeed: style.prop.pitchSpeed,     // m/s = pitch × loaded rpm
       spoolTime: 0.06,
@@ -344,8 +347,9 @@ export function buildBuschtrottel(style) {
       pod: up(high ? [0.05, L.wingY + 0.04, 0] : [0.17, 0.065, 0]),
       chase: { back: SPAN * 2.0 + 0.3, up: SPAN * 0.5 + 0.15 },
     },
-    createModel: () => {
-      const m = createBuschtrottelModel(L);
+    // opts.prop: the prop as tuned (Menu → Tuning), shown instead of the standard one.
+    createModel: (opts = {}) => {
+      const m = createBuschtrottelModel(opts.prop ? { ...L, prop: { ...L.prop, ...propGeometry(opts.prop) } } : L);
       if (cgDrop) {
         const inner = m.root;
         const outer = new Group();
@@ -358,70 +362,10 @@ export function buildBuschtrottel(style) {
   };
 }
 
-const COMMON = 'Fixed LE slats. AT2308 1450Kv, 3S 1350 mAh, ~450 g.';
-
 // Props on the AT2308 1450Kv / 3S. Loaded rpm and static thrust are
 // estimates from typical prop data; pitch speed = pitch × loaded rpm.
 const PROP_8x6 = { blades: 2, pitchIn: 6, rpm: 11000, staticThrust: 9.0, pitchSpeed: 28, current: 16 };
-const PROP_8x45x3 = { blades: 3, pitchIn: 4.5, rpm: 11000, staticThrust: 10.2, pitchSpeed: 21, current: 16 };
 
-export const BUSCHTROTTEL_SHOCKCUB = buildBuschtrottel({
-  id: 'buschtrottel-shockcub',
-  name: 'Buschtrottel ShockCub',
-  summary: `DIY 6 mm Depron bush plane, 900 mm. High wing, rounded tail. 8x6 prop. ${COMMON}`,
-  prop: PROP_8x6,
-  mount: 'high',
-  fullSpanAilerons: true,
-  tail: 'round',
-  slats: true,
-  throws: { aileron: 22 * deg, elevator: 17 * deg }, // full-span ailerons; less elevator with the CG further back
-  mass: 0.45,
-  tailIncidence: 4 * deg,
-  rollTrim: 0,
-  // From photos of the real one: yellow, no stripe, black nose back to the
-  // cabin, grey painted windscreen and side windows, dark blue ailerons (and
-  // the wing between them) and tail, black slats, dark grey tip plates, blue wheel hubs.
-  colors: {
-    main: '#f2c230', accent: '#1d1d1d', stripe: false, nose: '#1d1d1d', noseX: 0.06,
-    window: '#9a9ea3', wing: '#f2c230', aileron: '#1c2f6e', centreTE: '#1c2f6e', tail: '#1c2f6e',
-    slatTop: '#111111', slatBottom: '#111111', tip: '#3b3e42', hub: '#2a3f8f',
-  },
-});
-
-export const BUSCHTROTTEL_HIGHLANDER = buildBuschtrottel({
-  id: 'buschtrottel-highlander',
-  name: 'Buschtrottel Highlander',
-  summary: `DIY 6 mm Depron bush plane, 900 mm. High wing, angular tail. 8x6 prop. ${COMMON}`,
-  prop: PROP_8x6,
-  mount: 'high',
-  fullSpanAilerons: true,
-  tail: 'square',
-  slats: true,
-  throws: { aileron: 22 * deg, elevator: 17 * deg }, // full-span ailerons; less elevator with the CG further back
-  mass: 0.45,
-  tailIncidence: 4 * deg,
-  rollTrim: 0,
-  colors: { main: '#efefea', accent: '#c62828', wing: '#efefea', tail: '#c62828' },
-});
-
-export const BUSCHTROTTEL_AGRO = buildBuschtrottel({
-  id: 'buschtrottel-agro',
-  name: 'Buschtrottel Agro',
-  summary: `DIY 6 mm Depron, 900 mm. Low wing with struts, full-span ailerons, black canopy, low tailplane. 8x4.5 three-blade prop. ${COMMON}`,
-  prop: PROP_8x45x3,
-  mount: 'low',
-  fullSpanAilerons: true,
-  lowTail: true,
-  // Full-span ailerons are already powerful; the big plan tailplane needs
-  // less elevator throw.
-  throws: { aileron: 22 * deg, elevator: 15 * deg },
-  tail: 'square',
-  slats: true,
-  mass: 0.46,
-  tailIncidence: 2 * deg,
-  cgDrop: 0.03, // CG 3 cm lower in the airframe than the high-wing versions
-  rollTrim: 0,
-  // Orange and white: top third of the fuselage, tail and wing tops orange;
-  // lower fuselage and wing undersides white; sky-blue ailerons.
-  colors: { main: '#f4f4ef', top: '#f26b1d', split: 2 / 3, wing: '#f26b1d', wingBottom: '#f4f4ef', aileron: '#7cc6ee', slatTop: '#7cc6ee', slatBottom: '#f4f4ef', tail: '#f26b1d' },
-});
+// The variants' settings (ShockCub, Highlander, Agro: mount, tail, throws,
+// mass, prop, colours ...) are in src/aircraft/models/buschtrottel-*.json,
+// read by src/aircraft/index.js.

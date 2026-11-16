@@ -4,7 +4,7 @@ import { physicsGround as ground } from './sim/terrain.js';
 import { Obstacles } from './sim/obstacles.js';
 import { Wind } from './sim/wind.js';
 import { World, RUNWAY } from './world/world.js';
-import { AIRCRAFT, getAircraft } from './aircraft/index.js';
+import { AIRCRAFT, getAircraft, loadModelFiles } from './aircraft/index.js';
 import { Input } from './input/input.js';
 import { TouchControls, isTouchDevice } from './input/touch.js';
 import { CameraRig, CAMERA_LABELS } from './view/cameras.js';
@@ -23,6 +23,7 @@ import { loadSettings, saveSettings } from './ui/settings.js';
 import { EngineSound } from './audio/engine.js';
 import { LOCATION, LOCATIONS, clubAngle, clubToWorld, pilotSpot } from './sim/location.js';
 import { QUALITY, qualityPreset, viewDistance } from './world/quality.js';
+import { tunedDef, loadTuning } from './sim/tuning.js';
 import { GoogleTiles } from './world/googleTiles.js';
 import { loadEdits } from './sim/edits.js';
 import { Editor } from './editor/editor.js';
@@ -162,7 +163,10 @@ function replaceModel() {
       }
     });
   }
-  model = entry.createModel();
+  // Showing the prop as tuned (Menu → Tuning), if it's been changed.
+  const tuning = loadTuning(entry.id);
+  const tunedProp = ['propDiameter', 'propPitch', 'propBlades'].some((k) => tuning[k] != null) ? tunedDef(entry.def, tuning).motor.prop : null;
+  model = entry.createModel(tunedProp ? { prop: tunedProp } : {});
   navLights = addNavLights(model, { shine: true });
   planeShadow.setModel(model, entry.def.wingSpan);
   world.scene.add(model.root);
@@ -172,12 +176,30 @@ let navLights = null;
 function loadAircraft(id) {
   entry = getAircraft(id);
   settings.aircraft = entry.id;
-  aircraft = new Aircraft(entry.def, { ground, wind, obstacles });
+  // With your own tuning (Menu → Tuning, src/sim/tuning.js) applied.
+  aircraft = new Aircraft(tunedDef(entry.def, loadTuning(entry.id)), { ground, wind, obstacles });
   aircraft.assistMode = settings.assist;
   replaceModel();
   rig.setAircraft(entry);
 }
+
+/** The tuning changed: rebuild the flight model, carrying on from where it is. */
+function retune() {
+  const old = aircraft;
+  const oldProp = JSON.stringify(old.def.motor.prop);
+  aircraft = new Aircraft(tunedDef(entry.def, loadTuning(entry.id)), { ground, wind, obstacles });
+  for (const k of ['position', 'velocity', 'orientation', 'omega']) aircraft[k].copy(old[k]);
+  for (const k of ['controls', 'servo', 'assistMode', 'throttleActual', 'held', 'crashed', 'crashReason', 'propBroken', 'battery', 'time']) aircraft[k] = old[k];
+  for (const part of old.broken) aircraft.broken.add(part);
+  // A different prop: show it.
+  if (JSON.stringify(aircraft.def.motor.prop) !== oldProp) replaceModel();
+}
 loadAircraft(settings.aircraft);
+// 3D model files (src/aircraft/models/*.glb) replace the drawn-in-code models
+// once they've loaded.
+loadModelFiles().then((ids) => {
+  if (ids.includes(entry.id)) replaceModel();
+});
 const osd = new OSD(document.getElementById('osd'));
 const sound = new EngineSound();
 const analog = document.getElementById('analog');
@@ -398,6 +420,8 @@ const panel = new Panel(document.getElementById('panel'), {
   },
   onReset: resetAircraft,
   onEditScenery: () => openEditor(),
+  aircraftEntry: () => entry,
+  onRetune: () => retune(),
   onClose: () => setMenu(false),
 });
 

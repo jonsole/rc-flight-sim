@@ -1,0 +1,69 @@
+{
+  "builder": "se5a",
+  "id": "eflite-se5a-900",
+  "name": "E-flite S.E.5a 900mm",
+  "summary": "E-flite foam BNF — 899 mm span, 1.3 kg on 4S 2200 mAh, 3513-1100Kv, 10x5 prop, AS3X+/SAFE.",
+  "notes": {
+    "units": "Units: metres, kilograms, newtons, seconds; angles in degrees where the name ends in 'Deg'. 'tuning' holds built-in changes in the Tuning tab's terms (paste an Export's \"tuning\" here).",
+    "about": "E-flite S.E.5a 900mm (EFL10950 BNF / EFL10975 PNP), ~1/9 scale foam. Published: span 899 mm, length 716 mm, 1303 g with battery, 3513-1100Kv, 10x5 prop, 45 A ESC, 3S/4S 2200-3200 mAh, CG 72 mm (±5) behind the top-wing leading edge, AS3X+ and SAFE Select. Estimated: wing area (~0.28 m², scale outline), inertia, airfoil and drag figures, thrust curve.",
+    "elevatorThrowDeg": "12°: at 16° full up at full power stalled it into a flick roll.",
+    "motor": "3513-1100Kv on 4S with a 10x5: ~12,500 rpm loaded, ≈1.25:1 thrust/weight. torqueFactor: motor torque per newton of thrust (m).",
+    "gear": "Small hard wheels close in front of the CG (axle ~65 mm ahead, about under the top wing's leading edge): they drag and catch on grass, so without up elevator the tail lifts and it noses over, like the real model.",
+    "trim": "Aileron trim against motor torque at cruise.",
+    "upperWingDihedralEffectDeg": "The top wing well above the CG acts a little like a high wing.",
+    "visualDihedralDeg": "As it looks on the model (the flight model uses the same)."
+  },
+  "span": 0.899,
+  "cgFromUpperLe": 0.072,
+  "mass": 1.303,
+  "inertia": [0.026, 0.044, 0.02],
+  "propRadius": 0.127,
+  "foil": {
+    "cd0": 0.032,
+    "alphaStallDeg": 14,
+    "stallWidth": 0.03
+  },
+  "elevatorThrowDeg": 12,
+  "motor": {
+    "prop": {
+      "diameterIn": 10,
+      "pitchIn": 5,
+      "blades": 2
+    },
+    "kv": 1100,
+    "noLoadCurrent": 1.2,
+    "staticThrust": 21.6,
+    "pitchSpeed": 26,
+    "spoolTime": 0.08,
+    "torqueFactor": 0.0041,
+    "maxRpm": 12500
+  },
+  "battery": {
+    "cells": 4,
+    "capacity": 2200,
+    "maxCurrent": 38,
+    "internalResistance": 0.06
+  },
+  "gear": {
+    "wheelK": 2000,
+    "wheelC": 20,
+    "skidK": 900,
+    "skidC": 9,
+    "hardK": 2500,
+    "hardC": 20,
+    "wheelCrash": 6,
+    "skidCrash": 5,
+    "skidSteerDeg": 20,
+    "wheelX": 0.065,
+    "rollScale": 1.8,
+    "bumpScale": 2
+  },
+  "trim": {
+    "roll": 0.002
+  },
+  "upperWingDihedralEffectDeg": 1,
+  "visualDihedralDeg": 2.5,
+  "defaultAssist": "as3x",
+  "model": "eflite-se5a-900.glb",
+  "tuning": {}
+}

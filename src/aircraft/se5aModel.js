@@ -7,8 +7,8 @@
 
 import {
   Group, Mesh, MeshStandardMaterial, Vector3, Color, CylinderGeometry, BoxGeometry,
-  SphereGeometry, TorusGeometry, CircleGeometry, DoubleSide, LineSegments,
-  BufferGeometry, Float32BufferAttribute, LineBasicMaterial, CanvasTexture, SRGBColorSpace,
+  SphereGeometry, TorusGeometry, CircleGeometry, DoubleSide,
+  CanvasTexture, SRGBColorSpace,
   Quaternion, PlaneGeometry, Matrix4, RingGeometry, Shape, ExtrudeGeometry, Vector2,
 } from 'three';
 import { loft, mirrorZ, airfoilRing, naca } from './geom.js';
@@ -222,10 +222,16 @@ function strut(a, b, material, w = 0.009, t = 0.004) {
   return m;
 }
 
+/** Rigging wires: thin dark grey metal rods between pairs of points. */
+const wireMat = new MeshStandardMaterial({ color: '#3c3f44', metalness: 0.85, roughness: 0.35 });
 function wires(points) {
-  const geo = new BufferGeometry();
-  geo.setAttribute('position', new Float32BufferAttribute(points.flatMap((p) => [p.x, p.y, p.z]), 3));
-  return new LineSegments(geo, new LineBasicMaterial({ color: 0xb8b8b0, transparent: true, opacity: 0.8 }));
+  const g = new Group();
+  for (let i = 0; i + 1 < points.length; i += 2) {
+    const w = cylinderBetween(points[i], points[i + 1], 0.0008, wireMat, 5);
+    w.castShadow = true;
+    g.add(w);
+  }
+  return g;
 }
 
 function stripeTexture() {
@@ -562,12 +568,17 @@ export function createSE5aModel(G, scale) {
   prop.position.set(P.x, P.y, 0);
   const propWood = std('#5b3a1e', { roughness: 0.5 });
   const blades = new Group();
-  for (const s of [-1, 1]) {
+  // Any number of blades (2 as standard), of the prop's radius and pitch
+  // (blade chord drawn for the standard 0.185 radius, scaled).
+  const nBlades = P.blades ?? 2;
+  const cs = P.radius / 0.185;
+  const pitch = P.pitch ?? 0.22;
+  for (let bi = 0; bi < nBlades; bi++) {
     const rings = [];
     for (let i = 0; i <= 8; i++) {
       const r = 0.02 + ((P.radius - 0.02) * i) / 8;
-      const c = 0.04 * (1 - 0.45 * ((r - 0.08) / 0.11) ** 2) + 0.004;
-      const twist = Math.atan(0.22 / (2 * Math.PI * Math.max(r, 0.03)));
+      const c = (0.04 * (1 - 0.45 * ((r / cs - 0.08) / 0.11) ** 2) + 0.004) * cs * (nBlades > 2 ? 0.85 : 1);
+      const twist = Math.atan(pitch / (2 * Math.PI * Math.max(r, 0.03)));
       const ring = [];
       for (let j = 0; j < 10; j++) {
         const th = (j / 10) * Math.PI * 2;
@@ -576,12 +587,13 @@ export function createSE5aModel(G, scale) {
         // section in (x: thickness/fore-aft, z: chord) rotated by twist
         const x = b * Math.cos(twist) + a * Math.sin(twist);
         const z = a * Math.cos(twist) - b * Math.sin(twist);
-        ring.push(new Vector3(x, s * r, s * z));
+        ring.push(new Vector3(x, r, z));
       }
       rings.push(ring);
     }
     const bm = new Mesh(loft(rings), propWood);
     bm.castShadow = true;
+    bm.rotation.x = (bi / nBlades) * Math.PI * 2; // spaced round the hub
     blades.add(bm);
   }
   const hubM = new Mesh(new CylinderGeometry(0.018, 0.022, 0.03, 16), metal);

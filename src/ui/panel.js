@@ -7,6 +7,7 @@ import { formatDay } from '../world/seasons.js';
 import { LOCATIONS, LOCATION } from '../sim/location.js';
 import { QUALITY, DISTANCES } from '../world/quality.js';
 import { googleSessions } from '../world/googleTiles.js';
+import { tunablesFor, loadTuning, saveTuning, tunedDef, powerSummary } from '../sim/tuning.js';
 
 const CH_LABEL = { roll: 'Aileron (roll)', pitch: 'Elevator (pitch)', yaw: 'Rudder (yaw)', throttle: 'Throttle' };
 
@@ -82,7 +83,7 @@ export class Panel {
   }
 
   render() {
-    const tabs = { fly: 'Flying', mp: 'Multiplayer', view: 'View', env: 'Weather', controls: 'Transmitter', help: 'Help' };
+    const tabs = { fly: 'Flying', tune: 'Tuning', mp: 'Multiplayer', view: 'View', env: 'Weather', controls: 'Transmitter', help: 'Help' };
     this.root.replaceChildren(
       el('div', { class: 'panel' },
         el('div', { class: 'panel-head' },
@@ -108,6 +109,139 @@ export class Panel {
       this.#range('Volume', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.#check('Show HUD / OSD (H)', 'showHud'),
     ];
+  }
+
+  /** Tuning: the flight settings of the model you're flying (src/sim/tuning.js), in collapsible groups. */
+  tab_tune() {
+    const entry = this.opts.aircraftEntry();
+    const values = loadTuning(entry.id);
+    const decimals = (step) => (step >= 1 ? 0 : step >= 0.1 ? 1 : 2);
+    const fmt = (t, v) => `${Number(v).toFixed(decimals(t.step))}${t.unit ? ` ${t.unit}` : ''}`;
+    // Which groups are open (remembered in this browser).
+    let open = {};
+    try {
+      open = JSON.parse(localStorage.getItem('rcsim.tuneOpen')) ?? {};
+    } catch {
+      /* none */
+    }
+    const saveOpen = () => {
+      try {
+        localStorage.setItem('rcsim.tuneOpen', JSON.stringify(open));
+      } catch {
+        /* storage blocked */
+      }
+    };
+    // Save, rebuild the flight model, and redraw where you were.
+    const commit = () => {
+      saveTuning(entry.id, values);
+      this.opts.onRetune();
+      const body = this.root.querySelector('.body');
+      const top = body?.scrollTop ?? 0;
+      this.render();
+      const b2 = this.root.querySelector('.body');
+      if (b2) b2.scrollTop = top;
+    };
+    const setValue = (t, v) => {
+      const nv = Math.min(t.max, Math.max(t.min, Math.round(v / t.step) * t.step));
+      if (Math.abs(nv - t.dflt) < t.step / 2) delete values[t.key];
+      else values[t.key] = Number(nv.toFixed(6));
+      commit();
+    };
+    const tuned = tunedDef(entry.def, values);
+
+    const row = (t) => {
+      const v = values[t.key] ?? t.dflt;
+      const changed = values[t.key] != null;
+      const show = el('span', { class: 'val' }, fmt(t, v));
+      const note = t.note ? el('small', { class: 'tune-note' }, t.note(tuned, v)) : null;
+      const input = el('input', {
+        type: 'range', min: t.min, max: t.max, step: t.step, value: v,
+        oninput: (e) => {
+          show.textContent = fmt(t, e.target.value);
+          if (note) note.textContent = t.note(tuned, Number(e.target.value));
+        },
+        onchange: (e) => setValue(t, Number(e.target.value)),
+      });
+      const btn = (label, d, title) => el('button', { class: 'tune-step', title, onclick: (e) => { e.preventDefault(); setValue(t, v + d * t.step); } }, label);
+      return el('div', { class: changed ? 'tune-row tuned' : 'tune-row' },
+        el('div', { class: 'tune-head' },
+          el('span', { class: 'tune-lbl' }, t.label),
+          el('small', {}, `default ${fmt(t, t.dflt)}`),
+          el('button', {
+            class: 'tune-reset', title: `Back to ${fmt(t, t.dflt)}`, disabled: !changed,
+            onclick: () => { delete values[t.key]; commit(); },
+          }, '↺')),
+        el('div', { class: 'tune-ctl' }, btn('−', -1, 'Less'), input, btn('+', 1, 'More'), show),
+        note);
+    };
+
+    // Summaries shown at the end of a group.
+    const after = {
+      Battery: () => {
+        const p = powerSummary(tuned);
+        return el('p', { class: 'hint' }, `Full throttle on a fresh pack: ${Math.round(p.rpm / 100) * 100} rpm, ${p.current.toFixed(1)} A, ${Math.round(p.watts)} W; ${p.thrust.toFixed(1)} N static thrust, ${p.pitchSpeed.toFixed(1)} m/s pitch speed. Battery about ${Math.round(p.batteryGrams)} g (bigger packs add weight); about ${p.fullThrottleMinutes.toFixed(1)} min at full throttle.`);
+      },
+    };
+
+    const groups = [];
+    for (const t of tunablesFor(entry.def)) {
+      let g = groups.find((x) => x.name === t.group);
+      if (!g) groups.push((g = { name: t.group, items: [] }));
+      g.items.push(t);
+    }
+    const out = [
+      el('p', { class: 'hint' }, `${entry.name}. Changes apply straight away, in flight too, and are saved in this browser for this model. Export them to send in and have them built in.`),
+    ];
+    for (const g of groups) {
+      const n = g.items.filter((t) => values[t.key] != null).length;
+      const det = el('details', { class: 'tune-group', open: !!open[g.name] },
+        el('summary', {}, g.name, n ? el('span', { class: 'tune-count' }, `${n} changed`) : null),
+        ...g.items.map(row),
+        after[g.name]?.());
+      det.addEventListener('toggle', () => {
+        open[g.name] = det.open;
+        saveOpen();
+      });
+      out.push(det);
+    }
+
+    const fileIn = el('input', {
+      type: 'file', accept: '.json,application/json', style: 'display:none',
+      onchange: async (e) => {
+        const f = e.target.files?.[0];
+        e.target.value = '';
+        if (!f) return;
+        try {
+          const j = JSON.parse(await f.text());
+          if (j.aircraft && j.aircraft !== entry.id && !confirm(`This tuning is for "${j.aircraft}", not the ${entry.name}. Load it anyway?`)) return;
+          for (const k of Object.keys(values)) delete values[k];
+          Object.assign(values, j.tuning ?? j);
+          commit();
+        } catch (err) {
+          alert(`Couldn't read that file: ${err.message}`);
+        }
+      },
+    });
+    out.push(el('div', { class: 'row tune-files' },
+      el('button', {
+        onclick: () => {
+          if (!Object.keys(values).length || !confirm(`Put all the ${entry.name}'s settings back to default?`)) return;
+          for (const k of Object.keys(values)) delete values[k];
+          commit();
+        },
+      }, 'Reset all'),
+      el('button', {
+        onclick: () => {
+          const blob = new Blob([JSON.stringify({ aircraft: entry.id, tuning: values }, null, 1)], { type: 'application/json' });
+          const a2 = el('a', { href: URL.createObjectURL(blob), download: `${entry.id}-tuning.json` });
+          document.body.append(a2);
+          a2.click();
+          a2.remove();
+        },
+      }, 'Export'),
+      el('button', { onclick: () => fileIn.click() }, 'Import'),
+      fileIn));
+    return out;
   }
 
   tab_mp() {
@@ -294,7 +428,7 @@ export class Panel {
       el('ul', {},
         el('li', {}, 'Take off into wind (the windsock tail points downwind). Open the throttle smoothly and hold a little right rudder against the swing; let the tail come up, then ease back.'),
         el('li', {}, 'It is a biplane with lots of drag: it slows down fast when you throttle back. Keep speed up on the approach and flare gently for a three-pointer.'),
-        el('li', {}, 'The 900 mm E-flite is light and quick: it reacts fast and stalls abruptly on full elevator.'),
+        el('li', {}, 'The 900 mm E-flite is light and quick: it reacts fast, and hauled back when slow it stalls abruptly and drops a wing.'),
         el('li', {}, 'Flight assist mirrors E-flite BNF receivers: AS3X damps gusts and wobbles; SAFE also levels the wings when you let go and limits bank and pitch. Switch modes in flight with G or an assigned transmitter switch.'),
         el('li', {}, 'Coordinate turns with a little rudder; rudder alone also rolls it, slowly.'),
         el('li', {}, 'Low and slow in a turn will drop a wing. Unload (release elevator) to recover.')),

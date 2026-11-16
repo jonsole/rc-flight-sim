@@ -268,42 +268,16 @@ export function buildSE5a(o) {
     },
     // The 3D model can show a flatter dihedral than the aero value, which also
     // stands in for the effect of wing height.
-    createModel: () => createSE5aModel(o.visualDihedral !== undefined ? { ...ref, dihedral: o.visualDihedral } : ref, k),
+    // opts.prop: the prop as tuned (Menu → Tuning), shown instead of the standard one.
+    createModel: (opts = {}) => {
+      const g = o.visualDihedral !== undefined ? { ...ref, dihedral: o.visualDihedral } : { ...ref };
+      if (opts.prop) {
+        g.prop = { ...ref.prop, radius: (opts.prop.diameterIn * 0.0254) / 2 / k, blades: opts.prop.blades, pitch: (opts.prop.pitchIn * 0.0254) / k };
+      }
+      return createSE5aModel(g, k);
+    },
   };
 }
 
-// --- Variants ---------------------------------------------------------------
-
-/**
- * E-flite S.E.5a 900mm (EFL10950 BNF / EFL10975 PNP), ~1/9 scale foam.
- * Published: span 899 mm, length 716 mm, 1303 g with battery, 3513-1100Kv,
- * 10x5 prop, 45 A ESC, 3S/4S 2200–3200 mAh, CG 72 mm (±5) behind the top-wing
- * leading edge, AS3X+ and SAFE Select. Estimated: wing area (~0.28 m², scale
- * outline), inertia, airfoil and drag figures, thrust curve.
- */
-export const EFLITE_SE5a_900 = buildSE5a({
-  id: 'eflite-se5a-900',
-  name: 'E-flite S.E.5a 900mm',
-  summary: 'E-flite foam BNF — 899 mm span, 1.3 kg on 4S 2200 mAh, 3513-1100Kv, 10x5 prop, AS3X+/SAFE.',
-  span: 0.899,
-  cgFromUpperLe: 0.072,
-  mass: 1.303,
-  inertia: [0.026, 0.044, 0.02],
-  propRadius: 0.127,
-  foil: { cd0: 0.032, alphaStall: 14 * deg, stallWidth: 0.03 }, // foam wing: softish stall
-  elevatorThrow: 16 * deg,
-  // 3513-1100Kv on 4S with a 10x5: ~12,500 rpm loaded, ≈1.25:1 thrust/weight.
-  motor: { staticThrust: 21.6, pitchSpeed: 26, spoolTime: 0.08, torqueFactor: 0.0055, maxRpm: 12500 },
-  battery: { cells: 4, capacity: 2200, maxCurrent: 38, internalResistance: 0.015 * 4 },
-  // Small hard wheels close in front of the CG (axle ~65 mm ahead, about under
-  // the top wing's leading edge): they drag and catch on grass, so without up
-  // elevator the tail lifts and it noses over, like the real model.
-  gear: {
-    wheelK: 2000, wheelC: 20, skidK: 900, skidC: 9, hardK: 2500, hardC: 20, wheelCrash: 6, skidCrash: 5, skidSteer: 20 * deg,
-    wheelX: 0.065, rollScale: 1.8, bumpScale: 2,
-  },
-  trim: { roll: 0.002 }, // aileron trim against motor torque at cruise
-  upperWingDihedralEffect: 1 * deg, // top wing well above the CG acts a little like a high wing
-  visualDihedral: 2.5 * deg, // as it looks on the model
-  defaultAssist: 'as3x',
-});
+// The model's settings (span, mass, motor, battery, prop, throws ...) are in
+// src/aircraft/models/eflite-se5a-900.json, read by src/aircraft/index.js.
