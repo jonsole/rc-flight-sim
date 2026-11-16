@@ -236,9 +236,34 @@ src/audio/     synthesised motor and prop sound
 tests/         vitest flight-model tests
 ```
 
+## Aircraft files
+
+Each aircraft's settings are a JSON file in `src/aircraft/models/`, so they
+can be read and edited on GitHub:
+
+| File | Aircraft |
+| --- | --- |
+| `eflite-se5a-900.json` | E-flite S.E.5a 900mm |
+| `buschtrottel-shockcub.json` | Buschtrottel ShockCub |
+| `buschtrottel-highlander.json` | Buschtrottel Highlander |
+| `buschtrottel-agro.json` | Buschtrottel Agro |
+| `ft-mini-f22.json` | Flite Test Mighty Mini F-22 |
+
+Each has `builder` (the code that turns the settings into a flight model and
+3D model: `se5a`, `buschtrottel` or `f22`), `id`, `name`, `summary`, `notes`
+(explanations, ignored by the code), the builder's settings, and `tuning`.
+Units are metres, kilograms, newtons and seconds; angles are in degrees
+where the name ends in `Deg` (`"elevatorThrowDeg": 12`). `tuning` holds
+built-in changes in the Tuning tab's terms (`"elevator": 10`, `"cells": 4`,
+`"cgFromLE": 78` ...): paste the `"tuning"` from a Tuning-tab Export there to
+make it the model's default for everyone. `src/aircraft/index.js` reads every
+file in the folder: a new file (say a copy of the ShockCub with other
+colours, prop or mass) is a new aircraft in the list.
+
 ## Adding an aircraft
 
-Each aircraft is a registry entry in `src/aircraft/index.js`:
+Each aircraft is a registry entry in `src/aircraft/index.js`, built from its
+JSON file:
 
 ```js
 { id, name, summary, defaultAssist, def, geometry, views, createModel }
@@ -255,8 +280,8 @@ Each aircraft is a registry entry in `src/aircraft/index.js`:
 - `def.cruiseThrottle` (optional, default 0.5): the throttle the trim test
   flies at, for an overpowered model that climbs at half throttle.
 
-Another size of S.E.5a is one `buildSE5a({...})` call in `src/aircraft/se5a.js`.
-A different type needs its own definition and 3D model module. The flight
+Another size of S.E.5a, or another Buschtrottel, is just another JSON file.
+A different type needs its own builder (definition and 3D model module). The flight
 tests run automatically for every registered aircraft.
 
 ## Multiplayer

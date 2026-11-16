@@ -1,0 +1,49 @@
+{
+  "builder": "buschtrottel",
+  "id": "buschtrottel-shockcub",
+  "name": "Buschtrottel ShockCub",
+  "summary": "DIY 6 mm Depron bush plane, 900 mm. High wing, rounded tail. 8x6 prop. Fixed LE slats. AT2308 1450Kv, 3S 1350 mAh, ~450 g.",
+  "notes": {
+    "units": "Units: metres, kilograms, newtons, seconds; angles in degrees where the name ends in 'Deg'. 'tuning' holds built-in changes in the Tuning tab's terms (paste an Export's \"tuning\" here).",
+    "about": "Thomas Buchwald's DIY 6 mm Depron bush plane, as built here.",
+    "prop": "On the AT2308 1450Kv / 3S. Loaded rpm and static thrust are estimates from typical prop data; pitchSpeed = pitch × loaded rpm (m/s); current at full throttle (A).",
+    "throws": "Full-span ailerons; less elevator with the CG further back.",
+    "colors": "From photos of the real one: yellow, no stripe, black nose back to the cabin, grey painted windscreen and side windows, dark blue ailerons (and the wing between them) and tail, black slats, dark grey tip plates, blue wheel hubs."
+  },
+  "prop": {
+    "blades": 2,
+    "pitchIn": 6,
+    "rpm": 11000,
+    "staticThrust": 9,
+    "pitchSpeed": 28,
+    "current": 16
+  },
+  "mount": "high",
+  "fullSpanAilerons": true,
+  "tail": "round",
+  "slats": true,
+  "throws": {
+    "aileronDeg": 22,
+    "elevatorDeg": 17
+  },
+  "mass": 0.45,
+  "tailIncidenceDeg": 4,
+  "rollTrim": 0,
+  "colors": {
+    "main": "#f2c230",
+    "accent": "#1d1d1d",
+    "stripe": false,
+    "nose": "#1d1d1d",
+    "noseX": 0.06,
+    "window": "#9a9ea3",
+    "wing": "#f2c230",
+    "aileron": "#1c2f6e",
+    "centreTE": "#1c2f6e",
+    "tail": "#1c2f6e",
+    "slatTop": "#111111",
+    "slatBottom": "#111111",
+    "tip": "#3b3e42",
+    "hub": "#2a3f8f"
+  },
+  "tuning": {}
+}

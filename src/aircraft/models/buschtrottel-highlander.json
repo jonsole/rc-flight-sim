@@ -1,0 +1,37 @@
+{
+  "builder": "buschtrottel",
+  "id": "buschtrottel-highlander",
+  "name": "Buschtrottel Highlander",
+  "summary": "DIY 6 mm Depron bush plane, 900 mm. High wing, angular tail. 8x6 prop. Fixed LE slats. AT2308 1450Kv, 3S 1350 mAh, ~450 g.",
+  "notes": {
+    "units": "Units: metres, kilograms, newtons, seconds; angles in degrees where the name ends in 'Deg'. 'tuning' holds built-in changes in the Tuning tab's terms (paste an Export's \"tuning\" here).",
+    "about": "Same airframe as the ShockCub with an angular tail and square wing tips.",
+    "prop": "On the AT2308 1450Kv / 3S (see the ShockCub)."
+  },
+  "prop": {
+    "blades": 2,
+    "pitchIn": 6,
+    "rpm": 11000,
+    "staticThrust": 9,
+    "pitchSpeed": 28,
+    "current": 16
+  },
+  "mount": "high",
+  "fullSpanAilerons": true,
+  "tail": "square",
+  "slats": true,
+  "throws": {
+    "aileronDeg": 22,
+    "elevatorDeg": 17
+  },
+  "mass": 0.45,
+  "tailIncidenceDeg": 4,
+  "rollTrim": 0,
+  "colors": {
+    "main": "#efefea",
+    "accent": "#c62828",
+    "wing": "#efefea",
+    "tail": "#c62828"
+  },
+  "tuning": {}
+}

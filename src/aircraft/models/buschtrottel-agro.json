@@ -1,0 +1,47 @@
+{
+  "builder": "buschtrottel",
+  "id": "buschtrottel-agro",
+  "name": "Buschtrottel Agro",
+  "summary": "DIY 6 mm Depron, 900 mm. Low wing with struts, full-span ailerons, black canopy, low tailplane. 8x4.5 three-blade prop. Fixed LE slats. AT2308 1450Kv, 3S 1350 mAh, ~450 g.",
+  "notes": {
+    "units": "Units: metres, kilograms, newtons, seconds; angles in degrees where the name ends in 'Deg'. 'tuning' holds built-in changes in the Tuning tab's terms (paste an Export's \"tuning\" here).",
+    "about": "Low wing with V-struts to the upper fuselage, full-span ailerons, black canopy block, low tailplane.",
+    "prop": "8x4.5 three-blade on the AT2308 1450Kv / 3S.",
+    "throws": "Full-span ailerons are already powerful; the big plan tailplane needs less elevator throw.",
+    "cgDrop": "CG 3 cm lower in the airframe than the high-wing versions (m).",
+    "colors": "Orange and white: top third of the fuselage, tail and wing tops orange; lower fuselage and wing undersides white; sky-blue ailerons."
+  },
+  "prop": {
+    "blades": 3,
+    "pitchIn": 4.5,
+    "rpm": 11000,
+    "staticThrust": 10.2,
+    "pitchSpeed": 21,
+    "current": 16
+  },
+  "mount": "low",
+  "fullSpanAilerons": true,
+  "lowTail": true,
+  "throws": {
+    "aileronDeg": 22,
+    "elevatorDeg": 15
+  },
+  "tail": "square",
+  "slats": true,
+  "mass": 0.46,
+  "tailIncidenceDeg": 2,
+  "cgDrop": 0.03,
+  "rollTrim": 0,
+  "colors": {
+    "main": "#f4f4ef",
+    "top": "#f26b1d",
+    "split": 0.666667,
+    "wing": "#f26b1d",
+    "wingBottom": "#f4f4ef",
+    "aileron": "#7cc6ee",
+    "slatTop": "#7cc6ee",
+    "slatBottom": "#f4f4ef",
+    "tail": "#f26b1d"
+  },
+  "tuning": {}
+}

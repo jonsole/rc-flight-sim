@@ -1,0 +1,44 @@
+{
+  "builder": "f22",
+  "id": "ft-mini-f22",
+  "name": "Flite Test Mighty Mini F-22",
+  "summary": "Foam-board pusher jet, 508 mm. Prop in a slot in the wing, elevons, canted fins. Hand launch. 2204 2600Kv, 5x4.5 five-blade, 3S 800 mAh, 211 g.",
+  "notes": {
+    "units": "Units: metres, kilograms, newtons, seconds; angles in degrees where the name ends in 'Deg'. 'tuning' holds built-in changes in the Tuning tab's terms (paste an Export's \"tuning\" here).",
+    "about": "Flite Test Mighty Mini F-22, traced off the plan sheets.",
+    "prop": "A 2204 2600Kv on 3S (~29,000 rpm unloaded) with a 5x4.5 five-blade quad prop, loaded to ~22,000 rpm: about 510 g static thrust at ~16 A (estimated from typical 5\" prop data). pitchSpeed = pitch × loaded rpm, so it is faster flat out than the plan's 2300Kv and 6x4.5.",
+    "throws": "Elevons 25° each way on the plan, for roll and pitch. Mixed, they share the 25° of servo travel.",
+    "stallAsymmetryDeg": "The left wing stalls this much earlier.",
+    "reflexDeg": "Elevons trimmed trailing edge up: the plan's reflex gauge.",
+    "aeroDihedralDeg": "Effective dihedral for the aerodynamics (the wing is flat): the swept leading edge and the fins standing above the wing roll it away from a sideslip.",
+    "colors": "Painted in two greys like the full-size Raptor, with a gold-tinted canopy."
+  },
+  "prop": {
+    "diameterIn": 5,
+    "pitchIn": 4.5,
+    "blades": 5,
+    "rpm": 22000,
+    "staticThrust": 5.75,
+    "pitchSpeed": 42,
+    "current": 16
+  },
+  "mass": 0.211,
+  "throws": {
+    "pitchDeg": 25,
+    "rollDeg": 25,
+    "maxDeg": 25
+  },
+  "stallAsymmetryDeg": 3,
+  "elevonWake": 0.95,
+  "reflexDeg": 8,
+  "downwashGain": 0.5,
+  "aeroDihedralDeg": 10,
+  "finCantDeg": 20,
+  "colors": {
+    "main": "#8d949b",
+    "dark": "#5f666d",
+    "canopy": "#6b5a2e",
+    "box": "#7f868d"
+  },
+  "tuning": {}
+}
