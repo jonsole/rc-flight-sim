@@ -14,7 +14,7 @@ const _c = new Color();
  * pixels that shifts from one to the other (addLodFade), so it fades
  * rather than pops. At rest nothing is faded.
  */
-export const FADE_TIME = 0.6;
+export const FADE_TIME = 1.0;
 /** The clock the fades run by (seconds), shared by every faded material. */
 export const lodFadeUniforms = { uLodTime: { value: 0 } };
 

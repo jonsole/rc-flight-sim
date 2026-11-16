@@ -24,9 +24,9 @@
 //                the view turns; a little more work for the GPU)
 
 export const QUALITY = {
-  low: { name: 'Low (phones)', pixelRatio: 1, shadowMap: 1024, nearRadius: 150, nearDetail: 1, farDetail: 'blob', bushDetail: 'blob', bushNear: 'blob', bushDistance: 300, leafy: { radius: 80, detail: 'blob', smooth: false, tile: 96, leafPx: 112, close: 20, softDepth: false } },
-  medium: { name: 'Medium', pixelRatio: 1.5, shadowMap: 2048, nearRadius: 250, nearDetail: 2, farDetail: 'blob', bushDetail: 'blob', bushNear: 0, bushDistance: 600, leafy: { radius: 140, detail: 1, smooth: true, tile: 128, leafPx: 160, close: 35, softDepth: false } },
-  high: { name: 'High', pixelRatio: 2, shadowMap: 4096, nearRadius: 500, nearDetail: 2, farDetail: 0, bushDetail: 'blob', bushNear: 1, bushDistance: 1000, leafy: { radius: 260, detail: 2, smooth: true, tile: 160, leafPx: 208, close: 50, softDepth: false } },
+  low: { name: 'Low (phones)', pixelRatio: 1, shadowMap: 1024, nearRadius: 150, nearDetail: 1, farDetail: 'blob', bushDetail: 'blob', bushNear: 'blob', bushDistance: 300, leafy: { radius: 80, detail: 'blob', smooth: false, tile: 64, leafPx: 112, close: 20, softDepth: false } },
+  medium: { name: 'Medium', pixelRatio: 1.5, shadowMap: 2048, nearRadius: 250, nearDetail: 2, farDetail: 'blob', bushDetail: 'blob', bushNear: 0, bushDistance: 600, leafy: { radius: 140, detail: 1, smooth: true, tile: 96, leafPx: 160, close: 35, softDepth: false } },
+  high: { name: 'High', pixelRatio: 2, shadowMap: 4096, nearRadius: 500, nearDetail: 2, farDetail: 0, bushDetail: 'blob', bushNear: 1, bushDistance: 1000, leafy: { radius: 260, detail: 2, smooth: true, tile: 128, leafPx: 208, close: 50, softDepth: false } },
 };
 
 /** Scenery distance choices (m); 0 = as far as there is scenery. */

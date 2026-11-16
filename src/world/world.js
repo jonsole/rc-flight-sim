@@ -1033,11 +1033,20 @@ export class World {
   /** The distant trees' material: pictures of the leafy crowns, drawn once. */
   #impostorMat() {
     if (this.impMat) return this.impMat;
+    // Each shape drawn at its trees' typical height for their width (their
+    // leaf tufts round), so the pictures match the leafy trees.
+    const ob = this.obstacles;
+    const avg = (list, f, dflt) => (list.length ? list.reduce((a, x) => a + f(x), 0) / list.length : dflt);
+    const broad = ob.trees.filter((t) => !t.conifer);
+    const treeR = (sd) => avg(broad.filter((t) => CROWN_SEEDS[t.variant] === sd), (t) => crownOf(t).sy / crownOf(t).sx, 1.8);
+    const bushR = avg(ob.bushes, (b) => (b.h * 0.55) / b.w, 1);
+    const coniferR = (sp) => avg(ob.trees.filter((t) => t.conifer && speciesOf(t).name === sp), (t) => crownOf(t).ch / crownOf(t).r, (1 - CONIFER[sp].base) / CONIFER[sp].crownW);
     // Columns: the broadleaf crowns, the bushes, then a conifer per species.
     const shapes = [
-      ...CROWN_SEEDS.map((sd) => ({ leafy: fluffyCrown(sd, 2), twigs: crownWood(sd) })),
-      ...leafyBushShapes(2).map((g, k) => ({ leafy: g, twigs: bushTwigShapes()[k], leafRow: LEAF_ROWS.indexOf('hawthorn') })),
-      ...CONIFER_NAMES.map((sp) => ({ leafy: fluffyConifer(CONIFER[sp], 11, 2), twigs: coniferWood(CONIFER[sp], 11), leafRow: LEAF_ROWS.indexOf(leafName(sp)) })),
+      // (Drawn from the same cards as the leafy ones at this quality.)
+      ...CROWN_SEEDS.map((sd) => ({ leafy: fluffyCrown(sd, this.quality.leafy.detail), twigs: crownWood(sd), stretch: treeR(sd) })),
+      ...leafyBushShapes('blob').map((g, k) => ({ leafy: g, twigs: bushTwigShapes()[k], leafRow: LEAF_ROWS.indexOf('hawthorn'), stretch: bushR })),
+      ...CONIFER_NAMES.map((sp) => ({ leafy: fluffyConifer(CONIFER[sp], 11, this.quality.leafy.detail), twigs: coniferWood(CONIFER[sp], 11), leafRow: LEAF_ROWS.indexOf(leafName(sp)), stretch: coniferR(sp) })),
     ];
     const atlas = bakeImpostors(this.renderer, shapes, this.quality.leafy.tile);
     this.impMat = addLodFade(makeImpostor(addLeafShading(addCloudShadows(new MeshLambertMaterial())), atlas), true);

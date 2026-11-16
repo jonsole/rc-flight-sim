@@ -527,10 +527,22 @@ const CARD_VERTEX = /* glsl */ `
     // For soft depth (makeFluffy): where on the card, and its half-size (m).
     vCardXY = aCorner;
     vCardR = h / max(uCardTypical, 1e-4) * aCard.x * grow;
+    // Fading out as it nears the camera: a card faces the camera, all of it
+    // at one depth, so at the near clipping plane it would vanish whole in
+    // one frame. Gone (dithered away) before then, over the last few metres
+    // plus its own size.
+    {
+      #ifdef USE_INSTANCING
+        vec4 cv = viewMatrix * modelMatrix * instanceMatrix * vec4(position, 1.0);
+      #else
+        vec4 cv = viewMatrix * modelMatrix * vec4(position, 1.0);
+      #endif
+      vNearFade = smoothstep(0.6, 2.5 + vCardR * 1.4, -cv.z);
+    }
   }
 `;
-const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nattribute vec3 aFlat;\nattribute float aBare;\nattribute float aSpecies;\nuniform float uBare;\nuniform float uCardTypical;\nvarying float vCardUp;\nvarying vec2 vCardXY;\nvarying float vCardR;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;';
-const CARD_FRAG_DECLS = 'varying float vLeafDrop;\nvarying vec2 vLeafCell;\nvarying float vCardUp;\nvarying vec2 vCardXY;\nvarying float vCardR;';
+const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nattribute vec3 aFlat;\nattribute float aBare;\nattribute float aSpecies;\nuniform float uBare;\nuniform float uCardTypical;\nvarying float vNearFade;\nvarying float vCardUp;\nvarying vec2 vCardXY;\nvarying float vCardR;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;';
+const CARD_FRAG_DECLS = 'varying float vNearFade;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;\nvarying float vCardUp;\nvarying vec2 vCardXY;\nvarying float vCardR;';
 
 /**
  * Read the leaf picture (see leafTexture): its brightness (as colour) into
@@ -551,6 +563,9 @@ export const LEAF_FRAGMENT = /* glsl */ `
     diffuseColor.rgb *= mix(0.68, 1.15, vCardUp);
     diffuseColor.a *= tx.a;
     if (tx.g / cov <= vLeafDrop * 1.02) discard;
+    // (Near the camera: thinning away, leaf by leaf, by the leaf's own fall
+    // time as a scatter, so it fades rather than pops.)
+    if (vNearFade < 0.999 && fract(tx.g / cov * 7.31 + tx.b / cov * 3.7) >= vNearFade) discard;
   }
 `;
 
