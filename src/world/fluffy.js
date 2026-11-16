@@ -28,7 +28,7 @@ const CARDS = { 2: 16, 1: 10, 0: 6, blob: 4 };
  * one that gives leaves of that size (CARD_VERTEX). And each species has its
  * own leaf shape: one row of the atlas each (LEAF_ROWS, src/world/species.js).
  */
-const LEAF_M = 0.22;
+const LEAF_M = 0.28;
 /** The versions' leaf sizes, relative to the first (the atlas's columns). */
 const LEAF_SIZES = [1, 0.7, 0.5, 0.35];
 /** Leaf length in the first version, as a fraction of the card's width. */
@@ -146,23 +146,33 @@ export function leafTexture() {
       g.beginPath();
       g.rect(ox, oy, T, T); // (leaves stay in their own picture)
       g.clip();
+      // The leaves grow in sprigs: little bunches (the same few per picture
+      // whatever the leaf size) with gaps between, so a crown of small
+      // leaves still shows tufts, not an even fuzz.
+      const sprigs = [[0, 0, 0.13 * T, 0]];
+      const nSprig = 7;
+      for (let k = 1; k < nSprig; k++) {
+        const a = (k / (nSprig - 1)) * Math.PI * 2 + rnd() * 0.6;
+        const r = T * (0.17 + rnd() * 0.09);
+        sprigs.push([Math.cos(a) * r, Math.sin(a) * r, T * (0.1 + rnd() * 0.04), (rnd() - 0.5) * 30]);
+      }
       for (let i = 0; i < count; i++) {
+        const [sx, sy, sr, sk] = sprigs[Math.floor(rnd() * sprigs.length)];
         const a = rnd() * Math.PI * 2;
-        // Thinning out towards a ragged edge (an even disc of small leaves
-        // reads as a clipped ball), a few strays reaching further.
-        const d = T * (rnd() < 0.12 ? 0.3 + rnd() * 0.12 : 0.38 * Math.pow(rnd(), 0.75));
-        const x = ox + T / 2 + Math.cos(a) * d;
-        const y = oy + T / 2 + Math.sin(a) * d;
+        // Within its sprig (a few strays reaching further).
+        const d = rnd() < 0.05 ? sr * (1 + rnd() * 0.6) : sr * Math.sqrt(rnd());
+        const x = ox + T / 2 + sx + Math.cos(a) * d;
+        const y = oy + T / 2 + sy + Math.sin(a) * d;
         // Half the length (tip to stalk), varying a little.
         const len = (T * LEAF_FRAC * sz * (0.88 + rnd() * 0.24)) / 2;
-        const k = Math.round(150 + (i / count) * 50 + rnd() * 55); // (brightness, leaf to leaf)
+        const k = Math.round(Math.min(255, 150 + (i / count) * 50 + rnd() * 55 + sk)); // (brightness, leaf to leaf and sprig to sprig)
         // Red: the leaf's brightness. Green: when it falls (it's gone once the
         // season's leaf fall passes this; see LEAF_FALL). Blue: its own tint,
         // from a little bluer-green (0) to a little yellower (255).
         g.fillStyle = `rgb(${k},${Math.round(5 + rnd() * 250)},${Math.round(rnd() * 255)})`;
         g.save();
         g.translate(x, y);
-        // Leaves point roughly outwards from the middle.
+        // Leaves point roughly outwards from the middle of their sprig.
         g.rotate(a + Math.PI / 2 + (rnd() - 0.5) * 1.6);
         form.draw(g, len);
         g.restore();
@@ -236,11 +246,11 @@ export function fluffyCrown(seed, detail = 2) {
       p.set(cx + (ux / l) * r * depth, cy + ((uy + 0.15) / l) * r * depth, cz + (uz / l) * r * depth);
       // Lit as the crown and its clump: out from the middle of both.
       out.copy(p).normalize();
-      n.set(p.x - cx, p.y - cy, p.z - cz).normalize().multiplyScalar(0.2).add(out).add(new Vector3(0, 0.25, 0)).normalize();
+      n.set(p.x - cx, p.y - cy, p.z - cz).normalize().multiplyScalar(0.35).add(out).add(new Vector3(0, 0.25, 0)).normalize();
       // Shade: darker deep inside and underneath, lighter on top.
       const inner = Math.min(1, p.length());
       // (Gently: neighbouring cards should blend, not stand out as patches.)
-      const shade = (0.68 + 0.32 * inner) * (0.8 + 0.18 * (p.y * 0.5 + 0.5)) * (0.94 + 0.12 * noise3(p.x * 6, p.y * 6, p.z * 6 + seed));
+      const shade = (0.56 + 0.44 * inner) * (0.74 + 0.24 * (p.y * 0.5 + 0.5)) * (0.9 + 0.2 * noise3(p.x * 6, p.y * 6, p.z * 6 + seed));
       const size = r * sizeK * (0.85 + rnd() * 0.3);
       // Outer, sunnier cards leaf first in spring and drop last (a little).
       const when = Math.min(0.999, Math.max(0, rnd() * 0.85 + inner * 0.15));
@@ -369,9 +379,6 @@ const CARD_VERTEX = /* glsl */ `
     vec3 camR = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
     vec3 camU = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
     vec3 off = camR * cr.x + camU * cr.y;
-    // Lighter towards the card's top, darker towards its bottom (by the real
-    // up, however the card is turned): 0 at the bottom corner, 1 the top.
-    vCardUp = clamp(0.5 + 0.5 * off.y / max(aCard.x * 1.42, 1e-4), 0.0, 1.0);
     // The tree's typical card half-size (m): one leaf size for all its cards.
     float h = uCardTypical;
     #ifdef USE_INSTANCING
@@ -385,6 +392,10 @@ const CARD_VERTEX = /* glsl */ `
       transformed += off;
     #endif
     ${leafCellGlsl()}
+    // Lighter up the crown, darker underneath: by height in the whole crown
+    // (unit crown, its leaves about -0.6 to 0.7), so it runs smoothly across
+    // the cards rather than shading each as a ball of its own.
+    vCardUp = clamp((transformed.y + 0.6) / 1.3, 0.0, 1.0);
   }
 `;
 const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nattribute float aBare;\nattribute float aSpecies;\nuniform float uBare;\nuniform float uCardTypical;\nvarying float vCardUp;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;';
@@ -405,8 +416,8 @@ export const LEAF_FRAGMENT = /* glsl */ `
     // Each leaf's own tint: yellower or bluer-green.
     float tint = tx.b / cov - 0.5;
     diffuseColor.rgb *= vec3(1.0 + tint * 0.55, 1.0 + tint * 0.12, 1.0 - tint * 0.75) * (1.0 + tint * 0.12);
-    // Shaded across the card, top to bottom.
-    diffuseColor.rgb *= mix(0.62, 1.2, vCardUp);
+    // Shaded up the crown (vCardUp).
+    diffuseColor.rgb *= mix(0.68, 1.15, vCardUp);
     diffuseColor.a *= tx.a;
     if (tx.g / cov <= vLeafDrop * 1.02) discard;
   }
@@ -464,17 +475,18 @@ export function fluffyDepthMaterial(detail = 2) {
       .replace('#include <common>', `#include <common>\n${CARD_DECLS}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n${CARD_VERTEX}
         // The card that casts faces the sun, the one you see faces you: they
-        // cross, and half of each card would sit in its own shadow. Pushed
-        // back from the sun by its size, a card shades the leaves behind it
-        // (and the ground) but not itself.
+        // cross, and part of each card would sit in its own shadow. Pushed
+        // back from the sun by more than its half-diagonal (1.41 x its
+        // half-size), a card shades the leaves behind it (and the ground)
+        // but never itself.
         {
           vec3 away = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
           #ifdef USE_INSTANCING
             mat3 im2 = mat3(instanceMatrix);
             vec3 s2 = vec3(dot(im2[0], im2[0]), dot(im2[1], im2[1]), dot(im2[2], im2[2]));
-            transformed += (transpose(im2) * (away * aCard.x * 1.2 * sqrt((s2.x + s2.z) * 0.5))) / s2;
+            transformed += (transpose(im2) * (away * aCard.x * 1.5 * sqrt((s2.x + s2.z) * 0.5))) / s2;
           #else
-            transformed += away * aCard.x * 1.2;
+            transformed += away * aCard.x * 1.5;
           #endif
         }`);
     shader.fragmentShader = shader.fragmentShader

@@ -937,11 +937,9 @@ export class World {
     this.#syncTwigs(lod);
     for (const m of [...lod.meshes, ...lod.twigs, ...lod.shadows]) {
       m.castShadow = !lod.solid.includes(m);
-      // Leaf cards cast shadows (on the ground, the model...) but don't take
-      // them: cards facing the camera and the shadow map's cards facing the
-      // sun cut straight lines through each other. The cards carry their own
-      // shading (darker inside and underneath) instead.
-      m.receiveShadow = lod.twigs.includes(m);
+      // Leaf cards take shadows too (the dark gaps between tufts); the
+      // pictures don't (their card would cut across them).
+      m.receiveShadow = !lod.solid.includes(m) && !lod.shadows.includes(m);
       m.userData.kind = kind;
       if (kind === 'tree') m.userData.trees = list;
       this.scene.add(m);

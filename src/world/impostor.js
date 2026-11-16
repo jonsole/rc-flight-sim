@@ -44,7 +44,7 @@ const BAKE_VERT = /* glsl */ `
       vec3 camU = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
       vec3 off = camR * cr.x + camU * cr.y;
       transformed += off;
-      vUp = clamp(0.5 + 0.5 * off.y / max(aCard.x * 1.42, 1e-4), 0.0, 1.0); // (as the leafy cards)
+      vUp = clamp((transformed.y + 0.6) / 1.3, 0.0, 1.0); // (as the leafy cards: up the crown)
       vWhen = aCard.y;
     } else vWhen = 1.0;
     vUv = uv;
@@ -73,7 +73,7 @@ const BAKE_FRAG = /* glsl */ `
       if (t.a < 0.5) discard;
       float kk = pow(t.r / t.a, 2.2);
       c *= vec3(kk, kk, kk * 0.83);
-      c *= mix(0.62, 1.2, vUp);
+      c *= mix(0.68, 1.15, vUp);
       float tint = t.b / t.a - 0.5; // each leaf's own tint (as on the leafy cards)
       c *= vec3(1.0 + tint * 0.55, 1.0 + tint * 0.12, 1.0 - tint * 0.75) * (1.0 + tint * 0.12);
       fallAt = clamp((t.g / t.a) / 1.02 / (1.0 + 0.5 * (1.0 - vWhen)), 0.0, 1.0);
