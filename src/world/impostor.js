@@ -14,9 +14,10 @@
 //   bark    branch colour, alpha = branch there
 import {
   WebGLRenderTarget, OrthographicCamera, Scene, Mesh, ShaderMaterial, BufferGeometry,
-  Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, DoubleSide, Color,
+  Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, DoubleSide, Color, SRGBColorSpace,
 } from 'three';
 import { leafTexture, LEAF_ROWS } from './fluffy.js';
+import { SPECIES, BARK } from './species.js';
 import { leafUniforms } from './trees.js';
 
 /** Viewing heights drawn (degrees above level). */
@@ -174,6 +175,7 @@ export function makeImpostor(material, atlas) {
     uImpNormal: { value: atlas.normal },
     uImpBark: { value: atlas.bark },
     uImpCols: { value: atlas.columns },
+    uImpBarkCol: { value: LEAF_ROWS.map((n) => new Color().setHSL(...(SPECIES[n]?.bark ?? BARK), SRGBColorSpace)) },
   };
   const prev = material.onBeforeCompile;
   material.onBeforeCompile = (shader, renderer) => {
@@ -184,7 +186,9 @@ export function makeImpostor(material, atlas) {
       .replace('#include <common>', `#include <common>
         attribute float aShape;
         attribute float aBare;
+        attribute float aSpecies;
         varying float vBare;
+        varying float vSpecies;
         varying vec2 vImpUv;
         varying float vImpShape;
         varying float vImpRow;`)
@@ -210,6 +214,7 @@ export function makeImpostor(material, atlas) {
           vImpUv = position.xy * 0.5 + 0.5;
           vImpShape = aShape;
           vBare = aBare;
+          vSpecies = aSpecies;
         }`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
@@ -221,6 +226,8 @@ export function makeImpostor(material, atlas) {
         varying float vImpShape;
         varying float vImpRow;
         varying float vBare;
+        varying float vSpecies;
+        uniform vec3 uImpBarkCol[${LEAF_ROWS.length}];
         vec2 impAt(float row) {
           return vec2((vImpShape + vImpUv.x) / uImpCols, (row + vImpUv.y) / ${ROWS.length}.0);
         }`)
@@ -242,7 +249,8 @@ export function makeImpostor(material, atlas) {
         } else if (brk.a > 0.2) { // (twigs are thin: keep them joined up)
           // Bark: grey-brown, like the leafy trees' branches seen from afar
           // (and not the leaves' tint).
-          diffuseColor.rgb *= brk.rgb / max(brk.a, 0.01) * vec3(0.1, 0.085, 0.075);
+          // (Its species' bark, half way to the grey-brown of fine twigs.)
+          diffuseColor.rgb *= brk.rgb / max(brk.a, 0.01) * mix(uImpBarkCol[int(vSpecies + 0.5)], vec3(0.1, 0.085, 0.075), 0.5);
           impN = normalize(vec3(0.0, 0.6, 0.8)); // twigs: lit mostly from above
           #if defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )
             diffuseColor.rgb /= max(vColor, vec3(0.05));

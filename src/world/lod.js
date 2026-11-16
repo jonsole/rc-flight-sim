@@ -89,6 +89,9 @@ export class CrownLod {
     this.who = o.species ? items.map((it) => o.species(it)) : null;
     this.bare = new Float32Array(items.length);
     this.leafRow = items.map((_, i) => Math.max(0, LEAF_ROWS.indexOf(this.who?.[i]?.name)));
+    // Bark colours (the branches drawn with the leafy crowns, by species).
+    this.bark = items.map((it) => (o.bark ? o.bark(it, new Color()) : new Color(0x5a4632)));
+    this.barkAttr = this.leafy.map(() => new InstancedBufferAttribute(new Float32Array(n * 3), 3));
     this.pos = items.map((it, i) => [this.m[i].elements[12], this.m[i].elements[14]]);
     // Bounds of the whole set, for culling: worked out once (re-sorting
     // often, recomputing them each time would be the slow part).
@@ -139,6 +142,7 @@ export class CrownLod {
       mesh.geometry.attributes.aLod.array[slot] = lod;
       mesh.geometry.attributes.aBare.array[slot] = this.bare[i];
       mesh.geometry.attributes.aSpecies.array[slot] = this.leafRow[i];
+      if (k < nLeafy) this.barkAttr[k].setXYZ(slot, this.bark[i].r, this.bark[i].g, this.bark[i].b);
       return [mesh, slot];
     };
     for (let i = 0; i < this.items.length; i++) {
@@ -165,6 +169,7 @@ export class CrownLod {
       m.geometry.attributes.aLod.needsUpdate = true;
       m.geometry.attributes.aBare.needsUpdate = true;
       m.geometry.attributes.aSpecies.needsUpdate = true;
+      if (k < nLeafy) this.barkAttr[k].needsUpdate = true;
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
       m.boundingSphere = this.sphere;

@@ -15,6 +15,7 @@
 
 import { heightAt } from './terrain.js';
 import { CROWN_SEEDS, crownShape, lumpScale, crownOf } from './treeShapes.js';
+import { trunkThickness } from '../world/species.js';
 import { LOCATION, clubAngle, clubToWorld, inMown } from './location.js';
 import { prepareBuilding, roofAt, insideFootprint, nearestWall } from './buildings.js';
 import { EDITS, applyTreeEdits, applyBushEdits, applyBuildingEdits, applyFenceEdits, treeId } from './edits.js';
@@ -275,7 +276,8 @@ export class Obstacles {
     this.shapes = [];
     for (const t of this.trees) {
       // Trunk (solid): drawn tapering from 0.024 h to under 0.01 h across.
-      this.shapes.push({ type: 'cylinder', name: 'a tree trunk', x: t.x, z: t.z, r: t.h * (t.conifer ? 0.014 : 0.019), y0: t.y - 0.2, y1: t.y + t.h * (t.conifer ? 0.2 : 0.42) });
+      // (As thick as its species' trunk is drawn: src/world/species.js.)
+      this.shapes.push({ type: 'cylinder', name: 'a tree trunk', x: t.x, z: t.z, r: t.h * (t.conifer ? 0.014 : 0.019) * trunkThickness(t), y0: t.y - 0.2, y1: t.y + t.h * (t.conifer ? 0.2 : 0.42) });
       if (t.conifer) {
         // As drawn (crownOf): boughs from `base` up, cone of radius r.
         const c = crownOf(t);

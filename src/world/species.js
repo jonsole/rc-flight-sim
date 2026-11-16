@@ -13,19 +13,22 @@
 //
 // Horse chestnut leafs early and browns early (from August: leaf miner);
 // oak and ash leaf late, oak holds its leaves into November.
-import { Color } from 'three';
+import { Color, SRGBColorSpace } from 'three';
 
 // Colours as [hue 0-1, saturation, lightness] (sRGB). Autumn: the turning
 // colour, and the dead-leaf brown it ends as before falling.
+// The wood: bark colour, trunk thickness (x the usual), and the branches'
+// spread (x the usual, out from the trunk) and bend (+ tips turned up,
+// - hanging down; crown widths, at the tips).
 export const SPECIES = {
-  oak: { out: 14, turn: 16, summer: [0.27, 0.62, 0.22], autumn: [0.1, 0.62, 0.3], dead: [0.075, 0.5, 0.22] },
-  ash: { out: 20, turn: -4, summer: [0.24, 0.55, 0.3], autumn: [0.17, 0.6, 0.38], dead: [0.12, 0.4, 0.3] },
-  beech: { out: 2, turn: 8, summer: [0.26, 0.66, 0.26], autumn: [0.075, 0.75, 0.34], dead: [0.065, 0.6, 0.25] },
-  sycamore: { out: -6, turn: 0, summer: [0.28, 0.6, 0.22], autumn: [0.12, 0.7, 0.38], dead: [0.09, 0.45, 0.25] },
-  horseChestnut: { out: -14, turn: -28, summer: [0.29, 0.6, 0.2], autumn: [0.065, 0.62, 0.3], dead: [0.06, 0.5, 0.2] },
-  birch: { out: -10, turn: -10, summer: [0.24, 0.58, 0.3], autumn: [0.13, 0.8, 0.44], dead: [0.11, 0.55, 0.32] },
+  oak: { bark: [0.08, 0.12, 0.22], thick: 1.35, spread: 1.15, bend: -0.06, out: 14, turn: 16, summer: [0.27, 0.62, 0.22], autumn: [0.1, 0.62, 0.3], dead: [0.075, 0.5, 0.22] },
+  ash: { bark: [0.1, 0.05, 0.38], thick: 0.95, spread: 0.92, bend: 0.14, out: 20, turn: -4, summer: [0.24, 0.55, 0.3], autumn: [0.17, 0.6, 0.38], dead: [0.12, 0.4, 0.3] },
+  beech: { bark: [0.09, 0.04, 0.46], thick: 1.1, spread: 1.0, bend: 0.1, out: 2, turn: 8, summer: [0.26, 0.66, 0.26], autumn: [0.075, 0.75, 0.34], dead: [0.065, 0.6, 0.25] },
+  sycamore: { bark: [0.07, 0.1, 0.32], thick: 1.05, spread: 1.0, bend: 0.05, out: -6, turn: 0, summer: [0.28, 0.6, 0.22], autumn: [0.12, 0.7, 0.38], dead: [0.09, 0.45, 0.25] },
+  horseChestnut: { bark: [0.06, 0.18, 0.26], thick: 1.2, spread: 1.05, bend: 0.2, out: -14, turn: -28, summer: [0.29, 0.6, 0.2], autumn: [0.065, 0.62, 0.3], dead: [0.06, 0.5, 0.2] },
+  birch: { bark: [0.1, 0.05, 0.8], thick: 0.68, spread: 0.85, bend: -0.3, out: -10, turn: -10, summer: [0.24, 0.58, 0.3], autumn: [0.13, 0.8, 0.44], dead: [0.11, 0.55, 0.32] },
   // Bushes and hedges: hawthorn, early out, rusty red-brown in autumn.
-  hawthorn: { out: -14, turn: -4, summer: [0.28, 0.58, 0.22], autumn: [0.035, 0.6, 0.28], dead: [0.05, 0.45, 0.2] },
+  hawthorn: { bark: [0.06, 0.25, 0.22], thick: 1, spread: 1, bend: 0, out: -14, turn: -4, summer: [0.28, 0.58, 0.22], autumn: [0.035, 0.6, 0.28], dead: [0.05, 0.45, 0.2] },
 };
 
 /** The trees of an English wood, by how common they are. */
@@ -101,4 +104,22 @@ export function leafState(who, day, out = new Color()) {
 /** A bush or hedge (hawthorn), with its own few days and tone. */
 export function bushSpeciesAt(x, z) {
   return { name: 'hawthorn', days: (hash(x, z, 5) - 0.5) * 12, tone: hash(x, z, 6) - 0.5 };
+}
+
+/** The default bark (conifers, and trees of no species). */
+export const BARK = [0.083, 0.27, 0.27];
+
+/** A tree's bark colour (linear, into `out`): its species', a little lighter or darker tree by tree. */
+export function barkColor(t, out = new Color()) {
+  // (Bark colours are as on screen: sRGB.)
+  if (t.conifer) return out.setHSL(...BARK, SRGBColorSpace);
+  const who = speciesOf(t);
+  const [h, s, l] = SPECIES[who.name]?.bark ?? BARK;
+  return out.setHSL(h, s, Math.max(0.03, l + who.tone * 0.06), SRGBColorSpace);
+}
+
+/** A tree's trunk thickness (x the usual) for its species. */
+export function trunkThickness(t) {
+  if (t.conifer) return 1;
+  return SPECIES[speciesOf(t).name]?.thick ?? 1;
 }

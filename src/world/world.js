@@ -3,7 +3,7 @@ import {
   Scene, Color, FogExp2, HemisphereLight, Points, PointsMaterial, BufferGeometry, Sprite, SpriteMaterial, DirectionalLight, Mesh, PlaneGeometry, MeshStandardMaterial,
   CanvasTexture, RepeatWrapping, SRGBColorSpace, InstancedMesh, CylinderGeometry, IcosahedronGeometry,
   Object3D, BoxGeometry, ConeGeometry, Group, Vector3, MathUtils, DoubleSide, Float32BufferAttribute,
-  MeshBasicMaterial, ShaderMaterial, SphereGeometry, BackSide, MeshLambertMaterial, Matrix4,
+  MeshBasicMaterial, ShaderMaterial, SphereGeometry, BackSide, MeshLambertMaterial, Matrix4, Vector2,
 } from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY, PILOT_PAD } from '../sim/terrain.js';
@@ -16,7 +16,8 @@ import { seasonFor } from './seasons.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
 import { fluffyCrown, crownBranches, makeFluffy, fluffyDepthMaterial, pickAsBall, setLeafDetail } from './fluffy.js';
 import { CrownLod, addLodFade } from './lod.js';
-import { speciesOf, bushSpeciesAt } from './species.js';
+import { speciesOf, bushSpeciesAt, barkColor, trunkThickness, SPECIES } from './species.js';
+import { LEAF_ROWS } from './fluffy.js';
 import { bakeImpostors, impostorGeometry, makeImpostor } from './impostor.js';
 import { QUALITY } from './quality.js';
 import { CROWN_SEEDS, crownOf } from '../sim/treeShapes.js';
@@ -309,7 +310,9 @@ const _crownM = new Matrix4();
 function treeMatrices(t, o, trunkM, crownM) {
   o.rotation.set(0, t.rot, 0);
   o.position.set(t.x, t.y - 0.15, t.z);
-  o.scale.setScalar(t.h);
+  // Thicker or slimmer for its species (src/world/species.js).
+  const th = trunkThickness(t);
+  o.scale.set(t.h * th, t.h, t.h * th);
   o.updateMatrix();
   trunkM.copy(o.matrix);
   const c = crownOf(t);
@@ -326,6 +329,34 @@ function treeMatrices(t, o, trunkM, crownM) {
 
 /** Built scenery still drawn over Google's tiles. */
 const KEEP_OVER_GOOGLE = new Set(['tree', 'bush', 'fence']);
+
+/**
+ * Bare branches shaped by species (src/world/species.js): spread wider or
+ * narrower from the trunk, tips turned up or hanging, in the crown's own
+ * space (the branch geometry, src/world/fluffy.js crownBranches).
+ */
+function branchesBySpecies(material) {
+  const rows = LEAF_ROWS.map((n) => SPECIES[n] ?? {});
+  const uBranch = { value: rows.map((sp) => new Vector2(sp.spread ?? 1, sp.bend ?? 0)) };
+  const prev = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    prev?.(shader, renderer);
+    shader.uniforms.uBranch = uBranch;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\nattribute float aSpecies;\nuniform vec2 uBranch[${rows.length}];`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        {
+          vec2 b = uBranch[int(aSpecies + 0.5)];
+          float d = length(transformed.xz);
+          transformed.xz *= b.x;
+          transformed.y += b.y * d * d;
+        }`);
+  };
+  const prevKey = material.customProgramCacheKey?.bind(material);
+  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|branchSpecies`;
+  material.needsUpdate = true;
+  return material;
+}
 
 export class World {
   /** @param {import('../sim/obstacles.js').Obstacles} obstacles */
@@ -661,6 +692,7 @@ export class World {
         color: (b, out) => out.setHSL(...b.tint),
         shape: (b) => b.shape,
         species: (b) => bushSpeciesAt(b.x, b.z),
+        bark: (b, out) => barkColor({ x: b.x, z: b.z, species: 'hawthorn' }, out),
         leafy: leafyBushShapes(q.leafy.detail),
         solid: [0, 1].map((k) => impostorGeometry(CROWN_SEEDS.length + k)),
         leafyMat: this.cardMat,
@@ -774,7 +806,8 @@ export class World {
     this.leafMat = leafMat;
     const cardMat = this.fluffy ? addLodFade(makeFluffy(addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true }))), { smooth: q.leafy.smooth, detail: q.leafy.detail }), false) : null;
     this.cardMat = cardMat;
-    const barkMat = addCloudShadows(new MeshLambertMaterial({ color: '#5a4632', vertexColors: true }));
+    // Bark: its colour per tree (instance colour, by species).
+    const barkMat = addCloudShadows(new MeshLambertMaterial({ vertexColors: true }));
     this.barkMat = barkMat;
     // Conifers are open tiers of boughs: double-sided so their undersides show.
     const needleMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true, side: DoubleSide })));
@@ -810,6 +843,7 @@ export class World {
         const trunkSlot = t.conifer ? nConTrunk++ : nTrunk[t.pick % trunks.length]++;
         treeMatrices(t, o, _trunkM, _crownM);
         trunkMesh.setMatrixAt(trunkSlot, _trunkM);
+        trunkMesh.setColorAt(trunkSlot, barkColor(t, col));
         if (this.fluffy && !t.conifer) {
           t.drawn = { trunk: [trunkMesh, trunkSlot], crown: null };
           lodTrees.push(t);
@@ -854,6 +888,7 @@ export class World {
         color: (t, out) => out.setHSL(t.hue, t.sat, t.light * 1.12 + 0.02),
         shape: (t) => t.variant, // the shape the collisions use
         species: (t) => speciesOf(t),
+        bark: (t, out) => barkColor(t, out),
         leafy: CROWN_SEEDS.map((sd) => fluffyCrown(sd, q.leafy.detail)),
         solid: CROWN_SEEDS.map((_, k) => impostorGeometry(k)),
         leafyMat: cardMat,
@@ -888,9 +923,11 @@ export class World {
       m.userData.leafCards = true;
       m.customDepthMaterial = fluffyDepthMaterial(this.quality.leafy.detail);
       pickAsBall(m);
-      this.twigMat ||= addLodFade(addCloudShadows(new MeshLambertMaterial({ color: '#5a4632', vertexColors: true })), false);
+      this.twigMat ||= addLodFade(branchesBySpecies(addCloudShadows(new MeshLambertMaterial({ color: 0xaaaaaa, vertexColors: true }))), false);
       const tw = new InstancedMesh(twigShapes[k], this.twigMat, 1);
       tw.instanceMatrix = m.instanceMatrix;
+      tw.instanceColor = lod.barkAttr[k]; // bark colour, by species
+      twigShapes[k].setAttribute('aSpecies', m.geometry.attributes.aSpecies); // branch shape, by species
       twigShapes[k].setAttribute('aLod', m.geometry.attributes.aLod); // fades with its crown
       m.userData.twigs = tw;
       return tw;
