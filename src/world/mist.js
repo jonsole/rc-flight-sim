@@ -77,7 +77,7 @@ float lcCover(vec2 xz) {
   return smoothstep(t, t + 0.12, n);
 }`;
 
-/** The weather for a day and time: mist (0-1) and low cloud ({ amount, base, top }). */
+/** The weather for a day and time: mist (0-1), its depth (mistTop, m) and low cloud ({ amount, base, top }). */
 export function weatherFor(settings, day, hours) {
   // Spring (March to May) and autumn (September to November, foggiest).
   const spring = smooth(60, 85, day) * (1 - smooth(130, 155, day));
@@ -97,7 +97,10 @@ export function weatherFor(settings, day, hours) {
   else if (settings.lowCloud === 'overcast') amount = 0.95;
   else if (settings.lowCloud !== 'off' && r(3) < 0.45 * season) amount = 0.35 + 0.55 * r(4);
   const base = 45 + r(5) * 45 + smooth(10, 15, hours) * 20;
-  return { mist, lowCloud: { amount, base, top: base + 30 + r(6) * 25 } };
+  // How deep the mist lies over the ground (m): thick fog low and dense,
+  // light mist higher.
+  const mistTop = settings.mist === 'thick' ? 30 : settings.mist === 'light' ? 55 : 25 + r(7) * 35;
+  return { mist, mistTop, lowCloud: { amount, base, top: base + 30 + r(6) * 25 } };
 }
 
 export class LowCloud {

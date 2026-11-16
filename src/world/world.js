@@ -1,6 +1,6 @@
 // The flying field: sky, lighting, terrain, runway, trees and props.
 import {
-  Scene, Color, FogExp2, HemisphereLight, Points, PointsMaterial, BufferGeometry, Sprite, SpriteMaterial, DirectionalLight, Mesh, PlaneGeometry, MeshStandardMaterial,
+  Scene, Color, Fog, HemisphereLight, Points, PointsMaterial, BufferGeometry, Sprite, SpriteMaterial, DirectionalLight, Mesh, PlaneGeometry, MeshStandardMaterial,
   CanvasTexture, RepeatWrapping, SRGBColorSpace, InstancedMesh, CylinderGeometry, IcosahedronGeometry,
   Object3D, BoxGeometry, ConeGeometry, Group, Vector3, MathUtils, DoubleSide, Float32BufferAttribute,
   MeshBasicMaterial, ShaderMaterial, SphereGeometry, BackSide, MeshLambertMaterial, Matrix4, ShaderChunk,
@@ -338,15 +338,54 @@ const TRUNK_SEEDS = [3, 41, 67];
 /** The bush shapes' seeds (src/world/props.js). */
 const BUSH_SEEDS = [101, 131];
 
-// The fog: three.js's exponential-squared haze stays clear close by then
-// closes in steeply, right for clear-day haze but not for mist and fog,
-// which thicken steadily from your feet. Once it's misty (the density goes
-// up: World.updateWeather) the fog fades over to a plain exponential.
-ShaderChunk.fog_fragment = ShaderChunk.fog_fragment.replace(
-  'float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );',
-  `float fogP = mix( 2.0, 1.0, smoothstep( 0.0008, 0.006, fogDensity ) );
-		float fogFactor = 1.0 - exp( - pow( fogDensity * vFogDepth, fogP ) );`,
-);
+// The fog: the clear-day haze everywhere (exponential-squared: clear close
+// by, closing in far off), plus mist: a layer over the ground, thick up to
+// its top and thinning out above (how much of it a line of sight passes
+// through, from the camera's height to the point's, sets how misty the
+// point looks). So you stand in the murk at the flight line, and climb out
+// into sunshine above a white blanket.
+//   haze density  baked in (installFog; it depends on the scenery distance)
+//   fogNear       mist density (per metre; 0 none)
+//   fogFar        the mist's top (m above sea level; huge: everywhere)
+// Scene.fog is a Fog marked as FogExp2 too, so the shaders take the
+// exponential branch while three.js keeps fogNear and fogFar up to date.
+function installFog(hazeDensity) {
+  ShaderChunk.fog_pars_vertex = `#ifdef USE_FOG
+	varying float vFogDepth;
+	varying float vFogY;
+#endif`;
+  ShaderChunk.fog_vertex = `#ifdef USE_FOG
+	vFogDepth = - mvPosition.z;
+	// World height of this point (from its view position).
+	vFogY = ( transpose( mat3( viewMatrix ) ) * ( mvPosition.xyz - viewMatrix[ 3 ].xyz ) ).y;
+#endif`;
+  ShaderChunk.fog_pars_fragment = `#ifdef USE_FOG
+	uniform vec3 fogColor;
+	varying float vFogDepth;
+	varying float vFogY;
+	uniform float fogNear;
+	uniform float fogFar;
+	uniform float fogDensity;
+#endif`;
+  ShaderChunk.fog_fragment = `#ifdef USE_FOG
+	{
+		float hz = ${hazeDensity.toFixed(7)} * vFogDepth;
+		float od = hz * hz;
+		if ( fogNear > 0.0 ) {
+			// The mist along the line of sight: full below its top, thinning
+			// out over ~a third of its depth above (Simpson's rule on the way).
+			float H = max( fogFar * 0.35, 4.0 );
+			float yc = cameraPosition.y;
+			float fc = exp( - max( yc - fogFar, 0.0 ) / H );
+			float fm = exp( - max( 0.5 * ( yc + vFogY ) - fogFar, 0.0 ) / H );
+			float fp = exp( - max( vFogY - fogFar, 0.0 ) / H );
+			od += fogNear * vFogDepth * ( fc + 4.0 * fm + fp ) / 6.0;
+		}
+		float fogFactor = 1.0 - exp( - od );
+		gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );
+	}
+#endif`;
+}
 
 const _mistColour = new Color();
 
@@ -372,8 +411,10 @@ export class World {
     this.scene.background = new Color('#9cc3e6');
     // Exponential haze: distant hills fade into the colour of the horizon.
     // A shorter scenery distance closes the haze in to match.
-    this.scene.fog = new FogExp2('#c3d5e8', Math.max(0.00028, 1.3 / (opts.viewDistance ?? Infinity)));
-    this.fogBase = this.scene.fog.density; // clear air (mist thickens it: setWeather)
+    const haze = Math.max(0.00028, 1.3 / (opts.viewDistance ?? Infinity));
+    installFog(haze);
+    this.scene.fog = new Fog('#c3d5e8', 0, 1e6); // (near: mist density, far: its top: installFog)
+    this.scene.fog.isFogExp2 = true;
     this.hazeBase = new Color('#c3d5e8'); // the haze colour of the time of day
     this.weather = { mist: 0, lowCloud: { amount: 0, base: 60, top: 100 } };
     this.fogNow = 0; // how foggy it is where the camera is (0-1)
@@ -547,35 +588,46 @@ export class World {
     if (lc.amount > 0) lc.update(dt, wind, camPos);
     const mist = this.weather.mist;
     const inCloud = lc.inside(camPos);
-    // Visibility (m) to fog density: FogExp2 is ~95% at density x distance 1.73.
-    const mistDensity = mist > 0 ? 1.73 / (2600 - 2510 * Math.pow(mist, 0.6)) : 0; // (thick fog: ~90 m)
-    const cloudDensity = 1.73 / 35;
-    let d = Math.max(this.fogBase, mistDensity);
-    d += (cloudDensity - d) * inCloud;
     const fog = this.scene.fog;
-    fog.density = d;
-    const grey = Math.max(mist * 0.85, inCloud);
+    // Mist: density by its thickness (thick fog ~90 m at the ground, light
+    // mist ~600 m), its top over the ground (thick fog lies lower).
+    const ground = heightAt(camPos.x, camPos.z);
+    let density = mist > 0 ? 3 / (650 - 560 * Math.pow(mist, 0.7)) : 0;
+    let top = ground + (this.weather.mistTop ?? 45);
+    // Inside a low cloud: a few tens of metres, at every height.
+    if (inCloud > 0) {
+      density += (3 / 35 - density) * inCloud;
+      top += (1e5 - top) * inCloud;
+    }
+    fog.near = density;
+    fog.far = top;
+    // How deep in it the camera is: how much of the sky it hides overhead.
+    const H = Math.max(top * 0.35, 4);
+    const above = Math.max(0, camPos.y - top);
+    const overhead = density * (Math.max(0, top - camPos.y) + H * Math.exp(-above / H));
+    const veil = 1 - Math.exp(-overhead * 1.2); // 0 clear sky .. 1 hidden
+    const grey = Math.max(veil, inCloud);
     this.fogNow = grey;
     // Pale grey, lit by the day (dark at night).
     const day = 1 - this.night;
-    fog.color.copy(this.hazeBase).lerp(_mistColour.setRGB(0.74 * day + 0.03, 0.76 * day + 0.035, 0.78 * day + 0.05), grey);
+    fog.color.copy(this.hazeBase).lerp(_mistColour.setRGB(0.74 * day + 0.03, 0.76 * day + 0.035, 0.78 * day + 0.05), Math.min(1, mist * 1.2 + inCloud));
     this.scene.background.copy(fog.color);
-    // The sky and high clouds fade into the mist.
-    this.sky.material.uniforms.skyFog.value = Math.min(1, grey * 1.3);
-    // (As the scene's fog uses it: converted to the screen's colours.)
-    this.sky.material.uniforms.skyFogColor.value.copy(fog.color).convertLinearToSRGB();
-    this.clouds.uniforms.mistFade.value = Math.min(1, grey * 1.5);
+    // The sky: into the haze at the horizon (always), and the mist overhead.
+    const su = this.sky.material.uniforms;
+    su.skyFog.value = grey;
+    su.skyFogColor.value.copy(fog.color).convertLinearToSRGB(); // (as the scene's fog uses it)
+    this.clouds.uniforms.mistFade.value = Math.min(1, grey * 1.3);
     lc.uniforms.lcHaze.value.copy(fog.color);
-    lc.uniforms.lcFog.value = mist * 0.7;
-    // Below the clouds: lit by what gets through; above them in the sun.
+    lc.uniforms.lcFog.value = grey * 0.7;
+    // Sunlight through the mist above you, and below the low cloud.
     const overcast = camPos.y < lc.base ? lc.amount * 0.6 : 0;
-    const dim = 1 - Math.max(mist * 0.7, overcast, inCloud * 0.8);
+    const dim = 1 - Math.max(veil * 0.75, overcast, inCloud * 0.8);
     this.sun.intensity = (this.sunBase ?? this.sun.intensity) * dim;
     this.hemi.intensity = (this.hemiBase ?? this.hemi.intensity) * (1 + 0.15 * grey);
-    // Cloud light: their tops in the sun, undersides grey.
     lc.uniforms.lcLight.value.copy(this.sun.color).multiplyScalar(0.9 * day + 0.05);
     lc.uniforms.lcShade.value.setRGB(0.55, 0.58, 0.62).multiplyScalar(0.85 * day + 0.05);
   }
+
 
   setClouds(cover) {
     cloudUniforms.cloudCover.value = cover;
