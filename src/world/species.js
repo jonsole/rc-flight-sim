@@ -168,7 +168,9 @@ export function coniferWidth(t) {
 
 const _a = new Color();
 const _b = new Color();
-const hsl = (out, [h, s, l], dl = 0) => out.setHSL(h, s, Math.max(0.02, l + dl));
+// (Colours as on screen, sRGB, as the bark: read as linear light they came
+// out pale and grey. The lightnesses were set for that, so are lifted here.)
+const hsl = (out, [h, s, l], dl = 0) => out.setHSL(h, s, Math.max(0.03, (l + dl) * 1.5 + 0.04), SRGBColorSpace);
 
 /**
  * One tree's leaves on a day of the year (1-366): how bare (0 in full leaf,

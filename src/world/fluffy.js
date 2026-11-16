@@ -299,11 +299,16 @@ export function fluffyCrown(seed, detail = 2) {
       p.set(cx + (ux / l) * r * depth, cy + ((uy + 0.15) / l) * r * depth, cz + (uz / l) * r * depth);
       // Lit as the crown and its clump: out from the middle of both.
       out.copy(p).normalize();
-      n.set(p.x - cx, p.y - cy, p.z - cz).normalize().multiplyScalar(0.35).add(out).add(new Vector3(0, 0.25, 0)).normalize();
+      n.set(p.x - cx, p.y - cy, p.z - cz).normalize().multiplyScalar(0.35).add(out).normalize();
+      // Lit softly top to bottom: leaves let light through and catch it at
+      // all angles, so their normals lean only a little up or down (else
+      // the top faces the midday sun square on and the underside none of it).
+      n.y = n.y * 0.35 + 0.2;
+      n.normalize();
       // Shade: darker deep inside and underneath, lighter on top.
       const inner = Math.min(1, p.length());
       // (Gently: neighbouring cards should blend, not stand out as patches.)
-      const shade = (0.56 + 0.44 * inner) * (0.74 + 0.24 * (p.y * 0.5 + 0.5)) * (0.9 + 0.2 * noise3(p.x * 6, p.y * 6, p.z * 6 + seed));
+      const shade = (0.66 + 0.34 * inner) * (0.86 + 0.12 * (p.y * 0.5 + 0.5)) * (0.9 + 0.2 * noise3(p.x * 6, p.y * 6, p.z * 6 + seed));
       const size = r * sizeK * (0.85 + rnd() * 0.3);
       // Outer, sunnier cards leaf first in spring and drop last (a little).
       const when = Math.min(0.999, Math.max(0, rnd() * 0.85 + inner * 0.15));
@@ -578,7 +583,7 @@ export const LEAF_FRAGMENT = /* glsl */ `
     float tint = tx.b / cov - 0.5;
     diffuseColor.rgb *= vec3(1.0 + tint * 0.55, 1.0 + tint * 0.12, 1.0 - tint * 0.75) * (1.0 + tint * 0.12);
     // Shaded up the crown (vCardUp).
-    diffuseColor.rgb *= mix(0.68, 1.15, vCardUp);
+    diffuseColor.rgb *= mix(0.86, 1.06, vCardUp);
     diffuseColor.a *= tx.a;
     if (tx.g / cov <= vLeafDrop * 1.02) discard;
     // (Near the camera: thinning away, leaf by leaf, by the leaf's own fall
@@ -820,8 +825,8 @@ export function fluffyConifer(c, seed, detail = 2) {
     const yn = y + 0.5;
     const out = Math.min(1, Math.hypot(x, z) / Math.max(0.05, c.profile(yn) * c.width));
     // Lit as the crown: out from its axis, and up.
-    n.set(x, 0, z).normalize().multiplyScalar(0.8).add(new Vector3(0, 0.45, 0)).normalize();
-    const shade = (0.55 + 0.45 * out) * (0.75 + 0.25 * yn) * (0.9 + 0.2 * noise3(x * 5, y * 5, z * 5 + seed));
+    n.set(x, 0, z).normalize().multiplyScalar(0.8).add(new Vector3(0, 0.2, 0)).normalize();
+    const shade = (0.62 + 0.38 * out) * (0.86 + 0.14 * yn) * (0.9 + 0.2 * noise3(x * 5, y * 5, z * 5 + seed));
     A.push(p, n, shade, size * sizeK * (0.85 + rnd() * 0.3), Math.min(0.999, rnd() * 0.85 + out * 0.15), rnd(), flat);
   };
   if (c.tiers) {
