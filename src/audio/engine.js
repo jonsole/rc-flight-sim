@@ -88,7 +88,9 @@ export class EngineSound {
     const rpm = aircraft.propBroken ? 0 : aircraft.rpm;
     const thr = aircraft.throttleActual;
     const motorHz = 40 + (rpm / 60) * 7; // 14-pole motor electrical freq / 2
-    const bladeHz = Math.max(1, (rpm / 60) * (aircraft.def.motor.blades || 2));
+    // The prop as fitted or tuned (Menu → Tuning).
+    const blades = aircraft.def.motor.prop?.blades || aircraft.def.motor.blades || 2;
+    const bladeHz = Math.max(1, (rpm / 60) * blades);
     this.motor.frequency.setTargetAtTime(motorHz, t, 0.05);
     this.motor2.frequency.setTargetAtTime(motorHz * 1.502, t, 0.05);
     this.motorFilter.frequency.setTargetAtTime(motorHz * 1.5, t, 0.05);
@@ -100,7 +102,6 @@ export class EngineSound {
     // The buzz reaches up to the blade-pass frequency.
     this.noiseFilter.frequency.setTargetAtTime(Math.max(400 + thr * 1500, bladeHz * 1.6), t, 0.1);
     // Two-blade props: the buzz alone; each extra blade adds whine.
-    const blades = aircraft.def.motor.blades || 2;
     this.blade.frequency.setTargetAtTime(bladeHz, t, 0.05);
     this.bladeGain.gain.setTargetAtTime(on * thr * 0.025 * Math.max(0, blades - 2), t, 0.05);
     const ws = Math.min(1, aircraft.airspeed / 25);
