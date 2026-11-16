@@ -327,9 +327,11 @@ ${mownGlsl()}
           // Dried out: towards straw beige (as bright as the grass, a little
           // brighter), the long grass most, patchily.
           float lumG = dot(g, vec3(0.3, 0.59, 0.11));
-          vec3 straw = vec3(1.42, 1.16, 0.6) * lumG * 1.25;
-          float patchy = 0.75 + 0.5 * gNoise(p / 9.0);
-          g = mix(g, straw, clamp(uGrassDry * (0.95 - mown * 0.35) * patchy, 0.0, 1.0) * grassy);
+          // (A drought summer: parched pale straw, only shady and damp
+          // patches holding a little green.)
+          vec3 straw = vec3(1.55, 1.3, 0.72) * lumG * 1.45;
+          float patchy = 0.85 + 0.3 * gNoise(p / 9.0);
+          g = mix(g, straw, clamp(uGrassDry * (1.15 - mown * 0.2) * patchy, 0.0, 1.0) * grassy);
         }
         diffuseColor.rgb *= g;
       `);

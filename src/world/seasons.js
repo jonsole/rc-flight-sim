@@ -27,7 +27,7 @@ export function seasonFor(day) {
   // dry late summer (late July to early September), greening again with
   // the autumn rain (later September, October), and growing longer then.
   const winter = Math.max(1 - smooth(60, 110, day), smooth(310, 350, day));
-  const dry = smooth(195, 230, day) * (1 - smooth(250, 280, day));
+  const dry = smooth(185, 220, day) * (1 - smooth(255, 285, day)); // (a drought summer: parched from late July)
   const regrow = smooth(255, 285, day) * (1 - smooth(315, 340, day)); // fresh autumn green
   const grass = [
     1 - 0.08 * winter + 0.1 * dry + 0.02 * fresh,
