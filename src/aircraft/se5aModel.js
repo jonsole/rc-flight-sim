@@ -7,8 +7,8 @@
 
 import {
   Group, Mesh, MeshStandardMaterial, Vector3, Color, CylinderGeometry, BoxGeometry,
-  SphereGeometry, TorusGeometry, CircleGeometry, DoubleSide, LineSegments,
-  BufferGeometry, Float32BufferAttribute, LineBasicMaterial, CanvasTexture, SRGBColorSpace,
+  SphereGeometry, TorusGeometry, CircleGeometry, DoubleSide,
+  CanvasTexture, SRGBColorSpace,
   Quaternion, PlaneGeometry, Matrix4, RingGeometry, Shape, ExtrudeGeometry, Vector2,
 } from 'three';
 import { loft, mirrorZ, airfoilRing, naca } from './geom.js';
@@ -222,10 +222,16 @@ function strut(a, b, material, w = 0.009, t = 0.004) {
   return m;
 }
 
+/** Rigging wires: thin dark grey metal rods between pairs of points. */
+const wireMat = new MeshStandardMaterial({ color: '#3c3f44', metalness: 0.85, roughness: 0.35 });
 function wires(points) {
-  const geo = new BufferGeometry();
-  geo.setAttribute('position', new Float32BufferAttribute(points.flatMap((p) => [p.x, p.y, p.z]), 3));
-  return new LineSegments(geo, new LineBasicMaterial({ color: 0xb8b8b0, transparent: true, opacity: 0.8 }));
+  const g = new Group();
+  for (let i = 0; i + 1 < points.length; i += 2) {
+    const w = cylinderBetween(points[i], points[i + 1], 0.0008, wireMat, 5);
+    w.castShadow = true;
+    g.add(w);
+  }
+  return g;
 }
 
 function stripeTexture() {
