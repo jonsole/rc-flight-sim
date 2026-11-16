@@ -547,7 +547,8 @@ export class World {
     lc.update(dt, wind, camPos);
     const mist = this.weather.mist;
     const fog = this.scene.fog;
-    const day = 1 - this.night;
+    // Daylight (dims through dusk, not just once it's night).
+    const day = smooth(-6, 14, this.sunElevation ?? 30);
     // The field (volfog.js): mist density (thick fog ~90 m at the ground,
     // light mist ~600 m) and top; low cloud (~35 m inside it).
     const mistD = mist > 0 ? 3 / (650 - 560 * Math.pow(mist, 0.7)) : 0;
@@ -576,8 +577,12 @@ export class World {
     const veil = 1 - Math.exp(-overhead * 1.2);
     const grey = Math.max(veil, inCloud);
     this.fogNow = grey;
-    // The haze turns pale grey with mist.
-    fog.color.copy(this.hazeBase).lerp(_mistColour.setRGB(0.74 * day + 0.03, 0.76 * day + 0.035, 0.78 * day + 0.05), Math.min(1, mist * 1.2));
+    // The haze turns pale grey with mist: its own colour of the moment,
+    // greyed and a little lighter (so it darkens through dusk with the sky).
+    const h = this.hazeBase;
+    const lum = 0.3 * h.r + 0.55 * h.g + 0.15 * h.b;
+    _mistColour.setRGB(lum, lum * 1.02, lum * 1.06).lerp(h, 0.3).multiplyScalar(1 + 0.35 * day);
+    fog.color.copy(h).lerp(_mistColour, Math.min(1, mist * 1.2));
     this.scene.background.copy(fog.color);
     const su = this.sky.material.uniforms;
     su.skyFog.value = 0;
