@@ -42,7 +42,7 @@ const HAZE = [
   [-5, new Color('#28334f')],
   [0, new Color('#d39a72')],
   [8, new Color('#e3c7a4')],
-  [20, new Color('#b2cdec')],
+  [20, new Color('#a9c7ec')],
 ];
 function hazeColour(el, out) {
   if (el <= HAZE[0][0]) return out.copy(HAZE[0][1]);
@@ -414,7 +414,7 @@ export class World {
     // The Preetham sky comes out very bright; tone mapping squeezed that to
     // a pale, almost white blue. Scaled down (and its blue deepened a
     // touch) before tone mapping, the blue survives.
-    u.skyGain = { value: 0.42 };
+    u.skyGain = { value: 0.36 };
     // Mist: the sky fades into the fog colour (updateWeather).
     u.skyFog = { value: 0 };
     u.skyFogColor = { value: new Color() };
@@ -423,13 +423,20 @@ export class World {
       .replace('#include <tonemapping_fragment>', `{
         vec3 c = gl_FragColor.rgb * skyGain;
         float l = dot(c, vec3(0.3, 0.55, 0.15));
-        gl_FragColor.rgb = max(mix(vec3(l), c, 1.25), 0.0);
+        gl_FragColor.rgb = max(mix(vec3(l), c, 1.4), 0.0);
       }
       #include <tonemapping_fragment>`)
       // Mist: faded into the fog colour as the scene's fog does it (after
       // tone mapping), so the sky meets misty ground seamlessly.
       .replace('#include <colorspace_fragment>', `#include <colorspace_fragment>
-      gl_FragColor.rgb = mix(gl_FragColor.rgb, skyFogColor, skyFog);`);
+      {
+        // Down to the horizon the sky turns into the haze the distant
+        // ground fades into (the same colour, mixed the same way), so
+        // there's no line where they meet.
+        float up = normalize(vWorldPosition - cameraPosition).y;
+        float toHaze = max(skyFog, 1.0 - smoothstep(-0.01, 0.16, up));
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, skyFogColor, toHaze);
+      }`);
     this.sky = sky;
     this.scene.add(sky);
     this.nightDome = nightDome();
@@ -555,7 +562,8 @@ export class World {
     this.scene.background.copy(fog.color);
     // The sky and high clouds fade into the mist.
     this.sky.material.uniforms.skyFog.value = Math.min(1, grey * 1.3);
-    this.sky.material.uniforms.skyFogColor.value.copy(fog.color);
+    // (As the scene's fog uses it: converted to the screen's colours.)
+    this.sky.material.uniforms.skyFogColor.value.copy(fog.color).convertLinearToSRGB();
     this.clouds.uniforms.mistFade.value = Math.min(1, grey * 1.5);
     lc.uniforms.lcHaze.value.copy(fog.color);
     lc.uniforms.lcFog.value = mist * 0.7;
