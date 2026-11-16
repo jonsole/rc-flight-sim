@@ -226,12 +226,33 @@ export class CrownLod {
     const t = now();
     lodFadeUniforms.uLodTime.value = t;
     const moved = !this.at || Math.hypot(x - this.at[0], z - this.at[1]) > this.radius * 0.03;
-    if (!force && !moved && t > this.fadingUntil + 0.05) return false;
+    // (Fades run in the shaders by the clock: one more re-sort when they've
+    // finished, to drop the faded-out copies, not one every frame.)
+    const fadeDone = this.fadingUntil > 0 && t > this.fadingUntil + 0.05;
+    if (!force && !moved && !fadeDone) return false;
     if (moved) this.at = [x, z];
+    if (fadeDone) this.fadingUntil = 0;
     const [cx, cz] = this.at;
     // A little either way, so a tree on the edge doesn't keep swapping.
     const r2in = (this.radius * 0.97) ** 2;
     const r2out = (this.radius * 1.03) ** 2;
+    const closeSortA = ((this.closeR ?? 0) + this.radius * 0.04 + 5) ** 2;
+    // First, just see whether anything changes tier: rewriting every
+    // instance (and sending it all to the GPU again) only when one does.
+    this.isClose ||= this.items.map(() => false);
+    let changed = force || fadeDone;
+    for (let i = 0; i < this.items.length; i++) {
+      const dx = this.pos[i][0] - cx;
+      const dz = this.pos[i][1] - cz;
+      const d2 = dx * dx + dz * dz;
+      const leafy = d2 < (this.isLeafy[i] ? r2out : r2in);
+      const close = d2 < closeSortA;
+      if (leafy !== this.isLeafy[i] || close !== this.isClose[i]) {
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) return false;
     const counts = this.meshes.map(() => 0);
     const nLeafy = this.leafy.length;
     const closeSort2 = ((this.closeR ?? 0) + this.radius * 0.04 + 5) ** 2;
@@ -264,6 +285,7 @@ export class CrownLod {
         this.fadingUntil = t + FADE_TIME;
       }
       this.isLeafy[i] = leafy;
+      this.isClose[i] = d2 < closeSortA;
       const fading = t - this.since[i] < FADE_TIME;
       const s = this.since[i];
       const a = leafy || fading ? put(i, this.shape[i], leafy ? s : -s) : null;

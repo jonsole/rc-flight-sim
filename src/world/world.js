@@ -672,7 +672,7 @@ export class World {
         shape: (b) => b.shape,
         species: (b) => bushSpeciesAt(b.x, b.z),
         bark: (b, out) => barkColor({ x: b.x, z: b.z, species: 'hawthorn' }, out),
-        leafy: leafyBushShapes(q.leafy.detail),
+        leafy: leafyBushShapes('blob'), // (bushes: the fewest, biggest cards)
         solid: [0, 1].map((k) => impostorGeometry(CROWN_SEEDS.length + k)),
         leafyMat: this.cardMat,
         solidMat: this.#impostorMat(),

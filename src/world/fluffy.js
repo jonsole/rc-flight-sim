@@ -566,7 +566,7 @@ export function makeFluffy(material, { smooth = true, detail = 2, softDepth = fa
   material.side = DoubleSide;
   // SPECIES: each tree's colour through the year is its instance colour
   // (src/world/species.js), not worked out here.
-  material.defines = { ...(material.defines || {}), FLUFFY: '', SPECIES: '' };
+  material.defines = { ...(material.defines || {}), FLUFFY: '', SPECIES: '', CLOUD_PER_VERTEX: '' };
   // Soft depth: each card is a gentle dome in depth (its middle nearer the
   // camera than its edges), so where cards overlap the boundary is a curve
   // that slides as you move, not the whole overlap flipping from one card

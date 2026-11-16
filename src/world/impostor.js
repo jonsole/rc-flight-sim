@@ -180,7 +180,7 @@ export function impostorGeometry(index) {
 export function makeImpostor(material, atlas) {
   material.alphaTest = 0.5;
   material.side = DoubleSide;
-  material.defines = { ...(material.defines || {}), FLUFFY: '', IMPOSTOR: '', SPECIES: '' };
+  material.defines = { ...(material.defines || {}), FLUFFY: '', IMPOSTOR: '', SPECIES: '', CLOUD_PER_VERTEX: '' };
   const uniforms = {
     uImpAlbedo: { value: atlas.albedo },
     uImpNormal: { value: atlas.normal },
