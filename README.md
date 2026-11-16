@@ -171,7 +171,7 @@ bars, tick *Reverse* where needed, and run **Calibrate sticks**. Switches can
 be assigned to *reset* and *change camera*. Settings are saved in the browser.
 
 Keyboard fallback: arrows = aileron/elevator, A/D = rudder, W/S = throttle,
-R = reset, C = camera, G = flight assist, P = pause, H = HUD, M = mute, Esc = menu.
+R = reset, C = camera, G = flight assist, P = pause, H = HUD, M = mute, N = nose light, Esc = menu.
 
 ## Phones and tablets
 

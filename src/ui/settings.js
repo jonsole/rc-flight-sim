@@ -24,6 +24,7 @@ export const DEFAULT_SETTINGS = {
   viewDistance: '',      // metres as a string, '0' = unlimited
   treeStyle: 'fluffy',
   sunGlare: true,
+  noseLight: 'auto',     // forward landing light: 'auto' (on when it's dark) | 'on' | 'off'; N toggles
   mist: 'seasonal',      // 'seasonal' (spring and autumn mornings) | 'off' | 'light' | 'thick'  (src/world/mist.js)
   lowCloud: 'seasonal',  // 'seasonal' | 'off' | 'broken' | 'overcast'        // looking into the sun washes the picture out (src/view/glare.js)
   cardsFaceCamera: true, // leafy trees: leaf cards face the camera's position (false: the screen, as before)   // trees and bushes: 'fluffy' (leafy cards, src/world/fluffy.js) | 'classic' (solid)

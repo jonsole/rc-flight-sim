@@ -2,7 +2,7 @@
 // red on the left wingtip, green on the right, white on the tail, and a
 // double-flash white strobe on the wingtips. They glow at a fixed size on
 // screen so the aeroplane stays visible far out, and fade in at dusk.
-import { Sprite, SpriteMaterial, CanvasTexture, AdditiveBlending, Vector3, PointLight } from 'three';
+import { Sprite, SpriteMaterial, CanvasTexture, AdditiveBlending, Vector3, PointLight, SpotLight, Object3D } from 'three';
 
 let glowTex = null;
 function glow() {
@@ -31,6 +31,7 @@ function extremes(root) {
   const minZ = new Vector3(0, 0, Infinity);
   const maxZ = new Vector3(0, 0, -Infinity);
   const minX = new Vector3(Infinity, 0, 0);
+  const maxX = new Vector3(-Infinity, 0, 0);
   root.traverseVisible((o) => {
     const pos = o.isMesh && o.geometry?.attributes?.position;
     if (!pos) return;
@@ -40,9 +41,10 @@ function extremes(root) {
       if (v.z < minZ.z) minZ.copy(v);
       if (v.z > maxZ.z) maxZ.copy(v);
       if (v.x < minX.x) minX.copy(v);
+      if (v.x > maxX.x) maxX.copy(v);
     }
   });
-  return { left: minZ, right: maxZ, tail: minX };
+  return { left: minZ, right: maxZ, tail: minX, nose: maxX };
 }
 
 function led(color, px) {
@@ -91,11 +93,28 @@ export function addNavLights(model, { shine = false } = {}) {
       lamps.push(lamp);
     }
   }
+  // A forward landing light in the nose, bright enough to see by: a beam
+  // ahead and a little down, and a white glow you see from in front.
+  let landing = null;
+  if (shine) {
+    const at = e.nose.clone().add(new Vector3(-0.02, -0.01, 0));
+    const beam = new SpotLight('#fff4e0', 0, 140, 0.32, 0.55, 1.2);
+    beam.position.copy(at);
+    const aim = new Object3D();
+    aim.position.copy(at).add(new Vector3(10, -1.2, 0));
+    beam.target = aim;
+    holder.add(beam, aim);
+    const glow = led('#fff6e8', 26);
+    glow.position.copy(at).add(new Vector3(0.01, 0, 0));
+    glow.userData.navLight = true;
+    holder.add(glow);
+    landing = { beam, glow };
+  }
   // A wingtip or tail that broke off takes its light with it.
   const partOf = new Map([[L, 'wingL'], [SL, 'wingL'], [R, 'wingR'], [SR, 'wingR'], [T, 'tail']]);
   return {
     lights: all,
-    update(night, t, camera, viewH, broken) {
+    update(night, t, camera, viewH, broken, landingOn = false) {
       const on = night > 0.05;
       const k = (2 * 1) / (viewH * camera.projectionMatrix.elements[5]); // scale per screen pixel
       // Double flash about once a second.
@@ -107,6 +126,20 @@ export function addNavLights(model, { shine = false } = {}) {
         s.material.opacity = Math.min(1, night * 1.3);
         const px = s.userData.px * (0.6 + 0.4 * night);
         s.scale.setScalar(px * k);
+      }
+      if (landing) {
+        // Lit when switched on (and the nose is still there).
+        const lit = landingOn && !broken?.has('prop');
+        landing.beam.intensity = lit ? 900 : 0;
+        landing.glow.visible = lit;
+        if (lit) {
+          // Glaring when it points at you, faint from the side.
+          const fwd = new Vector3(1, 0, 0).transformDirection(landing.beam.parent.matrixWorld);
+          const toCam = camera.position.clone().sub(landing.glow.getWorldPosition(new Vector3())).normalize();
+          const face = Math.max(0, fwd.dot(toCam));
+          landing.glow.material.opacity = 0.25 + 0.75 * face;
+          landing.glow.scale.setScalar(landing.glow.userData.px * (0.6 + 1.4 * face * face) * k);
+        }
       }
       for (const lamp of lamps) {
         const led = lamp.userData.led;
