@@ -303,7 +303,21 @@ export function fluffyDepthMaterial(detail = 2) {
     shader.uniforms.uBare = leafUniforms.uBare;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${CARD_DECLS}`)
-      .replace('#include <begin_vertex>', `#include <begin_vertex>\n${CARD_VERTEX}`);
+      .replace('#include <begin_vertex>', `#include <begin_vertex>\n${CARD_VERTEX}
+        // The card that casts faces the sun, the one you see faces you: they
+        // cross, and half of each card would sit in its own shadow. Pushed
+        // back from the sun by its size, a card shades the leaves behind it
+        // (and the ground) but not itself.
+        {
+          vec3 away = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
+          #ifdef USE_INSTANCING
+            mat3 im2 = mat3(instanceMatrix);
+            vec3 s2 = vec3(dot(im2[0], im2[0]), dot(im2[1], im2[1]), dot(im2[2], im2[2]));
+            transformed += (transpose(im2) * (away * aCard.x * 1.2 * sqrt((s2.x + s2.z) * 0.5))) / s2;
+          #else
+            transformed += away * aCard.x * 1.2;
+          #endif
+        }`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying float vLeafDrop;')
       .replace('#include <map_fragment>', LEAF_FRAGMENT);
