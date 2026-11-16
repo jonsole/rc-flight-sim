@@ -335,7 +335,7 @@ export function crownBranches(seed, { from, twigs = true } = {}) {
     mid.y += 0.06 + rnd() * 0.06; // bowing upwards
     mid.x *= 0.85;
     mid.z *= 0.85;
-    parts.push(tube([start, mid, end], bush ? 0.016 : 0.02, 0.008, twigs ? 4 : 3, twigs ? 3 : 2));
+    parts.push(tube([start, mid, end], bush ? 0.011 : 0.014, 0.005, twigs ? 4 : 3, twigs ? 3 : 2));
     if (!twigs) continue;
     for (let k = 0; k < 3; k++) {
       const a = rnd() * Math.PI * 2;
@@ -344,7 +344,7 @@ export function crownBranches(seed, { from, twigs = true } = {}) {
       const from2 = mid.clone().lerp(end, 0.5 + rnd() * 0.5);
       const tip = from2.clone().addScaledVector(d, r * (0.8 + rnd() * 0.5));
       const bend = from2.clone().lerp(tip, 0.5).add(new Vector3(0, r * 0.1, 0));
-      parts.push(tube([from2, bend, tip], 0.007, 0.0035, 3, 2));
+      parts.push(tube([from2, bend, tip], 0.0045, 0.0022, 3, 2));
     }
   }
   const geo = mergeGeometries(parts);
@@ -590,28 +590,28 @@ export function detailedBranches(seed, { from } = {}) {
     const end = new Vector3(cx, cy, cz).multiplyScalar(0.85 + rnd() * 0.1);
     if (end.y < start.y + 0.1) start.y = end.y - 0.1;
     const limb = crooked(rnd, start, end, 4, 0.12, 0.12);
-    parts.push(roundTube(limb, bush ? 0.016 : 0.022, 0.0065, 7, 8));
+    parts.push(roundTube(limb, bush ? 0.011 : 0.015, 0.0042, 7, 8));
     const curve = new CatmullRomCurve3(limb);
     // ... carrying on past the end as a twig, so no limb ends in a stub.
     const dir = curve.getTangentAt(1);
     const tipEnd = end.clone().addScaledVector(dir, r * 0.55).add(new Vector3(0, r * 0.1, 0));
-    parts.push(roundTube(crooked(rnd, end, tipEnd, 2, 0.05, 0.2), 0.0065, 0.0018, 5, 4));
+    parts.push(roundTube(crooked(rnd, end, tipEnd, 2, 0.05, 0.2), 0.0042, 0.0009, 5, 4));
     // Side branches from along the limb, each with a few fine twigs.
-    for (let k = 0; k < 4; k++) {
-      const at = curve.getPointAt(0.45 + k * 0.15 + rnd() * 0.08);
+    for (let k = 0; k < 3; k++) {
+      const at = curve.getPointAt(0.45 + k * 0.18 + rnd() * 0.08);
       const a = rnd() * Math.PI * 2;
       const up = 0.15 + rnd() * 0.9;
       const d = new Vector3(Math.cos(a) * Math.cos(up), Math.sin(up), Math.sin(a) * Math.cos(up)).add(end.clone().normalize().multiplyScalar(0.7)).normalize();
       const tip = at.clone().addScaledVector(d, r * (0.7 + rnd() * 0.5));
       const side = crooked(rnd, at, tip, 3, 0.1, 0.2);
-      parts.push(roundTube(side, 0.008, 0.0035, 5, 5));
+      parts.push(roundTube(side, 0.0048, 0.0018, 5, 5));
       const sc = new CatmullRomCurve3(side);
-      for (let j = 0; j < 3; j++) {
-        const at2 = sc.getPointAt(0.35 + j * 0.22 + rnd() * 0.1);
+      for (let j = 0; j < 2; j++) {
+        const at2 = sc.getPointAt(0.4 + j * 0.3 + rnd() * 0.1);
         const a2 = rnd() * Math.PI * 2;
         const d2 = d.clone().add(new Vector3(Math.cos(a2), 0.4 + rnd() * 0.6, Math.sin(a2)).multiplyScalar(0.9)).normalize();
         const tip2 = at2.clone().addScaledVector(d2, r * (0.25 + rnd() * 0.25));
-        parts.push(roundTube(crooked(rnd, at2, tip2, 2, 0.08, 0.25), 0.0034, 0.0016, 4, 3));
+        parts.push(roundTube(crooked(rnd, at2, tip2, 2, 0.08, 0.25), 0.0018, 0.0008, 4, 3));
       }
     }
   }
