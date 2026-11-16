@@ -15,7 +15,7 @@ import {
   CatmullRomCurve3, TubeGeometry,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { rng, noise3, crownShape } from '../sim/treeShapes.js';
+import { rng, noise3, crownShape, CROWN_SEEDS } from '../sim/treeShapes.js';
 import { leafUniforms } from './trees.js';
 
 /** Cards per clump for a detail level (2 full, 1, 0, 'blob' for far away). */
@@ -155,7 +155,7 @@ export function leafTexture() {
         const y = oy + T / 2 + Math.sin(a) * d;
         // Half the length (tip to stalk), varying a little.
         const len = (T * LEAF_FRAC * sz * (0.88 + rnd() * 0.24)) / 2;
-        const k = Math.round(150 + (i / count) * 80 + rnd() * 25);
+        const k = Math.round(170 + (i / count) * 50 + rnd() * 25);
         // Red: the leaf's brightness. Green: when it falls (it's gone once the
         // season's leaf fall passes this; see LEAF_FALL).
         g.fillStyle = `rgb(${k},${Math.round(5 + rnd() * 250)},0)`;
@@ -235,10 +235,11 @@ export function fluffyCrown(seed, detail = 2) {
       p.set(cx + (ux / l) * r * depth, cy + ((uy + 0.15) / l) * r * depth, cz + (uz / l) * r * depth);
       // Lit as the crown and its clump: out from the middle of both.
       out.copy(p).normalize();
-      n.set(p.x - cx, p.y - cy, p.z - cz).normalize().multiplyScalar(0.45).add(out).add(new Vector3(0, 0.25, 0)).normalize();
+      n.set(p.x - cx, p.y - cy, p.z - cz).normalize().multiplyScalar(0.2).add(out).add(new Vector3(0, 0.25, 0)).normalize();
       // Shade: darker deep inside and underneath, lighter on top.
       const inner = Math.min(1, p.length());
-      const shade = (0.5 + 0.5 * inner) * (0.7 + 0.25 * (p.y * 0.5 + 0.5)) * (0.86 + 0.28 * noise3(p.x * 6, p.y * 6, p.z * 6 + seed));
+      // (Gently: neighbouring cards should blend, not stand out as patches.)
+      const shade = (0.68 + 0.32 * inner) * (0.8 + 0.18 * (p.y * 0.5 + 0.5)) * (0.94 + 0.12 * noise3(p.x * 6, p.y * 6, p.z * 6 + seed));
       const size = r * sizeK * (0.85 + rnd() * 0.3);
       // Outer, sunnier cards leaf first in spring and drop last (a little).
       const when = Math.min(0.999, Math.max(0, rnd() * 0.85 + inner * 0.15));
@@ -266,6 +267,18 @@ export function fluffyCrown(seed, detail = 2) {
   // The cards reach out past their centres: bounds for culling.
   geo.boundingSphere = new Sphere(new Vector3(), 1.35);
   return geo;
+}
+
+const typical = {};
+/** The average card half-size (unit crowns) at a detail level, to pick one leaf size per tree. */
+export function typicalCard(detail = 2) {
+  if (typical[detail] == null) {
+    const a = fluffyCrown(CROWN_SEEDS[0], detail).attributes.aCard;
+    let sum = 0;
+    for (let i = 0; i < a.count; i++) sum += a.getX(i);
+    typical[detail] = sum / a.count;
+  }
+  return typical[detail];
 }
 
 function tube(points, r0, r1, radial, segs) {
@@ -355,7 +368,8 @@ const CARD_VERTEX = /* glsl */ `
     vec3 camR = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
     vec3 camU = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
     vec3 off = camR * cr.x + camU * cr.y;
-    float h = aCard.x; // the card's half-size (m)
+    // The tree's typical card half-size (m): one leaf size for all its cards.
+    float h = uCardTypical;
     #ifdef USE_INSTANCING
       mat3 im = mat3(instanceMatrix);
       vec3 is2 = vec3(dot(im[0], im[0]), dot(im[1], im[1]), dot(im[2], im[2]));
@@ -369,7 +383,7 @@ const CARD_VERTEX = /* glsl */ `
     ${leafCellGlsl()}
   }
 `;
-const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nattribute float aBare;\nattribute float aSpecies;\nuniform float uBare;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;';
+const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nattribute float aBare;\nattribute float aSpecies;\nuniform float uBare;\nuniform float uCardTypical;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;';
 const CARD_FRAG_DECLS = 'varying float vLeafDrop;\nvarying vec2 vLeafCell;';
 
 /**
@@ -403,9 +417,11 @@ export function makeFluffy(material, { smooth = true, detail = 2 } = {}) {
   // (src/world/species.js), not worked out here.
   material.defines = { ...(material.defines || {}), FLUFFY: '', SPECIES: '' };
   const prev = material.onBeforeCompile;
+  const cardTypical = { value: typicalCard(detail) };
   material.onBeforeCompile = (shader, renderer) => {
     prev?.(shader, renderer);
     shader.uniforms.uBare = leafUniforms.uBare;
+    shader.uniforms.uCardTypical = cardTypical;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${CARD_DECLS}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n${CARD_VERTEX}`);
@@ -434,6 +450,7 @@ export function fluffyDepthMaterial(detail = 2) {
   depthMats[detail] = depthMat;
   depthMat.onBeforeCompile = (shader) => {
     shader.uniforms.uBare = leafUniforms.uBare;
+    shader.uniforms.uCardTypical = { value: typicalCard(detail) };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${CARD_DECLS}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n${CARD_VERTEX}
@@ -455,7 +472,7 @@ export function fluffyDepthMaterial(detail = 2) {
       .replace('#include <common>', `#include <common>\n${CARD_FRAG_DECLS}`)
       .replace('#include <map_fragment>', LEAF_FRAGMENT);
   };
-  depthMat.customProgramCacheKey = () => 'fluffyDepth';
+  depthMat.customProgramCacheKey = () => `fluffyDepth${detail}`;
   return depthMat;
 }
 
