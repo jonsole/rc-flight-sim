@@ -218,7 +218,7 @@ export function leafTexture() {
         const y = oy + T / 2 + sy + Math.sin(a) * d;
         // Half the length (tip to stalk), varying a little.
         const len = (T * LEAF_FRAC * sz * (0.88 + rnd() * 0.24)) / 2;
-        const k = Math.round(Math.min(255, 150 + (i / count) * 50 + rnd() * 55 + sk)); // (brightness, leaf to leaf and sprig to sprig)
+        const k = Math.round(Math.min(255, 170 + (i / count) * 35 + rnd() * 30 + sk * 0.6)); // (brightness, leaf to leaf and sprig to sprig)
         // Red: the leaf's brightness. Green: when it falls (it's gone once the
         // season's leaf fall passes this; see LEAF_FALL). Blue: its own tint,
         // from a little bluer-green (0) to a little yellower (255).
@@ -581,7 +581,7 @@ export const LEAF_FRAGMENT = /* glsl */ `
     diffuseColor.rgb *= vec3(kk, kk, kk * 0.83);
     // Each leaf's own tint: yellower or bluer-green.
     float tint = tx.b / cov - 0.5;
-    diffuseColor.rgb *= vec3(1.0 + tint * 0.55, 1.0 + tint * 0.12, 1.0 - tint * 0.75) * (1.0 + tint * 0.12);
+    diffuseColor.rgb *= vec3(1.0 + tint * 0.25, 1.0 + tint * 0.05, 1.0 - tint * 0.35) * (1.0 + tint * 0.06);
     // Shaded up the crown (vCardUp).
     diffuseColor.rgb *= mix(0.86, 1.06, vCardUp);
     diffuseColor.a *= tx.a;
