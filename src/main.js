@@ -580,6 +580,7 @@ function frame(now) {
   last = now;
 
   const ctl = input.update(dt);
+  touch.setKeepAwake(aircraft.crashed || aircraft.inFoliage);
   touch.setSticks(!input.gamepadName); // a plugged-in transmitter replaces the thumb sticks
   panel.tick();
 
