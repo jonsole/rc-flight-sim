@@ -22,7 +22,13 @@ import { buildingsMesh } from '../world/buildings.js';
 import { pilotSpot } from '../sim/location.js';
 
 /** Tree types in the editor (species: src/world/species.js). */
-const TREE_KINDS = { mixed: 'Broadleaf (mixed)', oak: 'Oak', ash: 'Ash', sycamore: 'Sycamore', birch: 'Birch', beech: 'Beech', horseChestnut: 'Horse chestnut', conifer: 'Conifer' };
+const TREE_KINDS = {
+  mixed: 'Broadleaf (mixed)', oak: 'Oak', ash: 'Ash', sycamore: 'Sycamore', birch: 'Birch', beech: 'Beech', horseChestnut: 'Horse chestnut',
+  conifer: 'Conifer (mixed)', scotsPine: 'Scots pine', corsicanPine: 'Corsican pine', stonePine: 'Stone pine', spruce: 'Norway spruce',
+  douglasFir: 'Douglas fir', cedar: 'Cedar of Lebanon', leyland: 'Leyland cypress', lawson: 'Lawson cypress', larch: 'Larch', yew: 'Yew',
+};
+/** The conifer ones among them. */
+const CONIFER_KINDS = new Set(['conifer', 'scotsPine', 'corsicanPine', 'stonePine', 'spruce', 'douglasFir', 'cedar', 'leyland', 'lawson', 'larch', 'yew']);
 
 const SPEED = 15; // m/s, x4 with Shift
 // Where each kind's edits are kept (src/sim/edits.js).
@@ -665,11 +671,12 @@ export class Editor {
       rows.push(slider('Canopy starts', c.base * o.h, 0, o.h * 0.7, 0.1, 'm', (v) => this.#set({ base: round3(v / o.h) }),
         (v) => show({ base: v / live.h })));
       // Broadleaf (one species, or the natural mix) or conifer.
-      const kind = o.conifer ? 'conifer' : o.species ?? 'mixed';
+      const kind = o.conifer ? o.species ?? 'conifer' : o.species ?? 'mixed';
       const sel = el('select', {
         onchange: (e) => {
           const v = e.target.value;
-          this.#set(v === 'conifer' ? { conifer: true } : { conifer: false, species: v });
+          const conifer = CONIFER_KINDS.has(v);
+          this.#set({ conifer, species: v === 'conifer' ? 'mixed' : v });
         },
       }, ...Object.entries(TREE_KINDS).map(([v, label]) => el('option', { value: v, selected: v === kind }, label)));
       rows.push(el('label', { class: 'ed-row' }, el('span', {}, 'Type'), sel));

@@ -123,21 +123,35 @@ export function addCloudShadows(material) {
   material.onBeforeCompile = (shader, renderer) => {
     prev?.(shader, renderer);
     Object.assign(shader.uniforms, cloudUniforms);
+    // CLOUD_PER_VERTEX (leaf cards, the distant trees' pictures: small next
+    // to a cloud's shadow): worked out once per vertex, not per pixel, as
+    // their many overlapping layers would make it costly.
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vCloudWorld;')
+      .replace('#include <common>', `#include <common>\nvarying vec3 vCloudWorld;\n#ifdef CLOUD_PER_VERTEX\n${UNIFORM_DECLS}\nvarying float vCloudShade;\n${NOISE}\n#endif`)
       .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
         vCloudWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
         #ifdef USE_INSTANCING
           vCloudWorld = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+        #endif
+        #ifdef CLOUD_PER_VERTEX
+        {
+          float up = max(cloudSunDir.y, 0.08);
+          vec2 at = vCloudWorld.xz + cloudSunDir.xz / up * (${CLOUD_HEIGHT.toFixed(1)} - vCloudWorld.y);
+          vCloudShade = 1.0 - cloudShadowStrength * cloudDensity(at);
+        }
         #endif`);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${UNIFORM_DECLS}\nvarying vec3 vCloudWorld;\n${NOISE}`)
+      .replace('#include <common>', `#include <common>\n${UNIFORM_DECLS}\nvarying vec3 vCloudWorld;\n#ifdef CLOUD_PER_VERTEX\nvarying float vCloudShade;\n#endif\n${NOISE}`)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
         {
+          #ifdef CLOUD_PER_VERTEX
+          float shade = vCloudShade;
+          #else
           // Follow the sun ray up to the cloud layer.
           float up = max(cloudSunDir.y, 0.08);
           vec2 at = vCloudWorld.xz + cloudSunDir.xz / up * (${CLOUD_HEIGHT.toFixed(1)} - vCloudWorld.y);
           float shade = 1.0 - cloudShadowStrength * cloudDensity(at);
+          #endif
           reflectedLight.directDiffuse *= shade;
           reflectedLight.directSpecular *= shade;
         }`);

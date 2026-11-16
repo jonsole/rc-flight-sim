@@ -4,7 +4,7 @@
 // only once it has gone a little way), so flying FPV past a far wood brings
 // its trees in leafy.
 import { InstancedMesh, Color, Matrix4, InstancedBufferAttribute, Sphere, Vector3, Box3 } from 'three';
-import { leafState } from './species.js';
+import { leafState, leafName } from './species.js';
 import { LEAF_ROWS } from './fluffy.js';
 
 const _c = new Color();
@@ -14,7 +14,7 @@ const _c = new Color();
  * pixels that shifts from one to the other (addLodFade), so it fades
  * rather than pops. At rest nothing is faded.
  */
-export const FADE_TIME = 0.6;
+export const FADE_TIME = 1.0;
 /** The clock the fades run by (seconds), shared by every faded material. */
 export const lodFadeUniforms = { uLodTime: { value: 0 } };
 
@@ -24,6 +24,8 @@ export const lodFadeUniforms = { uLodTime: { value: 0 } };
  * position (addCloseSwitch), so the plain and detailed never both show.
  */
 export const closeUniforms = { uCloseR: { value: 0 } };
+/** The plain and detailed wood fade into each other over this either side of uCloseR (m). */
+const CLOSE_BAND = 4;
 
 /**
  * Draw a material's instances only near the camera (`near` true: the
@@ -36,15 +38,29 @@ export function addCloseSwitch(material, near) {
     prev?.(shader, renderer);
     Object.assign(shader.uniforms, closeUniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nuniform float uCloseR;')
+      .replace('#include <common>', '#include <common>\nuniform float uCloseR;\nvarying float vCloseD;')
       .replace('#include <project_vertex>', `
         #ifdef USE_INSTANCING
         {
           float d = length(cameraPosition.xz - (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xz);
-          if (${near ? 'd > uCloseR' : 'd < uCloseR'}) transformed = vec3(0.0);
+          vCloseD = d;
+          // Out of its range (and the fade band): folded away to nothing.
+          if (${near ? 'd > uCloseR + CLOSE_BAND' : 'd < uCloseR - CLOSE_BAND'}) transformed = vec3(0.0);
         }
+        #else
+          vCloseD = 1e6;
         #endif
-        #include <project_vertex>`);
+        #include <project_vertex>`)
+      .replace('#include <common>', `#define CLOSE_BAND ${CLOSE_BAND.toFixed(1)}\n#include <common>`);
+    // Across the band, plain and detailed share it pixel by pixel.
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\nuniform float uCloseR;\nvarying float vCloseD;\n#define CLOSE_BAND ${CLOSE_BAND.toFixed(1)}`)
+      .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+        {
+          float farK = smoothstep(uCloseR - CLOSE_BAND, uCloseR + CLOSE_BAND, vCloseD); // 0 close .. 1 far
+          float n = fract(sin(dot(floor(gl_FragCoord.xy), vec2(91.345, 47.853))) * 24634.6345);
+          ${near ? 'if (n < farK) discard;' : 'if (n >= farK) discard;'}
+        }`);
   };
   const prevKey = material.customProgramCacheKey?.bind(material);
   material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|close${near ? 'In' : 'Out'}`;
@@ -122,7 +138,7 @@ export class CrownLod {
     // Species (src/world/species.js): colours and leaf fall through the year.
     this.who = o.species ? items.map((it) => o.species(it)) : null;
     this.bare = new Float32Array(items.length);
-    this.leafRow = items.map((_, i) => Math.max(0, LEAF_ROWS.indexOf(this.who?.[i]?.name)));
+    this.leafRow = items.map((_, i) => Math.max(0, LEAF_ROWS.indexOf(leafName(this.who?.[i]?.name))));
     // Bark colours (the branches drawn with the leafy crowns, by species).
     this.bark = items.map((it) => (o.bark ? o.bark(it, new Color()) : new Color(0x5a4632)));
     this.pos = items.map((it, i) => [this.m[i].elements[12], this.m[i].elements[14]]);
@@ -210,12 +226,33 @@ export class CrownLod {
     const t = now();
     lodFadeUniforms.uLodTime.value = t;
     const moved = !this.at || Math.hypot(x - this.at[0], z - this.at[1]) > this.radius * 0.03;
-    if (!force && !moved && t > this.fadingUntil + 0.05) return false;
+    // (Fades run in the shaders by the clock: one more re-sort when they've
+    // finished, to drop the faded-out copies, not one every frame.)
+    const fadeDone = this.fadingUntil > 0 && t > this.fadingUntil + 0.05;
+    if (!force && !moved && !fadeDone) return false;
     if (moved) this.at = [x, z];
+    if (fadeDone) this.fadingUntil = 0;
     const [cx, cz] = this.at;
     // A little either way, so a tree on the edge doesn't keep swapping.
     const r2in = (this.radius * 0.97) ** 2;
     const r2out = (this.radius * 1.03) ** 2;
+    const closeSortA = ((this.closeR ?? 0) + this.radius * 0.04 + 5) ** 2;
+    // First, just see whether anything changes tier: rewriting every
+    // instance (and sending it all to the GPU again) only when one does.
+    this.isClose ||= this.items.map(() => false);
+    let changed = force || fadeDone;
+    for (let i = 0; i < this.items.length; i++) {
+      const dx = this.pos[i][0] - cx;
+      const dz = this.pos[i][1] - cz;
+      const d2 = dx * dx + dz * dz;
+      const leafy = d2 < (this.isLeafy[i] ? r2out : r2in);
+      const close = d2 < closeSortA;
+      if (leafy !== this.isLeafy[i] || close !== this.isClose[i]) {
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) return false;
     const counts = this.meshes.map(() => 0);
     const nLeafy = this.leafy.length;
     const closeSort2 = ((this.closeR ?? 0) + this.radius * 0.04 + 5) ** 2;
@@ -248,6 +285,7 @@ export class CrownLod {
         this.fadingUntil = t + FADE_TIME;
       }
       this.isLeafy[i] = leafy;
+      this.isClose[i] = d2 < closeSortA;
       const fading = t - this.since[i] < FADE_TIME;
       const s = this.since[i];
       const a = leafy || fading ? put(i, this.shape[i], leafy ? s : -s) : null;

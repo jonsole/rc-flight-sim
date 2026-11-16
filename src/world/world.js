@@ -14,10 +14,9 @@ import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail, groundUniforms } from './ground.js';
 import { seasonFor } from './seasons.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
-import { fluffyCrown, crownWood, makeFluffy, fluffyDepthMaterial, pickAsBall, setLeafDetail } from './fluffy.js';
+import { fluffyCrown, crownWood, fluffyConifer, coniferWood, makeFluffy, fluffyDepthMaterial, pickAsBall, setLeafDetail, LEAF_ROWS } from './fluffy.js';
 import { CrownLod, addLodFade, addCloseSwitch, closeUniforms } from './lod.js';
-import { speciesOf, bushSpeciesAt, barkColor, trunkThickness, SPECIES, WOOD } from './species.js';
-import { LEAF_ROWS } from './fluffy.js';
+import { speciesOf, bushSpeciesAt, barkColor, trunkThickness, SPECIES, WOOD, CONIFER, leafName } from './species.js';
 import { bakeImpostors, impostorGeometry, makeImpostor } from './impostor.js';
 import { QUALITY } from './quality.js';
 import { CROWN_SEEDS, crownOf } from '../sim/treeShapes.js';
@@ -331,6 +330,8 @@ function treeMatrices(t, o, trunkM, crownM) {
 const KEEP_OVER_GOOGLE = new Set(['tree', 'bush', 'fence']);
 
 
+/** The conifer species (src/world/species.js CONIFER), one shape each. */
+const CONIFER_NAMES = Object.keys(CONIFER);
 /** The plain near trunks' designs (trunk seeds), picked by tree. */
 const TRUNK_SEEDS = [3, 41, 67];
 /** The bush shapes' seeds (src/world/props.js). */
@@ -671,7 +672,7 @@ export class World {
         shape: (b) => b.shape,
         species: (b) => bushSpeciesAt(b.x, b.z),
         bark: (b, out) => barkColor({ x: b.x, z: b.z, species: 'hawthorn' }, out),
-        leafy: leafyBushShapes(q.leafy.detail),
+        leafy: leafyBushShapes('blob'), // (bushes: the fewest, biggest cards)
         solid: [0, 1].map((k) => impostorGeometry(CROWN_SEEDS.length + k)),
         leafyMat: this.cardMat,
         solidMat: this.#impostorMat(),
@@ -789,7 +790,7 @@ export class World {
     }
     const leafMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })));
     this.leafMat = leafMat;
-    const cardMat = this.fluffy ? addLodFade(makeFluffy(addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true }))), { smooth: q.leafy.smooth, detail: q.leafy.detail }), false) : null;
+    const cardMat = this.fluffy ? addLodFade(makeFluffy(addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true }))), { smooth: q.leafy.smooth, detail: q.leafy.detail, softDepth: q.leafy.softDepth }), false) : null;
     this.cardMat = cardMat;
     // Bark: its colour per tree (instance colour, by species).
     const barkMat = addCloudShadows(new MeshLambertMaterial({ vertexColors: true }));
@@ -807,6 +808,7 @@ export class World {
     // Leafy: the broadleaf crowns are drawn by the level-of-detail sorter
     // (leafy near the camera, solid beyond), not with their sets.
     const lodTrees = [];
+    const lodConifers = [];
     if (this.fluffy) {
       for (const set of sets) set.crowns = [];
       // Near trunks grown as their species grows them (where it forks, its
@@ -840,9 +842,10 @@ export class World {
         treeMatrices(t, o, _trunkM, _crownM);
         trunkMesh.setMatrixAt(trunkSlot, _trunkM);
         trunkMesh.setColorAt(trunkSlot, barkColor(t, col));
-        if (this.fluffy && !t.conifer) {
+        if (this.fluffy) {
+          // Leafy style: crowns drawn by the level-of-detail sorters.
           t.drawn = { trunk: [trunkMesh, trunkSlot], crown: null };
-          lodTrees.push(t);
+          (t.conifer ? lodConifers : lodTrees).push(t);
           continue;
         }
         const crownMesh = t.conifer ? conifers[t.pick % conifers.length] : crowns[t.variant]; // the shape the collisions use
@@ -911,13 +914,48 @@ export class World {
       this.#addLod(lod, CROWN_SEEDS.map((sd) => blobCrown(sd)), 'tree', lodTrees);
       this.trees.crowns.push(...lod.meshes, ...lod.shadows);
     }
+    if (this.fluffy && lodConifers.length) {
+      // Conifers: a shape per species (src/world/species.js CONIFER), the
+      // crown drawn centred, its height from its base to the top.
+      const o = new Object3D();
+      const lod = new CrownLod(lodConifers, {
+        matrix: (t, out) => {
+          const c = crownOf(t);
+          o.position.set(t.x, c.y0 + c.ch / 2, t.z);
+          o.rotation.set(0, t.rot, 0);
+          o.scale.set(c.r, c.ch, c.r);
+          o.updateMatrix();
+          return out.copy(o.matrix);
+        },
+        color: (t, out) => out.setHSL(t.hue, t.sat, t.light * 1.12 + 0.02),
+        shape: (t) => Math.max(0, CONIFER_NAMES.indexOf(speciesOf(t).name)),
+        species: (t) => speciesOf(t),
+        bark: (t, out) => barkColor(t, out),
+        leafy: CONIFER_NAMES.map((sp) => fluffyConifer(CONIFER[sp], 11, q.leafy.detail)),
+        solid: CONIFER_NAMES.map((_, k) => impostorGeometry(CROWN_SEEDS.length + 2 + k)),
+        leafyMat: cardMat,
+        solidMat: this.#impostorMat(),
+        radius: q.leafy.radius,
+        wood: {
+          closeRadius: q.leafy.close ?? 0,
+          plain: (k, sp) => this.#wood('coniferPlain', 11, CONIFER_NAMES[k]),
+          close: (k, sp) => this.#wood('coniferClose', 11, CONIFER_NAMES[k]),
+          plainMat: this.#plainWoodMat(),
+          closeMat: this.#closeWoodMat(),
+        },
+        onDraw: (t, mesh, slot) => (t.drawn.crown = [mesh, slot]),
+      });
+      // (Their boughs always show: evergreens' tiers hang on them.)
+      this.#addLod(lod, CONIFER_NAMES.map(() => new ConeGeometry(1, 1, 8)), 'tree', lodConifers, { woodAlways: true });
+      this.trees.crowns.push(...lod.meshes, ...lod.shadows);
+    }
   }
 
   /**
    * Add a level-of-detail crown set to the scene: its leafy meshes cast
    * leaf-card shadows and get bare branches (sharing their matrices).
    */
-  #addLod(lod, shadowShapes, kind, list) {
+  #addLod(lod, shadowShapes, kind, list, { woodAlways = false } = {}) {
     this.lods.push(lod);
     // The pictures: no shadows of their own (and none falling on them, which
     // would cut across the card); plain shapes cast them instead.
@@ -957,7 +995,7 @@ export class World {
       m.userData.kind = kind;
       if (kind === 'tree') m.userData.trees = list;
       this.scene.add(m);
-      if (role !== 'closeTrunk') this.twigMeshes.push(m);
+      if (role !== 'closeTrunk' && !woodAlways) this.twigMeshes.push(m);
     }
   }
 
@@ -967,9 +1005,11 @@ export class World {
     const key = `${kind}|${seed}|${sp}|${from ?? ''}`;
     if (!this.woodCache.has(key)) {
       const w = WOOD[sp] ?? {};
-      this.woodCache.set(key, kind === 'trunk'
-        ? trunk(seed, true, w.trunk)
-        : crownWood(seed, { from, wood: w.crown, close: kind === 'close' }));
+      let geo;
+      if (kind === 'trunk') geo = trunk(seed, true, w.trunk);
+      else if (kind.startsWith('conifer')) geo = coniferWood(CONIFER[sp], seed, { close: kind === 'coniferClose' });
+      else geo = crownWood(seed, { from, wood: w.crown, close: kind === 'close' });
+      this.woodCache.set(key, geo);
     }
     return this.woodCache.get(key);
   }
@@ -994,9 +1034,20 @@ export class World {
   /** The distant trees' material: pictures of the leafy crowns, drawn once. */
   #impostorMat() {
     if (this.impMat) return this.impMat;
+    // Each shape drawn at its trees' typical height for their width (their
+    // leaf tufts round), so the pictures match the leafy trees.
+    const ob = this.obstacles;
+    const avg = (list, f, dflt) => (list.length ? list.reduce((a, x) => a + f(x), 0) / list.length : dflt);
+    const broad = ob.trees.filter((t) => !t.conifer);
+    const treeR = (sd) => avg(broad.filter((t) => CROWN_SEEDS[t.variant] === sd), (t) => crownOf(t).sy / crownOf(t).sx, 1.8);
+    const bushR = avg(ob.bushes, (b) => (b.h * 0.55) / b.w, 1);
+    const coniferR = (sp) => avg(ob.trees.filter((t) => t.conifer && speciesOf(t).name === sp), (t) => crownOf(t).ch / crownOf(t).r, (1 - CONIFER[sp].base) / CONIFER[sp].crownW);
+    // Columns: the broadleaf crowns, the bushes, then a conifer per species.
     const shapes = [
-      ...CROWN_SEEDS.map((sd) => ({ leafy: fluffyCrown(sd, 2), twigs: crownWood(sd) })),
-      ...leafyBushShapes(2).map((g, k) => ({ leafy: g, twigs: bushTwigShapes()[k] })),
+      // (Drawn from the same cards as the leafy ones at this quality.)
+      ...CROWN_SEEDS.map((sd) => ({ leafy: fluffyCrown(sd, this.quality.leafy.detail), twigs: crownWood(sd), stretch: treeR(sd) })),
+      ...leafyBushShapes('blob').map((g, k) => ({ leafy: g, twigs: bushTwigShapes()[k], leafRow: LEAF_ROWS.indexOf('hawthorn'), stretch: bushR })),
+      ...CONIFER_NAMES.map((sp) => ({ leafy: fluffyConifer(CONIFER[sp], 11, this.quality.leafy.detail), twigs: coniferWood(CONIFER[sp], 11), leafRow: LEAF_ROWS.indexOf(leafName(sp)), stretch: coniferR(sp) })),
     ];
     const atlas = bakeImpostors(this.renderer, shapes, this.quality.leafy.tile);
     this.impMat = addLodFade(makeImpostor(addLeafShading(addCloudShadows(new MeshLambertMaterial())), atlas), true);

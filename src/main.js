@@ -26,6 +26,7 @@ import { LOCATION, LOCATIONS, clubAngle, clubToWorld, pilotSpot } from './sim/lo
 import { QUALITY, qualityPreset, viewDistance } from './world/quality.js';
 import { tunedDef, loadTuning } from './sim/tuning.js';
 import { GoogleTiles } from './world/googleTiles.js';
+import { cardUniforms } from './world/fluffy.js';
 import { loadEdits } from './sim/edits.js';
 import { Editor } from './editor/editor.js';
 
@@ -256,6 +257,8 @@ let clockTimer = 0;
 
 function applySettings() {
   aircraft.assistMode = settings.assist;
+  // Leaf cards: facing the camera's position (upright) or, the old way, the screen.
+  cardUniforms.uFacePos.value = settings.cardsFaceCamera === false ? 0 : 1;
   wind.speed = settings.windSpeed;
   wind.directionDeg = settings.windDir;
   wind.turbulence = settings.turbulence;
