@@ -21,56 +21,80 @@ import { leafUniforms } from './trees.js';
 /** Cards per clump for a detail level (2 full, 1, 0, 'blob' for far away). */
 const CARDS = { 2: 16, 1: 10, 0: 6, blob: 4 };
 
-/** Leaf size: 1 was the first, rather big, leaves. */
-const LEAF = 0.55;
-const leafTex = {};
 /**
- * A cluster of small leaves, white-ish (tinted per tree), cut out round its
- * edge. Fewer, bigger cards (lower `detail`) get more, smaller leaves in
- * their picture, so the leaves come out the same size at every quality.
+ * Leaves: about LEAF_M long on every tree and bush. A card's leaf picture
+ * scales with the card, and cards with their tree, so the picture comes in
+ * four versions (an atlas, 2 x 2), from big leaves to many small ones, and
+ * each card picks the one that gives leaves of that size (CARD_VERTEX).
  */
-export function leafTexture(detail = 2) {
-  if (leafTex[detail]) return leafTex[detail];
-  const scale = Math.sqrt(CARDS[2] / (CARDS[detail] ?? CARDS[2])); // this card size / the full-detail one
-  const count = Math.round((70 / (LEAF * LEAF)) * scale * scale);
-  const S = 256;
+const LEAF_M = 0.22;
+/** The versions' leaf sizes, relative to the first. */
+const LEAF_SIZES = [1, 0.7, 0.5, 0.35];
+/** Leaf length in the first version, as a fraction of the card's width. */
+const LEAF_FRAC = 0.1;
+let leafTex = null;
+/**
+ * The leaf pictures: clusters of small leaves, white-ish (tinted per tree),
+ * cut out round a ragged edge.
+ */
+export function leafTexture() {
+  if (leafTex) return leafTex;
+  const T = 320; // each version
   const c = document.createElement('canvas');
-  c.width = c.height = S;
+  c.width = c.height = T * 2;
   const g = c.getContext('2d');
   const rnd = rng(77);
-  // Leaves scattered over a round cluster, denser in the middle; the ones
-  // underneath darker, so the cluster has some depth.
-  for (let i = 0; i < count; i++) {
-    const a = rnd() * Math.PI * 2;
-    // Thinning out towards a ragged edge (an even disc of small leaves
-    // reads as a clipped ball), a few strays reaching further.
-    const d = S * (rnd() < 0.12 ? 0.3 + rnd() * 0.15 : 0.4 * Math.pow(rnd(), 0.75));
-    const x = S / 2 + Math.cos(a) * d;
-    const y = S / 2 + Math.sin(a) * d;
-    const len = (S * (0.07 + rnd() * 0.05) * LEAF) / scale;
-    const k = Math.round(150 + (i / count) * 80 + rnd() * 25);
-    // Red: the leaf's brightness. Green: when it falls (it's gone once the
-    // season's leaf fall passes this; see LEAF_FALL).
-    g.fillStyle = `rgb(${k},${Math.round(5 + rnd() * 250)},0)`;
-    g.save();
-    g.translate(x, y);
-    // Leaves point roughly outwards from the middle.
-    g.rotate(a + Math.PI / 2 + (rnd() - 0.5) * 1.6);
-    g.beginPath();
-    g.moveTo(0, -len);
-    g.quadraticCurveTo(len * 0.55, -len * 0.1, 0, len);
-    g.quadraticCurveTo(-len * 0.55, -len * 0.1, 0, -len);
-    g.fill();
-    g.restore();
-  }
+  LEAF_SIZES.forEach((size, v) => {
+    const ox = (v % 2) * T;
+    // (Canvas rows run downwards; texture rows upwards.)
+    const oy = (1 - Math.floor(v / 2)) * T;
+    // The same coverage whatever the leaf size: more, smaller ones.
+    const count = Math.round(230 / (size * size));
+    for (let i = 0; i < count; i++) {
+      const a = rnd() * Math.PI * 2;
+      // Thinning out towards a ragged edge (an even disc of small leaves
+      // reads as a clipped ball), a few strays reaching further.
+      const d = T * (rnd() < 0.12 ? 0.3 + rnd() * 0.15 : 0.4 * Math.pow(rnd(), 0.75));
+      const x = ox + T / 2 + Math.cos(a) * d;
+      const y = oy + T / 2 + Math.sin(a) * d;
+      // Half the length (tip to middle), varying a little.
+      const len = (T * LEAF_FRAC * size * (0.88 + rnd() * 0.24)) / 2;
+      const k = Math.round(150 + (i / count) * 80 + rnd() * 25);
+      // Red: the leaf's brightness. Green: when it falls (it's gone once the
+      // season's leaf fall passes this; see LEAF_FALL).
+      g.fillStyle = `rgb(${k},${Math.round(5 + rnd() * 250)},0)`;
+      g.save();
+      g.translate(x, y);
+      // Leaves point roughly outwards from the middle.
+      g.rotate(a + Math.PI / 2 + (rnd() - 0.5) * 1.6);
+      g.beginPath();
+      g.moveTo(0, -len);
+      g.quadraticCurveTo(len * 0.55, -len * 0.1, 0, len);
+      g.quadraticCurveTo(-len * 0.55, -len * 0.1, 0, -len);
+      g.fill();
+      g.restore();
+    }
+  });
   const t = new CanvasTexture(c);
   // (Not colour: brightness and fall time, read by LEAF_FRAGMENT, which
   // divides them by coverage: so they're stored multiplied by it, which
   // also keeps the smaller copies (mipmaps) right at the leaves' edges.)
   t.premultiplyAlpha = true;
   t.anisotropy = 4;
-  leafTex[detail] = t;
+  leafTex = t;
   return t;
+}
+
+/**
+ * Which leaf picture (atlas cell, see leafTexture) a card of half-size h
+ * metres shows: leaves of about LEAF_M whatever the card's size.
+ */
+function leafCellGlsl() {
+  // Leaf length = LEAF_FRAC x card width x version size = LEAF_FRAC 2h size.
+  // Switch half way between the versions.
+  const want = (size) => LEAF_M / (LEAF_FRAC * 2 * size); // h at which a version is just right
+  const edges = [0, 1, 2].map((k) => Math.sqrt(want(LEAF_SIZES[k]) * want(LEAF_SIZES[k + 1])).toFixed(3));
+  return `vLeafCell = h < ${edges[0]} ? vec2(0.0, 0.0) : h < ${edges[1]} ? vec2(1.0, 0.0) : h < ${edges[2]} ? vec2(0.0, 1.0) : vec2(1.0, 1.0);`;
 }
 
 /**
@@ -117,7 +141,7 @@ export function fluffyCrown(seed, detail = 2) {
       // Shade: darker deep inside and underneath, lighter on top.
       const inner = Math.min(1, p.length());
       const shade = (0.5 + 0.5 * inner) * (0.7 + 0.25 * (p.y * 0.5 + 0.5)) * (0.86 + 0.28 * noise3(p.x * 6, p.y * 6, p.z * 6 + seed));
-      const size = r * sizeK * (0.75 + rnd() * 0.45) * (core ? 1.2 : 1);
+      const size = r * sizeK * (0.85 + rnd() * 0.3);
       // Outer, sunnier cards leaf first in spring and drop last (a little).
       const when = Math.min(0.999, Math.max(0, rnd() * 0.85 + inner * 0.15));
       const spin = rnd();
@@ -233,18 +257,22 @@ const CARD_VERTEX = /* glsl */ `
     vec3 camR = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
     vec3 camU = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
     vec3 off = camR * cr.x + camU * cr.y;
+    float h = aCard.x; // the card's half-size (m)
     #ifdef USE_INSTANCING
       mat3 im = mat3(instanceMatrix);
       vec3 is2 = vec3(dot(im[0], im[0]), dot(im[1], im[1]), dot(im[2], im[2]));
       // Sized by the crown's width, in the (possibly squashed) crown's space.
       float isc = sqrt((is2.x + is2.z) * 0.5);
       transformed += (transpose(im) * (off * isc)) / is2;
+      h *= isc;
     #else
       transformed += off;
     #endif
+    ${leafCellGlsl()}
   }
 `;
-const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nuniform float uBare;\nvarying float vLeafDrop;';
+const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nuniform float uBare;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;';
+const CARD_FRAG_DECLS = 'varying float vLeafDrop;\nvarying vec2 vLeafCell;';
 
 /**
  * Read the leaf picture (see leafTexture): its brightness (as colour) into
@@ -254,7 +282,7 @@ const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nuniform floa
  */
 export const LEAF_FRAGMENT = /* glsl */ `
   {
-    vec4 tx = texture2D(map, vMapUv);
+    vec4 tx = texture2D(map, (vMapUv + vLeafCell) * 0.5);
     float cov = max(tx.a, 0.01);
     float kk = pow(tx.r / cov, 2.2);
     diffuseColor.rgb *= vec3(kk, kk, kk * 0.83);
@@ -268,7 +296,7 @@ export const LEAF_FRAGMENT = /* glsl */ `
  * leafy-card one: cut-out leaf texture, cards facing the camera.
  */
 export function makeFluffy(material, { smooth = true, detail = 2 } = {}) {
-  material.map = leafTexture(detail);
+  material.map = leafTexture();
   material.alphaTest = 0.5;
   // Soft cut-out edges with the screen's anti-aliasing (skipped on phones).
   material.alphaToCoverage = smooth;
@@ -283,11 +311,11 @@ export function makeFluffy(material, { smooth = true, detail = 2 } = {}) {
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n${CARD_VERTEX}`);
     // Far away the texture's smaller copies (mipmaps) blur the leaves'
     // edges and the cards would fade away: keep them solid.
-    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vLeafDrop;').replace('#include <map_fragment>', `${LEAF_FRAGMENT}
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\n${CARD_FRAG_DECLS}`).replace('#include <map_fragment>', `${LEAF_FRAGMENT}
       {
         vec2 tsz = vec2(textureSize(map, 0));
-        vec2 ddx = dFdx(vMapUv * tsz);
-        vec2 ddy = dFdy(vMapUv * tsz);
+        vec2 ddx = dFdx(vMapUv * tsz * 0.5);
+        vec2 ddy = dFdy(vMapUv * tsz * 0.5);
         float lod = 0.5 * log2(max(max(dot(ddx, ddx), dot(ddy, ddy)), 1e-6));
         diffuseColor.a *= 1.0 + max(lod, 0.0) * 0.35;
       }`);
@@ -302,7 +330,7 @@ const depthMats = {};
 /** For the shadow map: the same cards (at this detail), facing the sun. */
 export function fluffyDepthMaterial(detail = 2) {
   if (depthMats[detail]) return depthMats[detail];
-  const depthMat = new MeshDepthMaterial({ depthPacking: RGBADepthPacking, map: leafTexture(detail), alphaTest: 0.5 });
+  const depthMat = new MeshDepthMaterial({ depthPacking: RGBADepthPacking, map: leafTexture(), alphaTest: 0.5 });
   depthMats[detail] = depthMat;
   depthMat.onBeforeCompile = (shader) => {
     shader.uniforms.uBare = leafUniforms.uBare;
@@ -324,7 +352,7 @@ export function fluffyDepthMaterial(detail = 2) {
           #endif
         }`);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vLeafDrop;')
+      .replace('#include <common>', `#include <common>\n${CARD_FRAG_DECLS}`)
       .replace('#include <map_fragment>', LEAF_FRAGMENT);
   };
   depthMat.customProgramCacheKey = () => 'fluffyDepth';

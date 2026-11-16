@@ -62,7 +62,7 @@ const BAKE_FRAG = /* glsl */ `
       // The leaf picture (src/world/fluffy.js leafTexture): brightness, and
       // the leaf's fall time, here turned into the season's leaf fall
       // (uBare) at which it has gone (fluffy.js LEAF_FALL, solved for it).
-      vec4 t = texture2D(uLeaf, vUv);
+      vec4 t = texture2D(uLeaf, (vUv + vec2(1.0, 0.0)) * 0.5); // (the second leaf picture: typical crowns)
       if (t.a < 0.5) discard;
       float kk = pow(t.r / t.a, 2.2);
       c *= vec3(kk, kk, kk * 0.83);
