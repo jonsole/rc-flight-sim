@@ -22,7 +22,8 @@ export const DEFAULT_SETTINGS = {
   // Graphics (src/world/quality.js); blank = chosen for the device on first run
   graphics: '',          // 'low' | 'medium' | 'high'
   viewDistance: '',      // metres as a string, '0' = unlimited
-  treeStyle: 'fluffy',   // trees and bushes: 'fluffy' (leafy cards, src/world/fluffy.js) | 'classic' (solid)
+  treeStyle: 'fluffy',
+  cardsFaceCamera: true, // leafy trees: leaf cards face the camera's position (false: the screen, as before)   // trees and bushes: 'fluffy' (leafy cards, src/world/fluffy.js) | 'classic' (solid)
   scenery: 'built',      // real sites: 'built' (from the site data) | 'google' (photorealistic 3D tiles)
   googleKey: '',         // your Google Maps Platform API key (stays in this browser)
   // Environment

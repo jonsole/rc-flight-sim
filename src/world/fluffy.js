@@ -495,6 +495,22 @@ const CARD_VERTEX = /* glsl */ `
     vec2 cr = mat2(cos(an), sin(an), -sin(an), cos(an)) * aCorner * aCard.x * grow;
     vec3 camR = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
     vec3 camU = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
+    if (uFacePos > 0.5) {
+      // Facing the camera's position, kept upright: turning, pitching or
+      // rolling the camera changes nothing (as with real leaves); only moving
+      // past turns them, smoothly. (Facing the screen, every card swings
+      // round as the view turns, swapping which is in front and where its
+      // shadows fall: popping.)
+      #ifdef USE_INSTANCING
+        vec3 cw = (modelMatrix * instanceMatrix * vec4(position, 1.0)).xyz;
+      #else
+        vec3 cw = (modelMatrix * vec4(position, 1.0)).xyz;
+      #endif
+      vec3 toCam = normalize(cameraPosition - cw);
+      vec3 r = cross(vec3(0.0, 1.0, 0.0), toCam);
+      camR = dot(r, r) < 1e-6 ? camR : normalize(r);
+      camU = cross(toCam, camR);
+    }
     vec3 off = camR * cr.x + camU * cr.y;
     // The tree's typical card half-size (m): one leaf size for all its cards.
     float h = uCardTypical;
@@ -541,7 +557,9 @@ const CARD_VERTEX = /* glsl */ `
     }
   }
 `;
-const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nattribute vec3 aFlat;\nattribute float aBare;\nattribute float aSpecies;\nuniform float uBare;\nuniform float uCardTypical;\nvarying float vNearFade;\nvarying float vCardUp;\nvarying vec2 vCardXY;\nvarying float vCardR;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;';
+/** Leaf cards facing the camera's position (1, upright) or its screen (0, the old way). */
+export const cardUniforms = { uFacePos: { value: 1 } };
+const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nattribute vec3 aFlat;\nattribute float aBare;\nattribute float aSpecies;\nuniform float uBare;\nuniform float uCardTypical;\nuniform float uFacePos;\nvarying float vNearFade;\nvarying float vCardUp;\nvarying vec2 vCardXY;\nvarying float vCardR;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;';
 const CARD_FRAG_DECLS = 'varying float vNearFade;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;\nvarying float vCardUp;\nvarying vec2 vCardXY;\nvarying float vCardR;';
 
 /**
@@ -594,6 +612,7 @@ export function makeFluffy(material, { smooth = true, detail = 2, softDepth = fa
     prev?.(shader, renderer);
     shader.uniforms.uBare = leafUniforms.uBare;
     shader.uniforms.uCardTypical = cardTypical;
+    shader.uniforms.uFacePos = cardUniforms.uFacePos;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${CARD_DECLS}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n${CARD_VERTEX}`);
@@ -639,6 +658,7 @@ export function fluffyDepthMaterial(detail = 2) {
   depthMat.onBeforeCompile = (shader) => {
     shader.uniforms.uBare = leafUniforms.uBare;
     shader.uniforms.uCardTypical = { value: typicalCard(detail) };
+    shader.uniforms.uFacePos = cardUniforms.uFacePos;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${CARD_DECLS}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n${CARD_VERTEX}
