@@ -23,16 +23,21 @@ export function seasonFor(day) {
   const bare = 1 - leafOut + leafFall;
   const autumn = smooth(262, 300, day) * (1 - smooth(340, 355, day));
   const fresh = smooth(100, 120, day) * (1 - smooth(140, 170, day));
-  // Grass: dull and yellowish in winter, bright in spring, a touch dry in
-  // late summer.
+  // Grass: dull in winter, bright in spring; drying out yellow through a
+  // dry late summer (late July to early September), greening again with
+  // the autumn rain (later September, October), and growing longer then.
   const winter = Math.max(1 - smooth(60, 110, day), smooth(310, 350, day));
-  const dry = smooth(190, 225, day) * (1 - smooth(255, 280, day));
+  const dry = smooth(195, 230, day) * (1 - smooth(250, 280, day));
+  const regrow = smooth(255, 285, day) * (1 - smooth(315, 340, day)); // fresh autumn green
   const grass = [
-    1 - 0.08 * winter + 0.04 * dry + 0.02 * fresh,
-    1 - 0.14 * winter - 0.04 * dry + 0.05 * fresh,
-    1 - 0.05 * winter - 0.08 * dry,
+    1 - 0.08 * winter + 0.2 * dry + 0.02 * fresh,
+    1 - 0.14 * winter - 0.02 * dry + 0.05 * fresh + 0.04 * regrow,
+    1 - 0.05 * winter - 0.32 * dry - 0.03 * regrow,
   ];
-  return { bare: Math.min(1, Math.max(0, bare)), autumn, fresh, grass };
+  // How long the grass is (0 short .. 1 long): a spring flush, then long
+  // and lush in autumn (growing again, mown less often).
+  const length = Math.min(1, 0.35 * smooth(105, 140, day) * (1 - smooth(160, 190, day)) + smooth(255, 300, day) * (1 - smooth(330, 360, day)));
+  return { bare: Math.min(1, Math.max(0, bare)), autumn, fresh, grass, dry, length };
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

@@ -17,7 +17,11 @@ import { LOCATION, clubAngle } from '../sim/location.js';
 const FIELD = { x: 0, z: -40, r: 260 };
 
 /** Grass colour for the season (src/world/seasons.js), shared by the ground's shader. */
-export const groundUniforms = { uGrassTint: { value: new Vector3(1, 1, 1) } };
+export const groundUniforms = {
+  uGrassTint: { value: new Vector3(1, 1, 1) },
+  uGrassDry: { value: 0 }, // late summer: long grass yellows more than mown
+  uGrassLen: { value: 0 }, // how long the grass is grown (0-1): coarser blades
+};
 
 /** GLSL polyFieldDist(p): distance outside a polygon field (0 inside). */
 function polyGlsl() {
@@ -201,7 +205,7 @@ export function addGroundDetail(material) {
       .replace('#include <common>', '#include <common>\nvarying vec3 vGroundWorld;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGroundWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${GLSL}\n${polyGlsl()}\nuniform vec3 uGrassTint;\nuniform sampler2D grassFine;\nuniform float grassFineMean;\n#ifdef REAL_GROUND\nuniform sampler2D groundMap; uniform vec2 groundOrigin; uniform float groundSize;\n#endif`)
+      .replace('#include <common>', `#include <common>\n${GLSL}\n${polyGlsl()}\nuniform vec3 uGrassTint;\nuniform float uGrassDry;\nuniform float uGrassLen;\nuniform sampler2D grassFine;\nuniform float grassFineMean;\n#ifdef REAL_GROUND\nuniform sampler2D groundMap; uniform vec2 groundOrigin; uniform float groundSize;\n#endif`)
       .replace('#include <map_fragment>', /* glsl */ `
         vec2 p = vGroundWorld.xz;
         // Grass texture at two scales and angles, blended by a slow noise,
@@ -297,18 +301,29 @@ ${mownGlsl()}
         // grass coarser and more uneven than the mown.
         {
           float camD = length(vGroundWorld - cameraPosition);
-          float near = 1.0 - smoothstep(10.0, 70.0, camD);
+          // How long it is here: rough grass long, mown short (longer in
+          // autumn, and the mown grass a little too).
+          float len = clamp((1.0 - mown) * (0.75 + 0.25 * uGrassLen) + mown * 0.35 * uGrassLen, 0.0, 1.0);
+          float near = 1.0 - smoothstep(10.0, 70.0 + 50.0 * len, camD);
           if (near > 0.0 && grassy > 0.0) {
             vec2 r1 = vec2(p.x * 0.94 - p.y * 0.34, p.x * 0.34 + p.y * 0.94);
             vec3 b1 = texture2D(grassFine, r1 / 0.9).rgb;
             vec3 b2 = texture2D(grassFine, vec2(p.y, -p.x) / 0.37 + 0.31).rgb;
             vec3 blades = mix(b1, b2, 0.4) / grassFineMean; // (1 on average)
-            float tuft = 0.86 + 0.28 * gNoise(p / 0.45) * (1.0 - 0.5 * mown);
+            // Long grass: big coarse blades and deep tufts with shadowed
+            // hollows between them.
+            vec3 b3 = texture2D(grassFine, vec2(p.x * 0.6 + p.y * 0.8, -p.x * 0.8 + p.y * 0.6) / 2.6 + 0.17).rgb / grassFineMean;
+            blades = mix(blades, mix(blades, b3, 0.6), len);
+            vec3 contrast = mix(vec3(0.85), vec3(1.25), len);
+            blades = 1.0 + (blades - 1.0) * contrast;
+            float tuft = mix(0.92 + 0.16 * gNoise(p / 0.45), 0.72 + 0.56 * gNoise(p / 0.8) * gNoise(p / 2.3 + 5.0) * 1.6, len);
             float k = near * grassy;
-            g *= mix(vec3(1.0), blades * tuft, k * 0.85);
+            g *= mix(vec3(1.0), blades * tuft, k);
           }
         }
         g *= mix(vec3(1.0), uGrassTint, grassy);
+        // Long grass (off the mown areas) dries out more: straw yellow.
+        g *= mix(vec3(1.0), vec3(1.12, 1.0, 0.72), uGrassDry * (1.0 - mown) * grassy);
         diffuseColor.rgb *= g;
       `);
   };

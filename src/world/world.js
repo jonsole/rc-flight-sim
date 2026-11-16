@@ -751,6 +751,8 @@ export class World {
     leafUniforms.uAutumn.value = s.autumn;
     leafUniforms.uFresh.value = s.fresh;
     groundUniforms.uGrassTint.value.set(...s.grass);
+    groundUniforms.uGrassDry.value = s.dry;
+    groundUniforms.uGrassLen.value = s.length;
     // Branches show once leaves are going; leafy crowns' shadows follow their
     // leaves (the shadow map is only redrawn when they've changed a bit).
     // Leafy trees: each by its species (src/world/species.js).
