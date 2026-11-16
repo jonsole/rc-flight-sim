@@ -535,9 +535,12 @@ export class Aircraft {
         _w.copy(this.omega).applyQuaternion(q);
         _vt.crossVectors(_w, _r).add(this.velocity);
         if (hit.soft) {
+          // Bare twigs (sparse, out of leaf) hold less, and a faster model
+          // gets through them before they bring it down.
+          const sparse = hit.sparse ?? 0;
           this.inFoliage = true;
-          if (_vt.length() > 4) this.crash(`Flew into ${s.name}`);
-          _f.copy(_vt).multiplyScalar(-cFoliage);
+          if (_vt.length() > 4 * (1 + 1.5 * sparse)) this.crash(`Flew into ${s.name}`);
+          _f.copy(_vt).multiplyScalar(-cFoliage * (1 - 0.6 * sparse));
         } else {
           _n.set(hit.nx, hit.ny, hit.nz);
           const vn = _vt.dot(_n);

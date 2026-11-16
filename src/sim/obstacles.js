@@ -21,6 +21,20 @@ import { EDITS, applyTreeEdits, applyBushEdits, applyBuildingEdits, applyFenceEd
 
 const _lp = { x: 0, y: 0, z: 0 };
 
+/**
+ * How leafy the broadleaf trees, bushes and hedges are (1 in leaf, 0 bare in
+ * winter; src/world/seasons.js), for their collisions: a bare or thinning
+ * crown is mostly open twigs, so only its inner branches catch a model, and
+ * less firmly. Conifers keep their needles.
+ */
+let leafiness = 1;
+export function setLeafiness(v) {
+  leafiness = Math.min(1, Math.max(0, v));
+}
+/** How much of a leafy shape still catches (clump size), and how sparse it is (0 in full leaf). */
+const caught = () => 0.45 + 0.55 * leafiness;
+const SPARSE = () => 1 - leafiness;
+
 const CELL = 12; // spatial-hash cell size (m)
 
 /** Leaf colours, and for broadleaves the crown radius, for a new tree. */
@@ -335,7 +349,7 @@ export class Obstacles {
     this.bushes = applyBushEdits(makeBushes(), editedBush);
     for (const b of this.bushes) {
       const y = heightAt(b.x, b.z);
-      this.shapes.push({ type: 'ellipsoid', name: 'a bush', cx: b.x, cy: y + b.h * 0.5, cz: b.z, rx: b.w * 0.9, ry: b.h * 0.5, rz: b.w * 0.9 });
+      this.shapes.push({ type: 'ellipsoid', name: 'a bush', cx: b.x, cy: y + b.h * 0.5, cz: b.z, rx: b.w * 0.9, ry: b.h * 0.5, rz: b.w * 0.9, deciduous: true });
     }
     // Buildings at a real site.
     this.buildings = applyBuildingEdits(LOCATION.data?.buildings ?? []).map((b) => ({ ...prepareBuilding(b), index: b.index }));
@@ -430,10 +444,12 @@ export class Obstacles {
         return { depth: side, nx: r > 1e-6 ? dx * inv : 1, ny: 0, nz: dz * inv };
       }
       case 'ellipsoid': {
-        const u = (x - s.cx) / s.rx;
-        const v = (y - s.cy) / s.ry;
-        const w = (z - s.cz) / s.rz;
-        return u * u + v * v + w * w < 1 ? { soft: true } : null;
+        // (Bushes: lose their leaves like the trees.)
+        const k = s.deciduous ? caught() : 1;
+        const u = (x - s.cx) / (s.rx * k);
+        const v = (y - s.cy) / (s.ry * k);
+        const w = (z - s.cz) / (s.rz * k);
+        return u * u + v * v + w * w < 1 ? { soft: true, sparse: s.deciduous ? SPARSE() : 0 } : null;
       }
       case 'crown': {
         // Into the crown's own frame (undo its turn and size), then inside
@@ -446,7 +462,10 @@ export class Obstacles {
         const lz = (dx * s.sin + dz * s.cos) / s.sx;
         // 1. Outside the whole crown's bounding shell?
         if (lx * lx + ly * ly + lz * lz > 1.1) return null;
-        for (const [cx, cy, cz, r] of s.clumps) {
+        // Out of leaf: only the clumps' inner branches catch.
+        const shrink = caught();
+        for (const [cx, cy, cz, r0] of s.clumps) {
+          const r = r0 * shrink;
           const ex = lx - cx;
           const ey = ly - cy;
           const ez = lz - cz;
@@ -462,7 +481,7 @@ export class Obstacles {
           const fx = lx * k - cx;
           const fy = ly * k - cy;
           const fz = lz * k - cz;
-          if (fx * fx + fy * fy + fz * fz < r * r) return { soft: true };
+          if (fx * fx + fy * fy + fz * fz < r * r) return { soft: true, sparse: SPARSE() };
         }
         return null;
       }

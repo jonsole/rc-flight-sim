@@ -1,7 +1,8 @@
 import { WebGLRenderer, ACESFilmicToneMapping, PCFSoftShadowMap, SRGBColorSpace, Vector3 } from 'three';
 import { Aircraft } from './sim/aircraft.js';
 import { physicsGround as ground } from './sim/terrain.js';
-import { Obstacles } from './sim/obstacles.js';
+import { Obstacles, setLeafiness } from './sim/obstacles.js';
+import { seasonFor } from './world/seasons.js';
 import { Wind } from './sim/wind.js';
 import { World, RUNWAY } from './world/world.js';
 import { AIRCRAFT, getAircraft, loadModelFiles } from './aircraft/index.js';
@@ -247,6 +248,8 @@ function applyTime() {
   const day = settings.useClock ? dayOfYear(now) : Number(settings.dayOfYear);
   world.setTime(hours, day);
   world.setSeason(day);
+  // Bare trees and bushes catch less (src/sim/obstacles.js).
+  setLeafiness(1 - seasonFor(day).bare);
   renderer.toneMappingExposure = world.exposure;
 }
 let clockTimer = 0;
