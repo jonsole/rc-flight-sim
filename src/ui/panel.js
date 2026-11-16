@@ -40,6 +40,7 @@ export class Panel {
   }
 
   show(v = !this.visible) {
+    if (v && !this.visible) this.openedAt = performance.now();
     this.visible = v;
     this.root.classList.toggle('open', v);
     if (v) this.render();
@@ -88,7 +89,8 @@ export class Panel {
       el('div', { class: 'panel' },
         el('div', { class: 'panel-head' },
           el('h2', {}, 'RC Flight Sim'),
-          el('button', { class: 'close', onclick: () => this.opts.onClose() }, 'Resume ▶')),
+          // (Not the tap that opened the menu, landing where this now is.)
+          el('button', { class: 'close', onclick: () => performance.now() - (this.openedAt ?? 0) > 400 && this.opts.onClose() }, 'Resume ▶')),
         el('div', { class: 'tabs' }, Object.entries(tabs).map(([k, t]) =>
           el('button', { class: k === this.tab ? 'tab on' : 'tab', onclick: () => { this.tab = k; this.render(); } }, t))),
         el('div', { class: 'body' }, this[`tab_${this.tab}`]())));
