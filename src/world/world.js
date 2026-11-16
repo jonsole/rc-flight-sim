@@ -15,7 +15,7 @@ import { addGroundDetail, groundUniforms } from './ground.js';
 import { seasonFor } from './seasons.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
 import { fluffyCrown, crownBranches, makeFluffy, fluffyDepthMaterial, pickAsBall } from './fluffy.js';
-import { CrownLod } from './lod.js';
+import { CrownLod, addLodFade } from './lod.js';
 import { bakeImpostors, impostorGeometry, makeImpostor } from './impostor.js';
 import { QUALITY } from './quality.js';
 import { CROWN_SEEDS, crownOf } from '../sim/treeShapes.js';
@@ -656,7 +656,7 @@ export class World {
         solid: [0, 1].map((k) => impostorGeometry(CROWN_SEEDS.length + k)),
         leafyMat: this.cardMat,
         solidMat: this.#impostorMat(),
-        radius: Math.min(q.leafy.radius, 250),
+        radius: q.leafy.radius, // (the same as the trees: one fade band)
         onDraw: (b, mesh, slot) => (b.drawn = [mesh, slot]),
       }), bushTwigShapes(), bushShapes('blob'), 'bush', list);
     } else {
@@ -763,7 +763,7 @@ export class World {
     }
     const leafMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })));
     this.leafMat = leafMat;
-    const cardMat = this.fluffy ? makeFluffy(addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true }))), { smooth: q.leafy.smooth }) : null;
+    const cardMat = this.fluffy ? addLodFade(makeFluffy(addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true }))), { smooth: q.leafy.smooth }), false) : null;
     this.cardMat = cardMat;
     const barkMat = addCloudShadows(new MeshLambertMaterial({ color: '#5a4632', vertexColors: true }));
     this.barkMat = barkMat;
@@ -878,8 +878,10 @@ export class World {
       m.userData.leafCards = true;
       m.customDepthMaterial = fluffyDepthMaterial();
       pickAsBall(m);
-      const tw = new InstancedMesh(twigShapes[k], this.barkMat, 1);
+      this.twigMat ||= addLodFade(addCloudShadows(new MeshLambertMaterial({ color: '#5a4632', vertexColors: true })), false);
+      const tw = new InstancedMesh(twigShapes[k], this.twigMat, 1);
       tw.instanceMatrix = m.instanceMatrix;
+      twigShapes[k].setAttribute('aLod', m.geometry.attributes.aLod); // fades with its crown
       m.userData.twigs = tw;
       return tw;
     });
@@ -898,11 +900,11 @@ export class World {
   #syncTwigs(lod) {
     lod.twigs.forEach((tw, k) => {
       tw.count = lod.leafy[k].count;
-      tw.computeBoundingSphere();
+      tw.boundingSphere = lod.sphere;
     });
     lod.shadows.forEach((sh, k) => {
       sh.count = lod.solid[k].count;
-      sh.computeBoundingSphere();
+      sh.boundingSphere = lod.sphere;
     });
   }
 
@@ -914,7 +916,7 @@ export class World {
       ...leafyBushShapes(2).map((g, k) => ({ leafy: g, twigs: bushTwigShapes()[k] })),
     ];
     const atlas = bakeImpostors(this.renderer, shapes, this.quality.leafy.tile);
-    this.impMat = makeImpostor(addLeafShading(addCloudShadows(new MeshLambertMaterial())), atlas);
+    this.impMat = addLodFade(makeImpostor(addLeafShading(addCloudShadows(new MeshLambertMaterial())), atlas), true);
     return this.impMat;
   }
 
