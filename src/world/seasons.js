@@ -30,9 +30,9 @@ export function seasonFor(day) {
   const dry = smooth(195, 230, day) * (1 - smooth(250, 280, day));
   const regrow = smooth(255, 285, day) * (1 - smooth(315, 340, day)); // fresh autumn green
   const grass = [
-    1 - 0.08 * winter + 0.2 * dry + 0.02 * fresh,
-    1 - 0.14 * winter - 0.02 * dry + 0.05 * fresh + 0.04 * regrow,
-    1 - 0.05 * winter - 0.32 * dry - 0.03 * regrow,
+    1 - 0.08 * winter + 0.1 * dry + 0.02 * fresh,
+    1 - 0.14 * winter + 0.05 * fresh + 0.04 * regrow,
+    1 - 0.05 * winter - 0.05 * dry - 0.03 * regrow,
   ];
   // How long the grass is (0 short .. 1 long): a spring flush, then long
   // and lush in autumn (growing again, mown less often).

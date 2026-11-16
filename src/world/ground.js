@@ -323,7 +323,14 @@ ${mownGlsl()}
         }
         g *= mix(vec3(1.0), uGrassTint, grassy);
         // Long grass (off the mown areas) dries out more: straw yellow.
-        g *= mix(vec3(1.0), vec3(1.12, 1.0, 0.72), uGrassDry * (1.0 - mown) * grassy);
+        {
+          // Dried out: towards straw beige (as bright as the grass, a little
+          // brighter), the long grass most, patchily.
+          float lumG = dot(g, vec3(0.3, 0.59, 0.11));
+          vec3 straw = vec3(1.42, 1.16, 0.6) * lumG * 1.25;
+          float patchy = 0.75 + 0.5 * gNoise(p / 9.0);
+          g = mix(g, straw, clamp(uGrassDry * (0.95 - mown * 0.35) * patchy, 0.0, 1.0) * grassy);
+        }
         diffuseColor.rgb *= g;
       `);
   };
