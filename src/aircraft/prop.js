@@ -29,6 +29,18 @@ export function propGeometry(p) {
   return { radius: (p.diameterIn * 0.0254) / 2, pitchIn: p.pitchIn, blades: p.blades };
 }
 
+/**
+ * The rpm to draw a prop at. Driven by the motor it spins up to a blurred
+ * disc; windmilling (turned only by the air) it shows its blades, turning
+ * at an easy-to-watch rate rather than strobing.
+ */
+export function shownRpm(aircraft) {
+  const motor = aircraft.motorRpm ?? aircraft.rpm;
+  return motor > DISC_RPM ? aircraft.rpm : Math.min(aircraft.rpm, WINDMILL_SHOWN_RPM);
+}
+export const DISC_RPM = 1200;
+const WINDMILL_SHOWN_RPM = 240;
+
 export function createProp(P, { spinner = 0.011 } = {}) {
   const group = new Group();
   if (spinner) {
@@ -73,7 +85,7 @@ export function createProp(P, { spinner = 0.011 } = {}) {
   return {
     group,
     update(rpm, dt, broken) {
-      const fast = rpm > 1200;
+      const fast = rpm > DISC_RPM;
       blades.visible = !fast;
       disc.visible = fast;
       angle += (rpm / 60) * Math.PI * 2 * dt;

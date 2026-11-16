@@ -8,7 +8,7 @@ import {
   Shape, ExtrudeGeometry, ShapeGeometry, FrontSide, Quaternion,
 } from 'three';
 import { loft, mirrorZ } from './geom.js';
-import { createProp } from './prop.js';
+import { createProp, shownRpm } from './prop.js';
 
 const foam = (color) => new MeshStandardMaterial({ color, roughness: 0.92, metalness: 0, flatShading: true });
 
@@ -482,7 +482,7 @@ export function createBuschtrottelModel(L) {
       const tailC = aircraft.contacts.find((c) => c.steer);
       tailWheel.rotation.y = tailC ? aircraft.servo.yaw * tailC.steer : 0;
 
-      propeller.update(aircraft.rpm, dt, aircraft.propBroken);
+      propeller.update(shownRpm(aircraft), dt, aircraft.propBroken);
     },
   };
 }

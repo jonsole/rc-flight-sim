@@ -180,6 +180,7 @@ export class Peers {
       ac.orientation.copy(v.pose.q);
       ac.velocity.fromArray(s.v || [0, 0, 0]);
       ac.rpm = s.rpm || 0;
+      ac.motorRpm = s.m ?? ac.rpm;
       ac.propBroken = !!s.propBroken;
       ac.servo.yaw = s.yaw || 0;
       const d = s.d || [];
