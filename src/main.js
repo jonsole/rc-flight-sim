@@ -656,6 +656,14 @@ function frame(now) {
   rssi = Math.max(0, Math.min(99, Math.round(99 - dist / 8)));
   analog.style.opacity = fpv && settings.fpvAnalog ? String(0.06 + Math.max(0, (dist - 250) / 900)) : '0';
 
+  // In fog, nothing beyond what can be seen is drawn (smoother in thick fog).
+  {
+    const far = Math.min(20000, world.visibleFar ?? Infinity);
+    if (Math.abs(rig.camera.far - far) > 1) {
+      rig.camera.far = far;
+      rig.camera.updateProjectionMatrix();
+    }
+  }
   glare.update(rig.camera, world, obstacles, dt, settings.sunGlare !== false && !editor?.active);
   renderer.render(world.scene, rig.camera);
   if (editor.active) osd.clear();

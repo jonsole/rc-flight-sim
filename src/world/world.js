@@ -564,7 +564,7 @@ export class World {
     fog4.sun.x = this.sunDir.x;
     fog4.sun.y = this.sunDir.y;
     fog4.sun.z = this.sunDir.z;
-    fog4.sun.w = 0.5 * smooth(-2, 10, this.sunElevation ?? 30);
+    fog4.sun.w = 0.25 * smooth(-2, 10, this.sunElevation ?? 30);
     // Cloud: grey underneath, sunlit on top (in screen colours).
     _mistColour.setRGB(0.55, 0.58, 0.62).multiplyScalar(0.85 * day + 0.05).convertLinearToSRGB();
     Object.assign(fog4.under, { x: _mistColour.r, y: _mistColour.g, z: _mistColour.b });
@@ -575,13 +575,24 @@ export class World {
     const H = Math.max(top * 0.3, 4);
     const overhead = mistD * (Math.max(0, top - camPos.y) + H * Math.exp(-Math.max(0, camPos.y - top) / H));
     const veil = 1 - Math.exp(-overhead * 1.2);
+    // How far anything can be seen (m): in the mist (or a cloud), beyond the
+    // point where it's all but solid fog there's no need to draw anything
+    // (the camera's far plane: see main.js).
+    const groundY = heightAt(camPos.x, camPos.z);
+    const inMist = mistD > 0 ? 1 - smooth(groundY + top, groundY + top * 2 + 20, camPos.y) : 0;
+    let far = Infinity;
+    if (inMist > 0) far = 6 / (0.7 * mistD) / Math.max(inMist, 1e-3);
+    if (inCloud > 0.3) far = Math.min(far, 350 / inCloud);
+    this.visibleFar = Math.max(250, far);
     const grey = Math.max(veil, inCloud);
     this.fogNow = grey;
     // The haze turns pale grey with mist: its own colour of the moment,
     // greyed and a little lighter (so it darkens through dusk with the sky).
     const h = this.hazeBase;
     const lum = 0.3 * h.r + 0.55 * h.g + 0.15 * h.b;
-    _mistColour.setRGB(lum, lum * 1.02, lum * 1.06).lerp(h, 0.3).multiplyScalar(1 + 0.35 * day);
+    // (No lighter than the haze itself: fogged trees shouldn't glow paler
+    // than the sky behind them.)
+    _mistColour.setRGB(lum, lum * 1.02, lum * 1.06).lerp(h, 0.35).multiplyScalar(0.92);
     fog.color.copy(h).lerp(_mistColour, Math.min(1, mist * 1.2));
     this.scene.background.copy(fog.color);
     const su = this.sky.material.uniforms;
