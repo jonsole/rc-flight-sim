@@ -130,7 +130,14 @@ export class TouchControls {
   wake() {
     this.bar.classList.remove('idle');
     clearTimeout(this._idleTimer);
-    this._idleTimer = setTimeout(() => this.bar.classList.add('idle'), 4000);
+    this._idleTimer = setTimeout(() => !this.keepAwake && this.bar.classList.add('idle'), 4000);
+  }
+
+  /** Keep the buttons showing (crashed or stuck in a tree: RESET is wanted). */
+  setKeepAwake(v) {
+    if (this.keepAwake === v) return;
+    this.keepAwake = v;
+    this.wake();
   }
 
   /** Hide the thumb sticks (a USB transmitter is plugged in); buttons stay. */

@@ -38,9 +38,57 @@ export class OSD {
     const { ctx, dpr } = this;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, this.w, this.h);
-    if (!this.showHud) return;
+    if (!this.showHud) {
+      // The HUD is off, but a crash (and the like) still needs saying.
+      this.#alerts(aircraft, info, mode === 'fpv');
+      return;
+    }
     if (mode === 'fpv') this.#fpv(aircraft, info);
     else this.#los(aircraft, info);
+  }
+
+  /** What's gone wrong (or is paused), centred, wrapped to fit a phone. */
+  #alerts(ac, info, fpv) {
+    const reset = info.touch ? 'tap RESET' : 'press R to reset';
+    if (fpv) {
+      const s = Math.min(1.4, Math.max(0.8, this.h / 720));
+      const fs = 18 * s * 1.3;
+      const y = this.h / 2 - 60 * s;
+      if (ac.crashed) this.#message(`CRASH: ${ac.crashReason.toUpperCase()}`, y, fs);
+      else if (ac.inFoliage) this.#message('IN THE TREES', y, fs);
+      else if (ac.held) this.#message('THROTTLE UP TO LAUNCH', y, fs);
+      else if (info.paused) this.#message('PAUSED', y, fs);
+      return;
+    }
+    const y = info.touch ? 150 : 80;
+    const fs = info.touch ? 18 : 22;
+    if (ac.crashed) this.#message(`Crashed: ${ac.crashReason} - ${reset}`, y, fs);
+    else if (ac.inFoliage) this.#message(`Caught in a tree - ${reset}`, y, fs);
+    else if (ac.held) this.#message('Hand launch: throttle up to throw it', y, fs);
+    else if (info.paused) this.#message('PAUSED', y, 22);
+  }
+
+  /** Centred text that fits the screen: a little smaller, then over more lines. */
+  #message(str, y, size) {
+    const ctx = this.ctx;
+    const maxW = this.w - 24;
+    const fits = (t, fs) => {
+      ctx.font = `bold ${fs}px "Consolas", "Courier New", monospace`;
+      return ctx.measureText(t).width <= maxW;
+    };
+    let fs = size;
+    while (!fits(str, fs) && fs > size * 0.8) fs -= 1;
+    const lines = [];
+    let line = '';
+    for (const word of str.split(' ')) {
+      const t = line ? `${line} ${word}` : word;
+      if (line && !fits(t, fs)) {
+        lines.push(line);
+        line = word === '-' ? '' : word; // don't start a line with the dash
+      } else line = t;
+    }
+    if (line) lines.push(line);
+    lines.forEach((l, i) => this.#text(l.replace(/ -$/, ''), this.w / 2, y + i * fs * 1.25, 'center', fs));
   }
 
   #text(str, x, y, align = 'left', size = 18) {
@@ -144,10 +192,7 @@ export class OSD {
     this.#text(`${String(Math.round(hdg) % 360).padStart(3, '0')}°`, w / 2, top, 'center', fs);
     this.#text(info.assist, pad, top + fs * 2.5, 'left', fs * 0.85);
     if (info.assistFlash) this.#text(`ASSIST: ${info.assist}`, w / 2, h / 2 + 70 * s, 'center', fs * 1.2);
-    if (!ac.crashed && ac.inFoliage) this.#text('IN THE TREES', w / 2, h / 2 - 60 * s, 'center', fs * 1.3);
-    if (ac.held) this.#text('THROTTLE UP TO LAUNCH', w / 2, h / 2 - 60 * s, 'center', fs * 1.3);
-    if (ac.crashed) this.#text(`CRASH: ${ac.crashReason.toUpperCase()}`, w / 2, h / 2 - 60 * s, 'center', fs * 1.3);
-    else if (info.paused) this.#text('PAUSED', w / 2, h / 2 - 60 * s, 'center', fs * 1.3);
+    this.#alerts(ac, info, true);
   }
 
   #los(ac, info) {
@@ -167,9 +212,6 @@ export class OSD {
       y += fs * 1.35;
     }
     if (info.assistFlash) this.#text(`Flight assist: ${info.assist}`, this.w / 2, 120, 'center', 20);
-    if (ac.held) this.#text('Hand launch: throttle up to throw it', this.w / 2, info.touch ? 150 : 80, 'center', info.touch ? 18 : 22);
-    if (!ac.crashed && ac.inFoliage) this.#text(`Caught in a tree - ${info.touch ? 'tap RESET' : 'press R to reset'}`, this.w / 2, info.touch ? 150 : 80, 'center', info.touch ? 18 : 22);
-    if (ac.crashed) this.#text(`Crashed: ${ac.crashReason} - ${info.touch ? 'tap RESET' : 'press R to reset'}`, this.w / 2, info.touch ? 150 : 80, 'center', info.touch ? 18 : 22);
-    else if (info.paused) this.#text('PAUSED', this.w / 2, 80, 'center', 22);
+    this.#alerts(ac, info, false);
   }
 }
