@@ -51,6 +51,7 @@ export class CloudLayer {
       shadeColor: { value: new Color(0.62, 0.66, 0.72) }, // their undersides
       hazeColor: { value: new Color('#c3d5e8') },
       night: { value: 0 },
+      mistFade: { value: 0 }, // hidden by mist (0 clear .. 1 gone)
     };
     const mat = new ShaderMaterial({
       uniforms: this.uniforms,
@@ -63,7 +64,7 @@ export class CloudLayer {
         }`,
       fragmentShader: /* glsl */ `
         ${UNIFORM_DECLS}
-        uniform vec3 lightColor; uniform vec3 shadeColor; uniform vec3 hazeColor; uniform float night;
+        uniform vec3 lightColor; uniform vec3 shadeColor; uniform vec3 hazeColor; uniform float night; uniform float mistFade;
         varying vec3 vWorld;
         ${NOISE}
         void main() {
@@ -76,7 +77,7 @@ export class CloudLayer {
           float dist = length(vWorld.xz - cameraPosition.xz);
           float haze = smoothstep(1500.0, 6500.0, dist);
           c = mix(c, hazeColor, haze * 0.85);
-          float a = min(1.0, d * 1.5) * (1.0 - smoothstep(5000.0, 6800.0, dist)) * mix(1.0, 0.8, night);
+          float a = min(1.0, d * 1.5) * (1.0 - smoothstep(5000.0, 6800.0, dist)) * mix(1.0, 0.8, night) * (1.0 - mistFade);
           gl_FragColor = vec4(c, a);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>

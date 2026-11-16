@@ -28,6 +28,7 @@ import { tunedDef, loadTuning } from './sim/tuning.js';
 import { GoogleTiles } from './world/googleTiles.js';
 import { cardUniforms } from './world/fluffy.js';
 import { SunGlare } from './view/glare.js';
+import { weatherFor } from './world/mist.js';
 import { loadEdits } from './sim/edits.js';
 import { Editor } from './editor/editor.js';
 
@@ -252,6 +253,8 @@ function applyTime() {
   const day = settings.useClock ? dayOfYear(now) : Number(settings.dayOfYear);
   world.setTime(hours, day);
   world.setSeason(day);
+  // Mist and low cloud: as set, or spring and autumn mornings (src/world/mist.js).
+  world.setWeather(weatherFor(settings, day, hours));
   // Bare trees and bushes catch less (src/sim/obstacles.js).
   setLeafiness(1 - seasonFor(day).bare);
   renderer.toneMappingExposure = world.exposure;
@@ -645,6 +648,7 @@ function frame(now) {
   planeShadow.update(renderer, aircraft.position, world.lightDir, shadowDark);
   world.updateWindsock(wind.at(windsockPos, 0, windTmp), dt, now / 1000);
   if (!paused) world.updateClouds(dt, windTmp);
+  world.updateWeather(rig.camera.position, paused ? 0 : dt, windTmp);
 
   const eye = rig.pilotEye();
   const dist = eye.distanceTo(aircraft.position);

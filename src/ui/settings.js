@@ -23,7 +23,9 @@ export const DEFAULT_SETTINGS = {
   graphics: '',          // 'low' | 'medium' | 'high'
   viewDistance: '',      // metres as a string, '0' = unlimited
   treeStyle: 'fluffy',
-  sunGlare: true,        // looking into the sun washes the picture out (src/view/glare.js)
+  sunGlare: true,
+  mist: 'seasonal',      // 'seasonal' (spring and autumn mornings) | 'off' | 'light' | 'thick'  (src/world/mist.js)
+  lowCloud: 'seasonal',  // 'seasonal' | 'off' | 'broken' | 'overcast'        // looking into the sun washes the picture out (src/view/glare.js)
   cardsFaceCamera: true, // leafy trees: leaf cards face the camera's position (false: the screen, as before)   // trees and bushes: 'fluffy' (leafy cards, src/world/fluffy.js) | 'classic' (solid)
   scenery: 'built',      // real sites: 'built' (from the site data) | 'google' (photorealistic 3D tiles)
   googleKey: '',         // your Google Maps Platform API key (stays in this browser)

@@ -50,7 +50,8 @@ export class SunGlare {
         // A low sun dazzles most; a high one less (it's rarely in view anyway).
         const low = 0.65 + 0.35 * (1 - smooth(10, 50, world.sunElevation));
         const day = smooth(-1, 6, world.sunElevation);
-        target = aim * this.seen * low * day;
+        // (Mist and cloud around you diffuse the sun: no glare.)
+        target = aim * this.seen * low * day * (1 - Math.min(1, (world.fogNow ?? 0) * 1.2));
       }
     }
     // Eyes and cameras adjust quickly, not instantly.

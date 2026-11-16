@@ -3,7 +3,7 @@ import {
   Scene, Color, FogExp2, HemisphereLight, Points, PointsMaterial, BufferGeometry, Sprite, SpriteMaterial, DirectionalLight, Mesh, PlaneGeometry, MeshStandardMaterial,
   CanvasTexture, RepeatWrapping, SRGBColorSpace, InstancedMesh, CylinderGeometry, IcosahedronGeometry,
   Object3D, BoxGeometry, ConeGeometry, Group, Vector3, MathUtils, DoubleSide, Float32BufferAttribute,
-  MeshBasicMaterial, ShaderMaterial, SphereGeometry, BackSide, MeshLambertMaterial, Matrix4,
+  MeshBasicMaterial, ShaderMaterial, SphereGeometry, BackSide, MeshLambertMaterial, Matrix4, ShaderChunk,
 } from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY, PILOT_PAD } from '../sim/terrain.js';
@@ -16,6 +16,7 @@ import { seasonFor } from './seasons.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
 import { fluffyCrown, crownWood, fluffyConifer, coniferWood, makeFluffy, fluffyDepthMaterial, pickAsBall, setLeafDetail, LEAF_ROWS } from './fluffy.js';
 import { CrownLod, addLodFade, addCloseSwitch, closeUniforms } from './lod.js';
+import { LowCloud } from './mist.js';
 import { speciesOf, bushSpeciesAt, barkColor, trunkThickness, SPECIES, WOOD, CONIFER, leafName } from './species.js';
 import { bakeImpostors, impostorGeometry, makeImpostor } from './impostor.js';
 import { QUALITY } from './quality.js';
@@ -337,6 +338,18 @@ const TRUNK_SEEDS = [3, 41, 67];
 /** The bush shapes' seeds (src/world/props.js). */
 const BUSH_SEEDS = [101, 131];
 
+// The fog: three.js's exponential-squared haze stays clear close by then
+// closes in steeply, right for clear-day haze but not for mist and fog,
+// which thicken steadily from your feet. Once it's misty (the density goes
+// up: World.updateWeather) the fog fades over to a plain exponential.
+ShaderChunk.fog_fragment = ShaderChunk.fog_fragment.replace(
+  'float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );',
+  `float fogP = mix( 2.0, 1.0, smoothstep( 0.0008, 0.006, fogDensity ) );
+		float fogFactor = 1.0 - exp( - pow( fogDensity * vFogDepth, fogP ) );`,
+);
+
+const _mistColour = new Color();
+
 export class World {
   /** @param {import('../sim/obstacles.js').Obstacles} obstacles */
   /**
@@ -360,6 +373,10 @@ export class World {
     // Exponential haze: distant hills fade into the colour of the horizon.
     // A shorter scenery distance closes the haze in to match.
     this.scene.fog = new FogExp2('#c3d5e8', Math.max(0.00028, 1.3 / (opts.viewDistance ?? Infinity)));
+    this.fogBase = this.scene.fog.density; // clear air (mist thickens it: setWeather)
+    this.hazeBase = new Color('#c3d5e8'); // the haze colour of the time of day
+    this.weather = { mist: 0, lowCloud: { amount: 0, base: 60, top: 100 } };
+    this.fogNow = 0; // how foggy it is where the camera is (0-1)
     this.sunDir = new Vector3(); // the sun, even below the horizon
     this.lightDir = new Vector3(); // where the main light comes from (sun, or moon at night)
     this.moonDir = new Vector3();
@@ -369,6 +386,9 @@ export class World {
     this.#sky();
     this.clouds = new CloudLayer();
     this.scene.add(this.clouds.mesh);
+    // Low cloud you can fly through (src/world/mist.js).
+    this.lowCloud = new LowCloud();
+    this.scene.add(this.lowCloud.group);
     this.#lights();
     this.#terrain();
     // The club's own things (runway, pad, fence, pits) in the club frame.
@@ -395,14 +415,21 @@ export class World {
     // a pale, almost white blue. Scaled down (and its blue deepened a
     // touch) before tone mapping, the blue survives.
     u.skyGain = { value: 0.42 };
+    // Mist: the sky fades into the fog colour (updateWeather).
+    u.skyFog = { value: 0 };
+    u.skyFogColor = { value: new Color() };
     sky.material.fragmentShader = sky.material.fragmentShader
-      .replace('void main() {', 'uniform float skyGain;\nvoid main() {')
+      .replace('void main() {', 'uniform float skyGain;\nuniform float skyFog;\nuniform vec3 skyFogColor;\nvoid main() {')
       .replace('#include <tonemapping_fragment>', `{
         vec3 c = gl_FragColor.rgb * skyGain;
         float l = dot(c, vec3(0.3, 0.55, 0.15));
         gl_FragColor.rgb = max(mix(vec3(l), c, 1.25), 0.0);
       }
-      #include <tonemapping_fragment>`);
+      #include <tonemapping_fragment>`)
+      // Mist: faded into the fog colour as the scene's fog does it (after
+      // tone mapping), so the sky meets misty ground seamlessly.
+      .replace('#include <colorspace_fragment>', `#include <colorspace_fragment>
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, skyFogColor, skyFog);`);
     this.sky = sky;
     this.scene.add(sky);
     this.nightDome = nightDome();
@@ -465,8 +492,12 @@ export class World {
     this.hemi.intensity = 0.12 + 1.0 * daylight + 0.08 * (1 - night);
     this.hemi.color.setRGB(0.81 - 0.45 * night, 0.89 - 0.42 * night, 1 - 0.3 * night);
     this.hemi.groundColor.setRGB(0.3 * (1 - night) + 0.03, 0.35 * (1 - night) + 0.04, 0.2 * (1 - night) + 0.06);
-    hazeColour(el, this.scene.fog.color);
+    hazeColour(el, this.hazeBase);
+    this.scene.fog.color.copy(this.hazeBase);
     this.scene.background.copy(this.scene.fog.color);
+    // (Before mist dims them: updateWeather.)
+    this.sunBase = this.sun.intensity;
+    this.hemiBase = this.hemi.intensity;
     // The night dome takes over from the day sky through twilight.
     // Twilight: deep blue overhead, a warm band on the horizon where the sun
     // went down; then full night.
@@ -493,6 +524,51 @@ export class World {
   }
 
   /** Cloud cover, 0 (clear) to 1 (overcast). */
+  /** Mist (0-1) and low cloud ({ amount, base, top }): src/world/mist.js weatherFor. */
+  setWeather(w) {
+    this.weather = w;
+    this.lowCloud.set(w.lowCloud.amount, w.lowCloud.base, w.lowCloud.top);
+  }
+
+  /**
+   * Mist and low cloud where the camera is (every frame): the haze thickens
+   * and turns pale grey, the sky and high clouds fade into it, the sun dims;
+   * inside a cloud you see a few tens of metres.
+   */
+  updateWeather(camPos, dt, wind) {
+    const lc = this.lowCloud;
+    if (lc.amount > 0) lc.update(dt, wind, camPos);
+    const mist = this.weather.mist;
+    const inCloud = lc.inside(camPos);
+    // Visibility (m) to fog density: FogExp2 is ~95% at density x distance 1.73.
+    const mistDensity = mist > 0 ? 1.73 / (2600 - 2510 * Math.pow(mist, 0.6)) : 0; // (thick fog: ~90 m)
+    const cloudDensity = 1.73 / 35;
+    let d = Math.max(this.fogBase, mistDensity);
+    d += (cloudDensity - d) * inCloud;
+    const fog = this.scene.fog;
+    fog.density = d;
+    const grey = Math.max(mist * 0.85, inCloud);
+    this.fogNow = grey;
+    // Pale grey, lit by the day (dark at night).
+    const day = 1 - this.night;
+    fog.color.copy(this.hazeBase).lerp(_mistColour.setRGB(0.74 * day + 0.03, 0.76 * day + 0.035, 0.78 * day + 0.05), grey);
+    this.scene.background.copy(fog.color);
+    // The sky and high clouds fade into the mist.
+    this.sky.material.uniforms.skyFog.value = Math.min(1, grey * 1.3);
+    this.sky.material.uniforms.skyFogColor.value.copy(fog.color);
+    this.clouds.uniforms.mistFade.value = Math.min(1, grey * 1.5);
+    lc.uniforms.lcHaze.value.copy(fog.color);
+    lc.uniforms.lcFog.value = mist * 0.7;
+    // Below the clouds: lit by what gets through; above them in the sun.
+    const overcast = camPos.y < lc.base ? lc.amount * 0.6 : 0;
+    const dim = 1 - Math.max(mist * 0.7, overcast, inCloud * 0.8);
+    this.sun.intensity = (this.sunBase ?? this.sun.intensity) * dim;
+    this.hemi.intensity = (this.hemiBase ?? this.hemi.intensity) * (1 + 0.15 * grey);
+    // Cloud light: their tops in the sun, undersides grey.
+    lc.uniforms.lcLight.value.copy(this.sun.color).multiplyScalar(0.9 * day + 0.05);
+    lc.uniforms.lcShade.value.setRGB(0.55, 0.58, 0.62).multiplyScalar(0.85 * day + 0.05);
+  }
+
   setClouds(cover) {
     cloudUniforms.cloudCover.value = cover;
     this.clouds.mesh.visible = cover > 0.01;
