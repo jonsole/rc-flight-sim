@@ -34,7 +34,7 @@ const LEAF_SIZES = [1, 0.7, 0.5, 0.35];
 /** Leaf length in the first version, as a fraction of the card's width. */
 const LEAF_FRAC = 0.1;
 /** The atlas's rows: a leaf shape each (in the species' order, SPECIES_ORDER). */
-export const LEAF_ROWS = ['oak', 'ash', 'beech', 'sycamore', 'horseChestnut', 'birch', 'hawthorn', 'scotsPine', 'spruce', 'leyland', 'larch', 'yew'];
+export const LEAF_ROWS = ['oak', 'ash', 'beech', 'sycamore', 'horseChestnut', 'birch', 'hawthorn', 'scotsPine', 'spruce', 'leyland', 'larch', 'yew', 'cedar'];
 /**
  * Each species' leaf: how big against the 22 cm average, how many more to
  * cover as much (open, compound leaves need more), and its outline, drawn
@@ -94,6 +94,10 @@ const LEAF_FORMS = {
   // Larch: soft rosettes of short needles.
   larch: { size: 0.7, more: 1.2, draw: (g, len) => {
     for (let k = 0; k < 16; k++) needle(g, 0, 0, (k / 16) * Math.PI * 2, len * 0.75, len * 0.07);
+  } },
+  // Cedar: dense little rosettes of short stiff needles.
+  cedar: { size: 0.8, more: 1.3, draw: (g, len) => {
+    for (let k = 0; k < 22; k++) needle(g, 0, 0, (k / 22) * Math.PI * 2 + 0.1, len * 0.55, len * 0.09);
   } },
   // Yew: flat sprays of short flat needles either side of a twig.
   yew: { size: 0.9, more: 1.05, draw: (g, len) => {

@@ -24,10 +24,11 @@ import { pilotSpot } from '../sim/location.js';
 /** Tree types in the editor (species: src/world/species.js). */
 const TREE_KINDS = {
   mixed: 'Broadleaf (mixed)', oak: 'Oak', ash: 'Ash', sycamore: 'Sycamore', birch: 'Birch', beech: 'Beech', horseChestnut: 'Horse chestnut',
-  conifer: 'Conifer (mixed)', scotsPine: 'Scots pine', spruce: 'Norway spruce', leyland: 'Leyland cypress', larch: 'Larch', yew: 'Yew',
+  conifer: 'Conifer (mixed)', scotsPine: 'Scots pine', corsicanPine: 'Corsican pine', stonePine: 'Stone pine', spruce: 'Norway spruce',
+  douglasFir: 'Douglas fir', cedar: 'Cedar of Lebanon', leyland: 'Leyland cypress', lawson: 'Lawson cypress', larch: 'Larch', yew: 'Yew',
 };
 /** The conifer ones among them. */
-const CONIFER_KINDS = new Set(['conifer', 'scotsPine', 'spruce', 'leyland', 'larch', 'yew']);
+const CONIFER_KINDS = new Set(['conifer', 'scotsPine', 'corsicanPine', 'stonePine', 'spruce', 'douglasFir', 'cedar', 'leyland', 'lawson', 'larch', 'yew']);
 
 const SPEED = 15; // m/s, x4 with Shift
 // Where each kind's edits are kept (src/sim/edits.js).

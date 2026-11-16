@@ -16,7 +16,7 @@ import { seasonFor } from './seasons.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
 import { fluffyCrown, crownWood, fluffyConifer, coniferWood, makeFluffy, fluffyDepthMaterial, pickAsBall, setLeafDetail, LEAF_ROWS } from './fluffy.js';
 import { CrownLod, addLodFade, addCloseSwitch, closeUniforms } from './lod.js';
-import { speciesOf, bushSpeciesAt, barkColor, trunkThickness, SPECIES, WOOD, CONIFER } from './species.js';
+import { speciesOf, bushSpeciesAt, barkColor, trunkThickness, SPECIES, WOOD, CONIFER, leafName } from './species.js';
 import { bakeImpostors, impostorGeometry, makeImpostor } from './impostor.js';
 import { QUALITY } from './quality.js';
 import { CROWN_SEEDS, crownOf } from '../sim/treeShapes.js';
@@ -1037,7 +1037,7 @@ export class World {
     const shapes = [
       ...CROWN_SEEDS.map((sd) => ({ leafy: fluffyCrown(sd, 2), twigs: crownWood(sd) })),
       ...leafyBushShapes(2).map((g, k) => ({ leafy: g, twigs: bushTwigShapes()[k], leafRow: LEAF_ROWS.indexOf('hawthorn') })),
-      ...CONIFER_NAMES.map((sp) => ({ leafy: fluffyConifer(CONIFER[sp], 11, 2), twigs: coniferWood(CONIFER[sp], 11), leafRow: LEAF_ROWS.indexOf(sp) })),
+      ...CONIFER_NAMES.map((sp) => ({ leafy: fluffyConifer(CONIFER[sp], 11, 2), twigs: coniferWood(CONIFER[sp], 11), leafRow: LEAF_ROWS.indexOf(leafName(sp)) })),
     ];
     const atlas = bakeImpostors(this.renderer, shapes, this.quality.leafy.tile);
     this.impMat = addLodFade(makeImpostor(addLeafShading(addCloudShadows(new MeshLambertMaterial())), atlas), true);

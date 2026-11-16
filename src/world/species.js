@@ -33,6 +33,11 @@ export const SPECIES = {
   spruce: { conifer: true, evergreen: true, bark: [0.07, 0.2, 0.22], thick: 1, out: 25, turn: 0, summer: [0.33, 0.5, 0.15], autumn: [0.33, 0.5, 0.15], dead: [0.33, 0.5, 0.15] },
   leyland: { conifer: true, evergreen: true, bark: [0.05, 0.3, 0.22], thick: 0.9, out: 15, turn: 0, summer: [0.27, 0.55, 0.22], autumn: [0.27, 0.55, 0.22], dead: [0.27, 0.55, 0.22] },
   larch: { conifer: true, bark: [0.04, 0.25, 0.28], thick: 0.9, out: -8, turn: 22, summer: [0.25, 0.55, 0.3], autumn: [0.12, 0.85, 0.45], dead: [0.09, 0.6, 0.32] },
+  corsicanPine: { conifer: true, evergreen: true, leaf: 'scotsPine', bark: [0.06, 0.14, 0.24], thick: 1.15, out: 22, turn: 0, summer: [0.33, 0.38, 0.18], autumn: [0.33, 0.38, 0.18], dead: [0.33, 0.38, 0.18] },
+  stonePine: { conifer: true, evergreen: true, leaf: 'scotsPine', bark: [0.05, 0.35, 0.3], thick: 1.2, out: 22, turn: 0, summer: [0.3, 0.45, 0.22], autumn: [0.3, 0.45, 0.22], dead: [0.3, 0.45, 0.22] },
+  cedar: { conifer: true, evergreen: true, bark: [0.05, 0.1, 0.22], thick: 1.4, out: 20, turn: 0, summer: [0.42, 0.24, 0.26], autumn: [0.42, 0.24, 0.26], dead: [0.42, 0.24, 0.26] },
+  douglasFir: { conifer: true, evergreen: true, leaf: 'spruce', bark: [0.05, 0.3, 0.2], thick: 1.1, out: 20, turn: 0, summer: [0.31, 0.5, 0.18], autumn: [0.31, 0.5, 0.18], dead: [0.31, 0.5, 0.18] },
+  lawson: { conifer: true, evergreen: true, leaf: 'leyland', bark: [0.05, 0.3, 0.25], thick: 0.9, out: 15, turn: 0, summer: [0.4, 0.33, 0.22], autumn: [0.4, 0.33, 0.22], dead: [0.4, 0.33, 0.22] },
   yew: { conifer: true, evergreen: true, bark: [0.03, 0.4, 0.3], thick: 1.3, out: 25, turn: 0, summer: [0.32, 0.55, 0.12], autumn: [0.32, 0.55, 0.12], dead: [0.32, 0.55, 0.12] },
   // Bushes and hedges: hawthorn, early out, rusty red-brown in autumn.
   hawthorn: { bark: [0.06, 0.25, 0.22], thick: 1, spread: 1, bend: 0, out: -14, turn: -4, summer: [0.28, 0.58, 0.22], autumn: [0.035, 0.6, 0.28], dead: [0.05, 0.45, 0.2] },
@@ -95,10 +100,20 @@ export const CONIFER = {
   spruce: { base: 0.06, crownW: 0.22, width: 1, profile: (y) => Math.pow(1 - y, 1.05), tiers: 11, droop: 0.22, open: 0.2, up: -0.05, clumpy: 0.1 },
   leyland: { base: 0.06, crownW: 0.19, width: 1, profile: (y) => Math.pow(1 - y, 0.6) * (0.85 + 0.15 * Math.sin(Math.PI * y)), tiers: 0, droop: 0, open: 0, up: 0.6, clumpy: 0.15, cards: 2.4, size: 1.3 },
   larch: { base: 0.12, crownW: 0.2, width: 1, profile: (y) => Math.pow(1 - y, 1.1), tiers: 9, droop: 0.3, open: 0.4, up: 0.1, clumpy: 0.15 },
+  // Corsican pine: straighter, darker, a narrower crown high up.
+  corsicanPine: { base: 0.42, crownW: 0.2, width: 1, profile: (y) => Math.pow(Math.sin(Math.PI * Math.min(1, 0.1 + y * 0.95)), 0.55) * (1 - 0.45 * y), tiers: 0, droop: 0, open: 0.3, up: 0.35, clumpy: 0.65, cards: 1.1, size: 1.2 },
+  // Stone pine: a flat umbrella on a bare trunk.
+  stonePine: { base: 0.62, crownW: 0.45, width: 1, profile: (y) => Math.pow(Math.sin(Math.PI * Math.min(1, 0.2 + y * 0.8)), 0.3) * (1 - 0.15 * y), tiers: 0, droop: 0, open: 0.2, up: 0.5, clumpy: 0.6, cards: 1.6, size: 1.25 },
+  // Cedar of Lebanon: very broad, flat, level layers.
+  cedar: { base: 0.18, crownW: 0.45, width: 1, profile: (y) => Math.pow(1 - y, 0.55), tiers: 6, droop: -0.04, open: 0.55, up: 0.0, clumpy: 0.1, cards: 1.4 },
+  // Douglas fir: a tall soft cone of drooping tiers.
+  douglasFir: { base: 0.08, crownW: 0.2, width: 1, profile: (y) => Math.pow(1 - y, 1.0), tiers: 12, droop: 0.14, open: 0.25, up: 0.02, clumpy: 0.1 },
+  // Lawson cypress: a dense narrow cone.
+  lawson: { base: 0.04, crownW: 0.16, width: 1, profile: (y) => Math.pow(1 - y, 0.85), tiers: 0, droop: 0, open: 0, up: 0.6, clumpy: 0.1, cards: 2.3, size: 1.25 },
   yew: { base: 0.1, crownW: 0.36, width: 1, profile: (y) => Math.pow(Math.sin(Math.PI * (0.1 + 0.75 * y)), 0.8) * (1 - 0.35 * y), tiers: 0, droop: 0, open: 0.05, up: 0.4, clumpy: 0.25, cards: 3, size: 1.25, fill: 0.7 },
 };
 /** The conifers at an English site, by how common they are. */
-const CONIFER_MIX = [['leyland', 30], ['spruce', 25], ['scotsPine', 25], ['larch', 12], ['yew', 8]];
+const CONIFER_MIX = [['leyland', 22], ['spruce', 15], ['scotsPine', 15], ['corsicanPine', 10], ['larch', 9], ['douglasFir', 8], ['lawson', 8], ['yew', 6], ['cedar', 4], ['stonePine', 3]];
 const CONIFER_TOTAL = CONIFER_MIX.reduce((a, [, w]) => a + w, 0);
 
 /** The trees of an English wood, by how common they are. */
@@ -209,4 +224,9 @@ export function barkColor(t, out = new Color()) {
 /** A tree's trunk thickness (x the usual) for its species. */
 export function trunkThickness(t) {
   return SPECIES[speciesOf(t).name]?.thick ?? 1;
+}
+
+/** Which leaf picture (row of the leaf atlas, src/world/fluffy.js) a species uses: its own, or a close relative's. */
+export function leafName(name) {
+  return SPECIES[name]?.leaf ?? name;
 }

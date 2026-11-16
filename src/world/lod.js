@@ -4,7 +4,7 @@
 // only once it has gone a little way), so flying FPV past a far wood brings
 // its trees in leafy.
 import { InstancedMesh, Color, Matrix4, InstancedBufferAttribute, Sphere, Vector3, Box3 } from 'three';
-import { leafState } from './species.js';
+import { leafState, leafName } from './species.js';
 import { LEAF_ROWS } from './fluffy.js';
 
 const _c = new Color();
@@ -122,7 +122,7 @@ export class CrownLod {
     // Species (src/world/species.js): colours and leaf fall through the year.
     this.who = o.species ? items.map((it) => o.species(it)) : null;
     this.bare = new Float32Array(items.length);
-    this.leafRow = items.map((_, i) => Math.max(0, LEAF_ROWS.indexOf(this.who?.[i]?.name)));
+    this.leafRow = items.map((_, i) => Math.max(0, LEAF_ROWS.indexOf(leafName(this.who?.[i]?.name))));
     // Bark colours (the branches drawn with the leafy crowns, by species).
     this.bark = items.map((it) => (o.bark ? o.bark(it, new Color()) : new Color(0x5a4632)));
     this.pos = items.map((it, i) => [this.m[i].elements[12], this.m[i].elements[14]]);
