@@ -31,6 +31,50 @@ export const SPECIES = {
   hawthorn: { bark: [0.06, 0.25, 0.22], thick: 1, spread: 1, bend: 0, out: -14, turn: -4, summer: [0.28, 0.58, 0.22], autumn: [0.035, 0.6, 0.28], dead: [0.05, 0.45, 0.2] },
 };
 
+/**
+ * How each species' wood grows (src/world/fluffy.js crownWood: the limbs,
+ * side branches and twigs, in the crown) and its trunk (src/world/trees.js
+ * trunk: where it forks and how its main limbs leave it). Unset: average.
+ */
+export const WOOD = {
+  // Oak: short thick trunk forking low into long, gnarled, near-level limbs;
+  // short zig-zag twigs.
+  oak: {
+    crown: { start: [-0.55, -0.2], bow: 0.02, crook: 0.3, thick: 1.35, sides: [2, 5], sideLen: [0.6, 1.0], sideUp: [-0.1, 0.35], sideCrook: 0.4, twigs: [2, 5], twigLen: [0.15, 0.3], twigUp: [0.0, 0.6] },
+    trunk: { top: 0.38, limbs: [3, 4], y0: [0.24, 0.36], up: [0.2, 0.55], len: [0.22, 0.34], limbR: 1.25 },
+  },
+  // Silver birch: a slender leader to the top, many short limbs angled up
+  // then drooping, long fine hanging twigs.
+  birch: {
+    crown: { leader: true, start: [-0.45, 0.55], bow: 0.05, crook: 0.05, thick: 0.55, sides: [3, 6], sideLen: [0.6, 1.1], sideUp: [0.35, 0.75], sideDroop: 0.35, sideCrook: 0.08, twigs: [3, 6], twigLen: [0.4, 0.7], twigUp: [-0.3, 0.2], twigDroop: 0.6, twigThick: 0.6, twigDark: 0.9 },
+    trunk: { top: 0.85, limbs: [6, 8], y0: [0.35, 0.75], up: [0.6, 0.95], len: [0.07, 0.13], limbR: 0.6 },
+  },
+  // Ash: tall and straight, few steeply rising limbs, stout upturned twigs.
+  ash: {
+    crown: { leader: true, start: [-0.4, 0.3], bow: 0.2, crook: 0.08, sides: [1, 3], sideLen: [0.6, 0.9], sideUp: [0.8, 1.2], twigs: [0, 2], twigLen: [0.12, 0.22], twigUp: [0.8, 1.3], twigThick: 1.5 },
+    trunk: { top: 0.75, limbs: [4, 5], y0: [0.4, 0.62], up: [0.8, 1.1], len: [0.12, 0.2] },
+  },
+  // Beech: limbs fanning up at about 45 degrees, fine twigs in flat sprays.
+  beech: {
+    crown: { start: [-0.4, 0.0], bow: 0.15, crook: 0.06, sides: [3, 5], sideUp: [0.3, 0.7], sideCrook: 0.1, twigs: [3, 5], twigLen: [0.2, 0.35], twigUp: [0.0, 0.3], twigThick: 0.8 },
+    trunk: { top: 0.5, limbs: [5, 6], y0: [0.3, 0.45], up: [0.6, 0.9], len: [0.17, 0.25] },
+  },
+  // Horse chestnut: sturdy, rising limbs, twigs sweeping up at the tips.
+  horseChestnut: {
+    crown: { start: [-0.4, 0.0], bow: 0.1, crook: 0.1, thick: 1.15, sides: [2, 4], sideUp: [0.1, 0.5], sideDroop: 0.2, twigs: [1, 3], twigLen: [0.2, 0.35], twigUp: [0.9, 1.3], twigThick: 1.3 },
+    trunk: { top: 0.5, limbs: [4, 6], y0: [0.3, 0.45], up: [0.5, 0.8], len: [0.18, 0.26], limbR: 1.1 },
+  },
+  // Sycamore: sturdy, dense rising limbs, many short twigs.
+  sycamore: {
+    crown: { start: [-0.35, 0.05], bow: 0.16, crook: 0.1, sides: [3, 6], sideUp: [0.5, 1.0], twigs: [2, 5], twigLen: [0.18, 0.3], twigUp: [0.4, 0.9] },
+    trunk: { top: 0.55, limbs: [5, 7], y0: [0.32, 0.48], up: [0.6, 1.0], len: [0.15, 0.24] },
+  },
+  // Hawthorn (bushes and hedges): zig-zag stems, short twigs.
+  hawthorn: {
+    crown: { crook: 0.3, sides: [2, 5], sideCrook: 0.35, twigs: [2, 5], twigLen: [0.15, 0.25] },
+  },
+};
+
 /** The trees of an English wood, by how common they are. */
 const MIX = [['oak', 30], ['ash', 18], ['sycamore', 16], ['birch', 14], ['beech', 10], ['horseChestnut', 12]];
 const TOTAL = MIX.reduce((a, [, w]) => a + w, 0);

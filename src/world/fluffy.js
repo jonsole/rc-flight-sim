@@ -313,54 +313,111 @@ function tube(points, r0, r1, radial, segs) {
 }
 
 /**
- * The bare branches inside a crown (unit crown space, drawn with the crown's
- * matrix): a limb from below the crown out to each leaf clump, and twigs
- * spreading through the clump. `from` is where they start (y): the top of
- * the trunk for a tree, the ground for a bush. `twigs` false: limbs only,
- * for far away.
+ * How a tree's wood grows, in its crown's own space (unit crown; clump radii
+ * r): where its limbs leave the trunk, how they bow and wander, how many
+ * side branches and twigs, at what angles and how long, drooping or turned
+ * up. Each species has its own (src/world/species.js `wood`); this is an
+ * average tree.
  */
-export function crownBranches(seed, { from, twigs = true } = {}) {
-  const { clumps } = crownShape(seed);
+export const DEFAULT_WOOD = {
+  leader: false, // a single stem on up through the crown (birch, ash)
+  start: [-0.35, 0.05], // where limbs leave the trunk (crown y)
+  bow: 0.12, // limbs bowing upwards (x their length)
+  crook: 0.12, // and wandering
+  thick: 1, // limb thickness (x)
+  sides: [1, 5], // side branches per limb
+  sideLen: [0.7, 1.2], // their length (x r)
+  sideUp: [0.15, 1.05], // their angle up from level (radians)
+  sideCrook: 0.2,
+  sideDroop: 0, // their tips sagging (x length)
+  twigs: [0, 4], // twigs per side branch
+  twigLen: [0.25, 0.5], // their length (x r)
+  twigUp: [0.4, 1.0], // their angle up (radians)
+  twigDroop: 0, // hanging (x length)
+  twigThick: 1,
+  twigDark: 0, // twigs darker than the trunk out towards the tips (birch: dark twigs on a white tree)
+};
+
+const between = (rnd, [a, b]) => a + rnd() * (b - a);
+const intBetween = (rnd, [a, b]) => a + Math.floor(rnd() * (b - a + 1));
+
+/** A direction at `up` radians above level, roughly away from `out` (horizontal). */
+function heading(rnd, up, out, outK) {
+  const a = rnd() * Math.PI * 2;
+  const d = new Vector3(Math.cos(a) * Math.cos(up), Math.sin(up), Math.sin(a) * Math.cos(up));
+  const o = new Vector3(out.x, 0, out.z);
+  if (o.lengthSq() > 1e-6) d.addScaledVector(o.normalize(), outK);
+  // (Keep the angle up after leaning it outwards.)
+  const h = Math.hypot(d.x, d.z) || 1;
+  return new Vector3((d.x / h) * Math.cos(up), Math.sin(up), (d.z / h) * Math.cos(up)).normalize();
+}
+
+/**
+ * A crown's wood: limbs out to each leaf clump, side branches along them and
+ * twigs off those, as the species grows them. `close`: detailed (round,
+ * smooth, an extra level of fine twigs) for close up; else plain, for the
+ * middle distance. `from`: where the stems start (a bush's at the ground).
+ */
+export function crownWood(seed, { from, wood = DEFAULT_WOOD, close = false, twigs = true } = {}) {
+  const W = { ...DEFAULT_WOOD, ...wood };
+  const { clumps, hi } = crownShape(seed);
   const rnd = rng(seed * 13 + 5);
-  // A tree's trunk reaches about the middle of its crown (y 0); limbs
-  // leave it at different heights up to there. A bush's stems all start at
-  // the ground.
   const bush = from != null;
   const parts = [];
+  const T = close ? roundTube : (pts, r0, r1, radial, segs) => tube(pts, r0, r1, Math.max(3, radial - 2), Math.max(2, segs - 2));
+  const path = (a, b, n, bow, crookK) => (close ? crooked(rnd, a, b, n, bow, crookK) : [a, a.clone().lerp(b, 0.5).add(new Vector3(0, bow * a.distanceTo(b), 0)), b]);
+  // A leader: one stem on up through the crown.
+  if (W.leader && !bush) {
+    parts.push(T(path(new Vector3(0, -0.6, 0), new Vector3(0, hi * 0.95, 0), 5, 0, 0.03), 0.02 * W.thick, 0.003, 7, 8));
+  }
   for (const [cx, cy, cz, r] of clumps.slice(0, -1)) {
-    const start = new Vector3(0, bush ? from : -0.35 + rnd() * 0.4, 0);
     const end = new Vector3(cx, cy, cz).multiplyScalar(0.85 + rnd() * 0.1);
-    if (end.y < start.y + 0.1) start.y = end.y - 0.1; // low limbs leave the trunk lower
-    const mid = start.clone().lerp(end, 0.5);
-    mid.y += 0.06 + rnd() * 0.06; // bowing upwards
-    mid.x *= 0.85;
-    mid.z *= 0.85;
-    parts.push(tube([start, mid, end], bush ? 0.011 : 0.014, 0.005, twigs ? 4 : 3, twigs ? 3 : 2));
+    let y0 = bush ? from : between(rnd, W.start);
+    if (W.leader && !bush) y0 = Math.min(y0, end.y - 0.05); // off the leader, below its clump
+    if (end.y < y0 + 0.1 && !W.leader) y0 = end.y - 0.1; // low limbs leave the trunk lower
+    const start = new Vector3(0, y0, 0);
+    const limb = path(start, end, 4, W.bow, W.crook);
+    const lr0 = (bush ? 0.011 : W.leader ? 0.009 : 0.015) * W.thick;
+    parts.push(T(limb, lr0, 0.0042 * Math.sqrt(W.thick), 7, 8));
+    const curve = new CatmullRomCurve3(limb);
+    if (close) {
+      // ... carrying on past the end as a twig, so no limb ends in a stub.
+      const dir = curve.getTangentAt(1);
+      const tipEnd = end.clone().addScaledVector(dir, r * 0.55).add(new Vector3(0, r * (0.1 - W.twigDroop * 0.3), 0));
+      parts.push(T(crooked(rnd, end, tipEnd, 2, 0.05, 0.2), 0.0042 * Math.sqrt(W.thick), 0.0009, 5, 4));
+    }
     if (!twigs) continue;
-    const nTwig = 1 + Math.floor(rnd() * 4); // (1-4, varying)
-    for (let k = 0; k < nTwig; k++) {
-      const a = rnd() * Math.PI * 2;
-      const up = 0.15 + rnd() * 1.0;
-      const d = new Vector3(Math.cos(a) * Math.cos(up), Math.sin(up), Math.sin(a) * Math.cos(up)).add(end.clone().normalize().multiplyScalar(0.6)).normalize();
-      const from2 = mid.clone().lerp(end, 0.5 + rnd() * 0.5);
-      const tip = from2.clone().addScaledVector(d, r * (0.8 + rnd() * 0.5));
-      const bend = from2.clone().lerp(tip, 0.5).add(new Vector3(0, r * 0.1, 0));
-      parts.push(tube([from2, bend, tip], 0.0045, 0.0022, 3, 2));
+    // Side branches along the limb (plain: fewer), each with its twigs.
+    const nSide = Math.max(close ? 0 : 1, Math.round(intBetween(rnd, W.sides) * (close ? 1 : 0.6)));
+    for (let k = 0; k < nSide; k++) {
+      const at = curve.getPointAt(Math.min(0.97, 0.3 + ((k + rnd() * 0.8) / nSide) * 0.65));
+      const d = heading(rnd, between(rnd, W.sideUp), end, 0.8);
+      const len = r * between(rnd, W.sideLen);
+      const tip = at.clone().addScaledVector(d, len);
+      tip.y -= W.sideDroop * len;
+      const side = path(at, tip, 3, 0.08 + W.sideDroop * 0.25, W.sideCrook);
+      parts.push(T(side, 0.0048, 0.0018, 5, 5));
+      if (!close) continue;
+      const sc = new CatmullRomCurve3(side);
+      const nTwig = intBetween(rnd, W.twigs);
+      for (let j = 0; j < nTwig; j++) {
+        const at2 = sc.getPointAt(Math.min(0.95, 0.3 + ((j + rnd() * 0.8) / Math.max(1, nTwig)) * 0.6));
+        const d2 = heading(rnd, between(rnd, W.twigUp), d, 0.9);
+        const l2 = r * between(rnd, W.twigLen);
+        const tip2 = at2.clone().addScaledVector(d2, l2);
+        tip2.y -= W.twigDroop * l2;
+        parts.push(T(crooked(rnd, at2, tip2, 2, 0.06 + W.twigDroop * 0.3, 0.25), 0.0018 * W.twigThick, 0.0008 * W.twigThick, 4, 3));
+      }
     }
   }
-  const geo = mergeGeometries(parts);
-  geo.computeVertexNormals();
-  const n = geo.attributes.position.count;
-  const col = new Float32Array(n * 3);
-  const pp = geo.attributes.position;
-  for (let i = 0; i < n; i++) {
-    // Grey-brown bark (the bark material is a dark brown: lifted and greyed),
-    // lighter out towards the twigs.
-    const k = 1.35 + 0.45 * Math.min(1, Math.hypot(pp.getX(i), pp.getZ(i)) * 1.2);
-    col.set([k, k * 1.08, k * 1.18], i * 3);
-  }
-  geo.setAttribute('color', new Float32BufferAttribute(col, 3));
-  return geo;
+  const geo = mergeGeometries(close ? parts : parts.map((g) => (g.index ? g.toNonIndexed() : g)));
+  if (!close) geo.computeVertexNormals();
+  return barkShade(geo, W.twigDark);
+}
+
+/** The plain bare branches (middle distance): see crownWood. */
+export function crownBranches(seed, opts = {}) {
+  return crownWood(seed, { ...opts, close: false });
 }
 
 // The card-spreading part of the vertex shader, shared by the drawing and the
@@ -564,62 +621,22 @@ function crooked(rnd, a, b, n, bow, crook) {
   return pts;
 }
 
-function barkShade(geo) {
+function barkShade(geo, twigDark = 0) {
   geo.computeBoundingSphere();
   const pp = geo.attributes.position;
   const col = new Float32Array(pp.count * 3);
   for (let i = 0; i < pp.count; i++) {
     // As crownBranches: lighter out towards the twigs, a little mottled.
-    const k = (1.35 + 0.45 * Math.min(1, Math.hypot(pp.getX(i), pp.getZ(i)) * 1.2)) * (0.92 + 0.16 * noise3(pp.getX(i) * 40, pp.getY(i) * 40, pp.getZ(i) * 40));
+    const out = Math.min(1, Math.hypot(pp.getX(i), pp.getZ(i)) * 1.2);
+    let k = (1.35 + 0.45 * out) * (0.92 + 0.16 * noise3(pp.getX(i) * 40, pp.getY(i) * 40, pp.getZ(i) * 40));
+    if (twigDark) k *= 1 - twigDark * 0.8 * out; // (birch: dark twigs)
     col.set([k, k * 1.08, k * 1.18], i * 3);
   }
   geo.setAttribute('color', new Float32BufferAttribute(col, 3));
   return geo;
 }
 
-/**
- * Detailed branches for a crown (unit crown space, as crownBranches): limbs
- * out to each clump, side branches along them, and fine twigs off those.
- */
-export function detailedBranches(seed, { from } = {}) {
-  const { clumps } = crownShape(seed);
-  const rnd = rng(seed * 13 + 5);
-  const bush = from != null;
-  const parts = [];
-  for (const [cx, cy, cz, r] of clumps.slice(0, -1)) {
-    const start = new Vector3(0, bush ? from : -0.35 + rnd() * 0.4, 0);
-    const end = new Vector3(cx, cy, cz).multiplyScalar(0.85 + rnd() * 0.1);
-    if (end.y < start.y + 0.1) start.y = end.y - 0.1;
-    const limb = crooked(rnd, start, end, 4, 0.12, 0.12);
-    parts.push(roundTube(limb, bush ? 0.011 : 0.015, 0.0042, 7, 8));
-    const curve = new CatmullRomCurve3(limb);
-    // ... carrying on past the end as a twig, so no limb ends in a stub.
-    const dir = curve.getTangentAt(1);
-    const tipEnd = end.clone().addScaledVector(dir, r * 0.55).add(new Vector3(0, r * 0.1, 0));
-    parts.push(roundTube(crooked(rnd, end, tipEnd, 2, 0.05, 0.2), 0.0042, 0.0009, 5, 4));
-    // Side branches from along the limb, each with a few fine twigs.
-    // A varying number of side branches (1-5), spread along the limb.
-    const nSide = 1 + Math.floor(rnd() * 5);
-    for (let k = 0; k < nSide; k++) {
-      const at = curve.getPointAt(Math.min(0.97, 0.35 + ((k + rnd() * 0.8) / nSide) * 0.6));
-      const a = rnd() * Math.PI * 2;
-      const up = 0.15 + rnd() * 0.9;
-      const d = new Vector3(Math.cos(a) * Math.cos(up), Math.sin(up), Math.sin(a) * Math.cos(up)).add(end.clone().normalize().multiplyScalar(0.7)).normalize();
-      const tip = at.clone().addScaledVector(d, r * (0.7 + rnd() * 0.5));
-      const side = crooked(rnd, at, tip, 3, 0.1, 0.2);
-      parts.push(roundTube(side, 0.0048, 0.0018, 5, 5));
-      const sc = new CatmullRomCurve3(side);
-      // ... each with its own few twigs (0-4).
-      const nTwig = Math.floor(rnd() * 5);
-      for (let j = 0; j < nTwig; j++) {
-        const at2 = sc.getPointAt(Math.min(0.95, 0.3 + ((j + rnd() * 0.8) / Math.max(1, nTwig)) * 0.6));
-        const a2 = rnd() * Math.PI * 2;
-        const d2 = d.clone().add(new Vector3(Math.cos(a2), 0.4 + rnd() * 0.6, Math.sin(a2)).multiplyScalar(0.9)).normalize();
-        const tip2 = at2.clone().addScaledVector(d2, r * (0.25 + rnd() * 0.25));
-        parts.push(roundTube(crooked(rnd, at2, tip2, 2, 0.08, 0.25), 0.0018, 0.0008, 4, 3));
-      }
-    }
-  }
-  const geo = mergeGeometries(parts);
-  return barkShade(geo);
+/** Detailed branches for a crown (close up): see crownWood. */
+export function detailedBranches(seed, opts = {}) {
+  return crownWood(seed, { ...opts, close: true });
 }
