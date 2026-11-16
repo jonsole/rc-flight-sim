@@ -8,8 +8,8 @@
 //   grass    colour multiplier for the grass
 //
 // Leaves come out through April and are full by mid May; they turn from
-// late September, through October, and fall from late October to the end
-// of November.
+// late September, through October, and fall from mid October to mid
+// December (each species and tree in its own time: src/world/species.js).
 
 const smooth = (a, b, x) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -19,9 +19,9 @@ const smooth = (a, b, x) => {
 /** @param {number} day day of the year, 1-366 */
 export function seasonFor(day) {
   const leafOut = smooth(92, 135, day); // April to mid May
-  const leafFall = smooth(298, 330, day); // late October to late November
+  const leafFall = smooth(285, 345, day); // mid October to mid December
   const bare = 1 - leafOut + leafFall;
-  const autumn = smooth(262, 300, day) * (1 - smooth(330, 345, day));
+  const autumn = smooth(262, 300, day) * (1 - smooth(340, 355, day));
   const fresh = smooth(100, 120, day) * (1 - smooth(140, 170, day));
   // Grass: dull and yellowish in winter, bright in spring, a touch dry in
   // late summer.

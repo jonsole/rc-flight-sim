@@ -369,7 +369,7 @@ export function crownBranches(seed, { from, twigs = true } = {}) {
 // tree's own year (aBare, src/world/species.js) and the card (some lose their leaves sooner: aCard.y).
 // Each leaf in the picture goes once this passes its own fall time, so the
 // crown thins out leaf by leaf; a card with none left isn't drawn at all.
-const LEAF_FALL = 'clamp(aBare * (1.0 + 0.5 * (1.0 - aCard.y)), 0.0, 1.0)';
+const LEAF_FALL = 'clamp(aBare * (1.0 + 0.8 * (1.0 - aCard.y)), 0.0, 1.0)';
 const CARD_VERTEX = /* glsl */ `
   {
     vLeafDrop = ${LEAF_FALL};

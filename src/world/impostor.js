@@ -76,7 +76,7 @@ const BAKE_FRAG = /* glsl */ `
       c *= mix(0.68, 1.15, vUp);
       float tint = t.b / t.a - 0.5; // each leaf's own tint (as on the leafy cards)
       c *= vec3(1.0 + tint * 0.55, 1.0 + tint * 0.12, 1.0 - tint * 0.75) * (1.0 + tint * 0.12);
-      fallAt = clamp((t.g / t.a) / 1.02 / (1.0 + 0.5 * (1.0 - vWhen)), 0.0, 1.0);
+      fallAt = clamp((t.g / t.a) / 1.02 / (1.0 + 0.8 * (1.0 - vWhen)), 0.0, 1.0);
     }
     // (Bark is drawn at half brightness: its colours go over 1.)
     if (uMode < 0.5) gl_FragColor = vec4(uLeafy > 0.5 ? c : c * 0.5, 1.0);
