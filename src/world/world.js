@@ -945,7 +945,8 @@ export class World {
         },
         onDraw: (t, mesh, slot) => (t.drawn.crown = [mesh, slot]),
       });
-      this.#addLod(lod, CONIFER_NAMES.map(() => new ConeGeometry(1, 1, 8)), 'tree', lodConifers);
+      // (Their boughs always show: evergreens' tiers hang on them.)
+      this.#addLod(lod, CONIFER_NAMES.map(() => new ConeGeometry(1, 1, 8)), 'tree', lodConifers, { woodAlways: true });
       this.trees.crowns.push(...lod.meshes, ...lod.shadows);
     }
   }
@@ -954,7 +955,7 @@ export class World {
    * Add a level-of-detail crown set to the scene: its leafy meshes cast
    * leaf-card shadows and get bare branches (sharing their matrices).
    */
-  #addLod(lod, shadowShapes, kind, list) {
+  #addLod(lod, shadowShapes, kind, list, { woodAlways = false } = {}) {
     this.lods.push(lod);
     // The pictures: no shadows of their own (and none falling on them, which
     // would cut across the card); plain shapes cast them instead.
@@ -994,7 +995,7 @@ export class World {
       m.userData.kind = kind;
       if (kind === 'tree') m.userData.trees = list;
       this.scene.add(m);
-      if (role !== 'closeTrunk') this.twigMeshes.push(m);
+      if (role !== 'closeTrunk' && !woodAlways) this.twigMeshes.push(m);
     }
   }
 

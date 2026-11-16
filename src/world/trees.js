@@ -256,9 +256,9 @@ export function simpleTrunk() {
   });
 }
 
-/** A conifer trunk for a tree 1 unit tall: straight, tapering, up into the foliage. */
+/** A conifer trunk for a tree 1 unit tall: straight, tapering, up almost to the tip (its top tiers hang on it). */
 export function coniferTrunk() {
-  const geo = taperedTube([new Vector3(0, 0, 0), new Vector3(0, 0.3, 0), new Vector3(0, 0.6, 0)], 0.018, 0.006, 6, 2);
+  const geo = taperedTube([new Vector3(0, 0, 0), new Vector3(0, 0.35, 0), new Vector3(0, 0.7, 0), new Vector3(0, 0.98, 0)], 0.018, 0.002, 6, 4);
   geo.computeVertexNormals();
   return shade(geo, (pos) => {
     const k = 0.75 + 0.4 * Math.min(1, pos.y / 0.2);

@@ -282,7 +282,7 @@ export class Obstacles {
     for (const t of this.trees) {
       // Trunk (solid): drawn tapering from 0.024 h to under 0.01 h across.
       // (As thick as its species' trunk is drawn: src/world/species.js.)
-      this.shapes.push({ type: 'cylinder', name: 'a tree trunk', x: t.x, z: t.z, r: t.h * (t.conifer ? 0.014 : 0.019) * trunkThickness(t), y0: t.y - 0.2, y1: t.y + t.h * (t.conifer ? 0.2 : 0.42) });
+      this.shapes.push({ type: 'cylinder', name: 'a tree trunk', x: t.x, z: t.z, r: t.h * (t.conifer ? 0.014 : 0.019) * trunkThickness(t), y0: t.y - 0.2, y1: t.y + t.h * (t.conifer ? Math.max(0.2, t.base ?? 0) : 0.42) }); // (a conifer's up to its crown: a pine's bare trunk is solid)
       if (t.conifer) {
         // As drawn (crownOf): boughs from `base` up, cone of radius r.
         const c = crownOf(t);
