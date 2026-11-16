@@ -9,8 +9,8 @@
 //
 // Atlases (one column per shape, one row per height):
 //   albedo  leaf colour, alpha = leaf there
-//   normal  leaf normal (as seen by the drawing camera), alpha = when its
-//           card's leaves come and go in the year (aCard.y)
+//   normal  leaf normal (as seen by the drawing camera), alpha = the
+//           season's leaf fall (uBare) by which that leaf has gone
 //   bark    branch colour, alpha = branch there
 import {
   WebGLRenderTarget, OrthographicCamera, Scene, Mesh, ShaderMaterial, BufferGeometry,
@@ -57,14 +57,20 @@ const BAKE_FRAG = /* glsl */ `
   varying float vWhen;
   void main() {
     vec3 c = vCol;
+    float fallAt = 1.0;
     if (uLeafy > 0.5) {
+      // The leaf picture (src/world/fluffy.js leafTexture): brightness, and
+      // the leaf's fall time, here turned into the season's leaf fall
+      // (uBare) at which it has gone (fluffy.js LEAF_FALL, solved for it).
       vec4 t = texture2D(uLeaf, vUv);
       if (t.a < 0.5) discard;
-      c *= t.rgb;
+      float kk = pow(t.r / t.a, 2.2);
+      c *= vec3(kk, kk, kk * 0.83);
+      fallAt = clamp((t.g / t.a) / 1.02 / (1.0 + 0.5 * (1.0 - vWhen)), 0.0, 1.0);
     }
     // (Bark is drawn at half brightness: its colours go over 1.)
     if (uMode < 0.5) gl_FragColor = vec4(uLeafy > 0.5 ? c : c * 0.5, 1.0);
-    else gl_FragColor = vec4(normalize(vN) * 0.5 + 0.5, vWhen);
+    else gl_FragColor = vec4(normalize(vN) * 0.5 + 0.5, fallAt);
   }`;
 
 /**
@@ -213,9 +219,9 @@ export function makeImpostor(material, atlas) {
         vec4 alb = mix(texture2D(uImpAlbedo, u0), texture2D(uImpAlbedo, u1), rt);
         vec4 nrm = mix(texture2D(uImpNormal, u0), texture2D(uImpNormal, u1), rt);
         vec4 brk = mix(texture2D(uImpBark, u0), texture2D(uImpBark, u1), rt);
-        // Leaves out at this time of year (as the leafy cards do).
-        float when = min(nrm.a / max(alb.a, 0.01), 0.995);
-        bool leaf = alb.a > 0.35 && (when + 0.15 - uBare * 1.15) / 0.15 > 0.5;
+        // Leaves still on at this time of year (as on the leafy cards).
+        float fallAt = nrm.a / max(alb.a, 0.01);
+        bool leaf = alb.a > 0.35 && uBare < fallAt - 0.005;
         vec3 impN = vec3(0.0, 0.0, 1.0);
         if (leaf) {
           diffuseColor.rgb *= alb.rgb / max(alb.a, 0.01);

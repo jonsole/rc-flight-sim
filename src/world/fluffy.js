@@ -10,7 +10,7 @@
 // spring and fall (shrink away) in autumn, in each card's own order, leaving
 // the branches (crownBranches) bare in winter.
 import {
-  BufferGeometry, Float32BufferAttribute, CanvasTexture, SRGBColorSpace, DoubleSide, MeshLambertMaterial,
+  BufferGeometry, Float32BufferAttribute, CanvasTexture, DoubleSide, MeshLambertMaterial,
   MeshDepthMaterial, RGBADepthPacking, Sphere, Vector3, InstancedMesh, IcosahedronGeometry, MeshBasicMaterial,
   CatmullRomCurve3, TubeGeometry,
 } from 'three';
@@ -47,7 +47,9 @@ export function leafTexture(detail = 2) {
     const y = S / 2 + Math.sin(a) * d;
     const len = (S * (0.07 + rnd() * 0.05) * LEAF) / scale;
     const k = Math.round(150 + (i / count) * 80 + rnd() * 25);
-    g.fillStyle = `rgb(${k},${k},${Math.round(k * 0.92)})`;
+    // Red: the leaf's brightness. Green: when it falls (it's gone once the
+    // season's leaf fall passes this; see LEAF_FALL).
+    g.fillStyle = `rgb(${k},${Math.round(5 + rnd() * 250)},0)`;
     g.save();
     g.translate(x, y);
     // Leaves point roughly outwards from the middle.
@@ -60,7 +62,7 @@ export function leafTexture(detail = 2) {
     g.restore();
   }
   const t = new CanvasTexture(c);
-  t.colorSpace = SRGBColorSpace;
+  // (Not colour: brightness and fall time, read by LEAF_FRAGMENT.)
   t.anisotropy = 4;
   leafTex[detail] = t;
   return t;
@@ -212,9 +214,15 @@ export function crownBranches(seed, { from, twigs = true } = {}) {
 // The card-spreading part of the vertex shader, shared by the drawing and the
 // shadow (depth) materials. Cards whose leaves aren't out (by the season,
 // uBare) shrink to nothing: no pixels drawn for them at all.
+// Leaf fall: how far through it this card is (0 in leaf, 1 bare), by the
+// season (uBare) and the card (some lose their leaves sooner: aCard.y).
+// Each leaf in the picture goes once this passes its own fall time, so the
+// crown thins out leaf by leaf; a card with none left isn't drawn at all.
+const LEAF_FALL = 'clamp(uBare * (1.0 + 0.5 * (1.0 - aCard.y)), 0.0, 1.0)';
 const CARD_VERTEX = /* glsl */ `
   {
-    float grow = clamp((aCard.y + 0.15 - uBare * 1.15) / 0.15, 0.0, 1.0);
+    vLeafDrop = ${LEAF_FALL};
+    float grow = vLeafDrop < 0.995 ? 1.0 : 0.0;
     float an = aCard.z * 6.2831853;
     vec2 cr = mat2(cos(an), sin(an), -sin(an), cos(an)) * aCorner * aCard.x * grow;
     vec3 camR = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
@@ -231,7 +239,24 @@ const CARD_VERTEX = /* glsl */ `
     #endif
   }
 `;
-const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nuniform float uBare;';
+const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nuniform float uBare;\nvarying float vLeafDrop;';
+
+/**
+ * Read the leaf picture (see leafTexture): its brightness (as colour) into
+ * diffuseColor, and leave out the leaves fallen by now (vLeafDrop). Colours
+ * are divided by coverage: the smaller copies of the picture (mipmaps) mix
+ * leaf pixels with clear ones.
+ */
+export const LEAF_FRAGMENT = /* glsl */ `
+  {
+    vec4 tx = texture2D(map, vMapUv);
+    float cov = max(tx.a, 0.01);
+    float kk = pow(tx.r / cov, 2.2);
+    diffuseColor.rgb *= vec3(kk, kk, kk * 0.83);
+    diffuseColor.a *= tx.a;
+    if (tx.g / cov <= vLeafDrop * 1.02) discard;
+  }
+`;
 
 /**
  * Turn a leaf material (after addCloudShadows and addLeafShading) into the
@@ -253,7 +278,7 @@ export function makeFluffy(material, { smooth = true, detail = 2 } = {}) {
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n${CARD_VERTEX}`);
     // Far away the texture's smaller copies (mipmaps) blur the leaves'
     // edges and the cards would fade away: keep them solid.
-    shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vLeafDrop;').replace('#include <map_fragment>', `${LEAF_FRAGMENT}
       {
         vec2 tsz = vec2(textureSize(map, 0));
         vec2 ddx = dFdx(vMapUv * tsz);
@@ -279,6 +304,9 @@ export function fluffyDepthMaterial(detail = 2) {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>\n${CARD_DECLS}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n${CARD_VERTEX}`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vLeafDrop;')
+      .replace('#include <map_fragment>', LEAF_FRAGMENT);
   };
   depthMat.customProgramCacheKey = () => 'fluffyDepth';
   return depthMat;
