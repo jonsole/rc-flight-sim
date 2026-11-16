@@ -87,7 +87,7 @@ renderer.shadowMap.type = PCFSoftShadowMap;
 // Scenery edits for this field (src/sim/edits.js), before anything is built.
 loadEdits(LOCATION.id, LOCATION.layout.edits);
 const obstacles = new Obstacles();
-const world = new World(obstacles, { quality, viewDistance: viewDistance(settings) });
+const world = new World(obstacles, { quality, viewDistance: viewDistance(settings), treeStyle: settings.treeStyle });
 const wind = new Wind();
 wind.setTrees(obstacles.trees); // trees shelter the field and stir up the air behind them
 const input = new Input();
@@ -426,7 +426,7 @@ const panel = new Panel(document.getElementById('panel'), {
     if (key === 'aircraft') selectAircraft(value);
     if (key === 'location') changeField(value);
     // The scenery is built for these once, so they take effect on a reload.
-    if (key === 'graphics' || key === 'viewDistance') reloadKeepingRoom();
+    if (key === 'graphics' || key === 'viewDistance' || key === 'treeStyle') reloadKeepingRoom();
     if (key === 'googleKey' && googleTiles) {
       // A new key needs a new session.
       world.scene.remove(googleTiles.group);

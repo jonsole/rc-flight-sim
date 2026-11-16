@@ -315,12 +315,15 @@ export function addLeafShading(material) {
           // New leaves in spring: paler, fresher green.
           diffuseColor.rgb = mix(diffuseColor.rgb, lum * vec3(1.15, 1.75, 0.6), uFresh * 0.5);
           // Winter: bare. Most of the crown goes (see-through), what's left
-          // is grey-brown twigs.
+          // is grey-brown twigs. (Leafy crowns, src/world/fluffy.js, lose
+          // their leaf cards instead.)
+          #ifndef FLUFFY
           if (uBare > 0.0) {
             float twigs = cNoise(wp.xz * 2.3 + wp.y * 1.9) * 0.55 + cNoise(vec2(wp.x + wp.z, wp.y) * 6.1) * 0.45;
             if (twigs < uBare * 0.82) discard;
             diffuseColor.rgb = mix(diffuseColor.rgb, lum * vec3(1.25, 1.05, 0.9), uBare);
           }
+          #endif
           #endif
         }`);
   };
