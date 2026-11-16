@@ -156,7 +156,7 @@ export function conifer(seed) {
  * A tube along a curve whose radius tapers from r0 to r1 (end may be capped
  * by the crown, so it's left open).
  */
-function taperedTube(points, r0, r1, radial = 6, segs = 5) {
+function taperedTube(points, r0, r1, radial = 6, segs = 5, round = false) {
   const curve = new CatmullRomCurve3(points);
   const g = new TubeGeometry(curve, segs, 1, radial, false);
   const p = g.attributes.position;
@@ -172,6 +172,10 @@ function taperedTube(points, r0, r1, radial = 6, segs = 5) {
       p.setXYZ(k, v.x, v.y, v.z);
     }
   }
+  if (round) {
+    g.deleteAttribute('uv');
+    return g; // indexed: stays smoothly lit
+  }
   return ni(g);
 }
 
@@ -180,19 +184,24 @@ function taperedTube(points, r0, r1, radial = 6, segs = 5) {
  * flared, slightly crooked trunk that forks into a handful of limbs reaching
  * up and out into the crown, each with a smaller side branch.
  */
-export function trunk(seed) {
+export function trunk(seed, detailed = false) {
+  // Detailed (close up): rounder, finer, with more side branches.
+  const R = detailed ? 2 : 1;
+  const tube = (pts, r0, r1, radial, segs) => taperedTube(pts, r0, detailed ? Math.max(r1 * 0.5, 0.001) : r1, radial * R - (detailed ? 2 : 0), segs * R, detailed);
   const rnd = rng(seed);
   const lean = (rnd() - 0.5) * 0.02;
   const top = 0.56;
   const parts = [
-    taperedTube([
+    tube([
       new Vector3(0, 0, 0),
       new Vector3(lean * 0.3 + (rnd() - 0.5) * 0.006, top * 0.35, (rnd() - 0.5) * 0.006),
       new Vector3(lean * 0.7, top * 0.7, (rnd() - 0.5) * 0.01),
       new Vector3(lean, top, 0),
     ], 0.024, 0.009, 7, 6),
     // Root flare.
-    ni(new CylinderGeometry(0.022, 0.034, 0.03, 7, 1, true).translate(0, 0.015, 0)),
+    detailed
+      ? new CylinderGeometry(0.022, 0.036, 0.04, 14, 2, true).translate(0, 0.02, 0).deleteAttribute('uv')
+      : ni(new CylinderGeometry(0.022, 0.034, 0.03, 7, 1, true).translate(0, 0.015, 0)),
   ];
   const limbs = 5 + Math.floor(rnd() * 2);
   for (let i = 0; i < limbs; i++) {
@@ -207,12 +216,19 @@ export function trunk(seed) {
     const end = start.clone().addScaledVector(dir, len);
     end.y += len * 0.15; // curving upwards
     const r0 = 0.0085 - (y0 - 0.3) * 0.02;
-    parts.push(taperedTube([start, mid, end], r0, 0.0025, 5, 4));
+    parts.push(tube([start, mid, end], r0, 0.0025, 5, 4));
     // A side branch from about halfway along.
     const az2 = az + (rnd() < 0.5 ? -1 : 1) * (0.6 + rnd() * 0.5);
     const d2 = new Vector3(Math.cos(az2) * 0.7, 0.7, Math.sin(az2) * 0.7).normalize();
     const s2 = mid.clone();
-    parts.push(taperedTube([s2, s2.clone().addScaledVector(d2, len * 0.3), s2.clone().addScaledVector(d2, len * 0.55).add(new Vector3(0, len * 0.06, 0))], r0 * 0.55, 0.0018, 4, 3));
+    parts.push(tube([s2, s2.clone().addScaledVector(d2, len * 0.3), s2.clone().addScaledVector(d2, len * 0.55).add(new Vector3(0, len * 0.06, 0))], r0 * 0.55, 0.0018, 4, 3));
+    if (detailed) {
+      // Close up: another side branch, further out, the other way.
+      const az3 = az - (az2 - az) * 0.8;
+      const d3 = new Vector3(Math.cos(az3) * 0.75, 0.65, Math.sin(az3) * 0.75).normalize();
+      const s3 = start.clone().lerp(end, 0.75);
+      parts.push(tube([s3, s3.clone().addScaledVector(d3, len * 0.25), s3.clone().addScaledVector(d3, len * 0.45).add(new Vector3(0, len * 0.05, 0))], r0 * 0.4, 0.0018, 4, 3));
+    }
   }
   const geo = mergeGeometries(parts);
   geo.computeVertexNormals();

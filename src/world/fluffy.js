@@ -12,7 +12,7 @@
 import {
   BufferGeometry, Float32BufferAttribute, CanvasTexture, DoubleSide, MeshLambertMaterial,
   MeshDepthMaterial, RGBADepthPacking, Sphere, Vector3, InstancedMesh, IcosahedronGeometry, MeshBasicMaterial,
-  CatmullRomCurve3, TubeGeometry,
+  CatmullRomCurve3, TubeGeometry, ShaderChunk,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { rng, noise3, crownShape, CROWN_SEEDS } from '../sim/treeShapes.js';
@@ -344,7 +344,7 @@ export function crownBranches(seed, { from, twigs = true } = {}) {
       const from2 = mid.clone().lerp(end, 0.5 + rnd() * 0.5);
       const tip = from2.clone().addScaledVector(d, r * (0.8 + rnd() * 0.5));
       const bend = from2.clone().lerp(tip, 0.5).add(new Vector3(0, r * 0.1, 0));
-      parts.push(tube([from2, bend, tip], 0.007, 0.0025, 3, 2));
+      parts.push(tube([from2, bend, tip], 0.007, 0.0035, 3, 2));
     }
   }
   const geo = mergeGeometries(parts);
@@ -447,7 +447,13 @@ export function makeFluffy(material, { smooth = true, detail = 2 } = {}) {
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n${CARD_VERTEX}`);
     // Far away the texture's smaller copies (mipmaps) blur the leaves'
     // edges and the cards would fade away: keep them solid.
-    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\n${CARD_FRAG_DECLS}`).replace('#include <map_fragment>', `${LEAF_FRAGMENT}
+    // Shadows on the leaves at part strength: the scenery shadow map is
+    // coarse (most of a metre a texel), fine on the ground but blocky with
+    // straight edges where leaves shade leaves; softened, the crowns keep
+    // their darker hollows without the blocks.
+    shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_begin>', ShaderChunk.lights_fragment_begin.replace(
+      'directionalLightShadow.shadowIntensity,', 'directionalLightShadow.shadowIntensity * LEAF_SHADOW,'));
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', `#include <common>\n#define LEAF_SHADOW 0.45\n${CARD_FRAG_DECLS}`).replace('#include <map_fragment>', `${LEAF_FRAGMENT}
       {
         vec2 tsz = vec2(textureSize(map, 0));
         vec2 ddx = dFdx(vMapUv * tsz / ${LEAF_GRID});
@@ -513,4 +519,102 @@ export function pickAsBall(mesh) {
     proxy.raycast(raycaster, mine);
     for (const h of mine) hits.push({ ...h, object: mesh });
   };
+}
+
+// --- Close-up wood -----------------------------------------------------------
+// Trees near the camera (src/world/lod.js, the close tier) get detailed
+// trunks and branches: rounder (more sides), smoothly lit, gently crooked,
+// and branching once more into fine twigs, ending in twigs rather than
+// sharp points. Further out the plainer ones above do.
+
+/** A smooth, indexed tapering tube (normals kept round). */
+function roundTube(points, r0, r1, radial, segs) {
+  const curve = new CatmullRomCurve3(points);
+  const g = new TubeGeometry(curve, segs, 1, radial, false);
+  const pp = g.attributes.position;
+  const v = new Vector3();
+  const c = new Vector3();
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    curve.getPointAt(t, c);
+    const r = r0 + (r1 - r0) * Math.pow(t, 0.8);
+    for (let j = 0; j <= radial; j++) {
+      const k = i * (radial + 1) + j;
+      v.fromBufferAttribute(pp, k).sub(c).multiplyScalar(r).add(c);
+      pp.setXYZ(k, v.x, v.y, v.z);
+    }
+  }
+  g.deleteAttribute('uv');
+  return g;
+}
+
+/** Points from a to b, bowed by `bow` (upwards) and wandering by `crook`. */
+function crooked(rnd, a, b, n, bow, crook) {
+  const pts = [];
+  const len = a.distanceTo(b);
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const p = a.clone().lerp(b, t);
+    const w = Math.sin(Math.PI * t);
+    p.y += bow * len * w;
+    if (i > 0 && i < n) p.add(new Vector3(rnd() - 0.5, (rnd() - 0.5) * 0.5, rnd() - 0.5).multiplyScalar(crook * len * w));
+    pts.push(p);
+  }
+  return pts;
+}
+
+function barkShade(geo) {
+  geo.computeBoundingSphere();
+  const pp = geo.attributes.position;
+  const col = new Float32Array(pp.count * 3);
+  for (let i = 0; i < pp.count; i++) {
+    // As crownBranches: lighter out towards the twigs, a little mottled.
+    const k = (1.35 + 0.45 * Math.min(1, Math.hypot(pp.getX(i), pp.getZ(i)) * 1.2)) * (0.92 + 0.16 * noise3(pp.getX(i) * 40, pp.getY(i) * 40, pp.getZ(i) * 40));
+    col.set([k, k * 1.08, k * 1.18], i * 3);
+  }
+  geo.setAttribute('color', new Float32BufferAttribute(col, 3));
+  return geo;
+}
+
+/**
+ * Detailed branches for a crown (unit crown space, as crownBranches): limbs
+ * out to each clump, side branches along them, and fine twigs off those.
+ */
+export function detailedBranches(seed, { from } = {}) {
+  const { clumps } = crownShape(seed);
+  const rnd = rng(seed * 13 + 5);
+  const bush = from != null;
+  const parts = [];
+  for (const [cx, cy, cz, r] of clumps.slice(0, -1)) {
+    const start = new Vector3(0, bush ? from : -0.35 + rnd() * 0.4, 0);
+    const end = new Vector3(cx, cy, cz).multiplyScalar(0.85 + rnd() * 0.1);
+    if (end.y < start.y + 0.1) start.y = end.y - 0.1;
+    const limb = crooked(rnd, start, end, 4, 0.12, 0.12);
+    parts.push(roundTube(limb, bush ? 0.016 : 0.022, 0.0065, 7, 8));
+    const curve = new CatmullRomCurve3(limb);
+    // ... carrying on past the end as a twig, so no limb ends in a stub.
+    const dir = curve.getTangentAt(1);
+    const tipEnd = end.clone().addScaledVector(dir, r * 0.55).add(new Vector3(0, r * 0.1, 0));
+    parts.push(roundTube(crooked(rnd, end, tipEnd, 2, 0.05, 0.2), 0.0065, 0.0018, 5, 4));
+    // Side branches from along the limb, each with a few fine twigs.
+    for (let k = 0; k < 4; k++) {
+      const at = curve.getPointAt(0.45 + k * 0.15 + rnd() * 0.08);
+      const a = rnd() * Math.PI * 2;
+      const up = 0.15 + rnd() * 0.9;
+      const d = new Vector3(Math.cos(a) * Math.cos(up), Math.sin(up), Math.sin(a) * Math.cos(up)).add(end.clone().normalize().multiplyScalar(0.7)).normalize();
+      const tip = at.clone().addScaledVector(d, r * (0.7 + rnd() * 0.5));
+      const side = crooked(rnd, at, tip, 3, 0.1, 0.2);
+      parts.push(roundTube(side, 0.008, 0.0035, 5, 5));
+      const sc = new CatmullRomCurve3(side);
+      for (let j = 0; j < 3; j++) {
+        const at2 = sc.getPointAt(0.35 + j * 0.22 + rnd() * 0.1);
+        const a2 = rnd() * Math.PI * 2;
+        const d2 = d.clone().add(new Vector3(Math.cos(a2), 0.4 + rnd() * 0.6, Math.sin(a2)).multiplyScalar(0.9)).normalize();
+        const tip2 = at2.clone().addScaledVector(d2, r * (0.25 + rnd() * 0.25));
+        parts.push(roundTube(crooked(rnd, at2, tip2, 2, 0.08, 0.25), 0.0034, 0.0016, 4, 3));
+      }
+    }
+  }
+  const geo = mergeGeometries(parts);
+  return barkShade(geo);
 }

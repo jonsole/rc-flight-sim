@@ -17,6 +17,40 @@ const _c = new Color();
 export const FADE_TIME = 0.6;
 /** The clock the fades run by (seconds), shared by every faded material. */
 export const lodFadeUniforms = { uLodTime: { value: 0 } };
+
+/**
+ * The close tier: trees nearer the camera than this (m) get detailed trunks
+ * and branches. The switch is made per vertex, by the camera's live
+ * position (addCloseSwitch), so the plain and detailed never both show.
+ */
+export const closeUniforms = { uCloseR: { value: 0 } };
+
+/**
+ * Draw a material's instances only near the camera (`near` true: the
+ * detailed wood), or only away from it (the plain wood): the others fold
+ * away to nothing.
+ */
+export function addCloseSwitch(material, near) {
+  const prev = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    prev?.(shader, renderer);
+    Object.assign(shader.uniforms, closeUniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uCloseR;')
+      .replace('#include <project_vertex>', `
+        #ifdef USE_INSTANCING
+        {
+          float d = length(cameraPosition.xz - (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xz);
+          if (${near ? 'd > uCloseR' : 'd < uCloseR'}) transformed = vec3(0.0);
+        }
+        #endif
+        #include <project_vertex>`);
+  };
+  const prevKey = material.customProgramCacheKey?.bind(material);
+  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|close${near ? 'In' : 'Out'}`;
+  material.needsUpdate = true;
+  return material;
+}
 const now = () => performance.now() / 1000;
 
 /**
@@ -105,6 +139,21 @@ export class CrownLod {
     for (const m of this.m) big = Math.max(big, m.getMaxScaleOnAxis());
     this.sphere = box.isEmpty() ? new Sphere(new Vector3(), 1) : box.getBoundingSphere(new Sphere());
     this.sphere.radius += big * 1.6;
+    // The close tier (o.close): detailed branches (crown matrix, per crown
+    // shape) and trunks (trunk matrix, per trunk design), for the trees
+    // near the camera.
+    const c = o.close;
+    if (c) {
+      this.closeR = c.radius;
+      this.closeWood = c.wood.map((g) => new InstancedMesh(g, c.woodMat, n));
+      this.closeTrunk = (c.trunks ?? []).map((g) => new InstancedMesh(g, c.trunkMat, n));
+      for (const m of [...this.closeWood, ...this.closeTrunk]) {
+        m.count = 0;
+        m.geometry.setAttribute('aSpecies', new InstancedBufferAttribute(new Float32Array(n), 1));
+      }
+      this.tm = c.trunkMatrix ? items.map((it) => c.trunkMatrix(it, new Matrix4())) : null;
+      this.trunkKind = items.map((it) => c.trunkKind?.(it) ?? 0);
+    }
     this.isLeafy = items.map(() => false);
     this.since = items.map(() => -1e4); // when it last changed (long ago: no fade)
     this.fadingUntil = 0;
@@ -134,6 +183,15 @@ export class CrownLod {
     const r2out = (this.radius * 1.03) ** 2;
     const counts = this.meshes.map(() => 0);
     const nLeafy = this.leafy.length;
+    const closeSort2 = (this.closeR + this.radius * 0.04 + 5) ** 2;
+    const closeCounts = new Map();
+    const putClose = (mesh, m, i) => {
+      const slot = closeCounts.get(mesh) ?? 0;
+      closeCounts.set(mesh, slot + 1);
+      mesh.setMatrixAt(slot, m);
+      mesh.setColorAt(slot, this.bark[i]);
+      mesh.geometry.attributes.aSpecies.array[slot] = this.leafRow[i];
+    };
     const put = (i, k, lod) => {
       const mesh = this.meshes[k];
       const slot = counts[k]++;
@@ -163,6 +221,19 @@ export class CrownLod {
       // Where the editor moves it: the one it is becoming.
       const [mesh, slot] = (leafy ? a : b) ?? a ?? b;
       this.o.onDraw(this.items[i], mesh, slot);
+      // Close: detailed wood (sorted generously: the shader makes the switch
+      // at exactly closeR from where the camera is now).
+      if (this.closeWood && d2 < closeSort2) {
+        putClose(this.closeWood[this.shape[i]], this.m[i], i);
+        if (this.tm && this.closeTrunk.length) putClose(this.closeTrunk[this.trunkKind[i]], this.tm[i], i);
+      }
+    }
+    for (const m of [...(this.closeWood ?? []), ...(this.closeTrunk ?? [])]) {
+      m.count = closeCounts.get(m) ?? 0;
+      m.instanceMatrix.needsUpdate = true;
+      if (m.instanceColor) m.instanceColor.needsUpdate = true;
+      m.geometry.attributes.aSpecies.needsUpdate = true;
+      m.boundingSphere = this.sphere;
     }
     this.meshes.forEach((m, k) => {
       m.count = counts[k];

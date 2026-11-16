@@ -14,8 +14,8 @@ import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail, groundUniforms } from './ground.js';
 import { seasonFor } from './seasons.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
-import { fluffyCrown, crownBranches, makeFluffy, fluffyDepthMaterial, pickAsBall, setLeafDetail } from './fluffy.js';
-import { CrownLod, addLodFade } from './lod.js';
+import { fluffyCrown, crownBranches, detailedBranches, makeFluffy, fluffyDepthMaterial, pickAsBall, setLeafDetail } from './fluffy.js';
+import { CrownLod, addLodFade, addCloseSwitch, closeUniforms } from './lod.js';
 import { speciesOf, bushSpeciesAt, barkColor, trunkThickness, SPECIES } from './species.js';
 import { LEAF_ROWS } from './fluffy.js';
 import { bakeImpostors, impostorGeometry, makeImpostor } from './impostor.js';
@@ -697,6 +697,7 @@ export class World {
         solid: [0, 1].map((k) => impostorGeometry(CROWN_SEEDS.length + k)),
         leafyMat: this.cardMat,
         solidMat: this.#impostorMat(),
+        close: { radius: q.leafy.close ?? 0, wood: [101, 131].map((sd) => detailedBranches(sd, { from: -0.9 })), woodMat: this.#closeWoodMat() },
         radius: q.leafy.radius, // (the same as the trees: one fade band)
         onDraw: (b, mesh, slot) => (b.drawn = [mesh, slot]),
       }), bushTwigShapes(), bushShapes('blob'), 'bush', list);
@@ -809,6 +810,8 @@ export class World {
     // Bark: its colour per tree (instance colour, by species).
     const barkMat = addCloudShadows(new MeshLambertMaterial({ vertexColors: true }));
     this.barkMat = barkMat;
+    const broadTrunkMat = this.fluffy ? addCloseSwitch(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })), false) : barkMat;
+    if (this.fluffy) closeUniforms.uCloseR.value = q.leafy.close ?? 0;
     // Conifers are open tiers of boughs: double-sided so their undersides show.
     const needleMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true, side: DoubleSide })));
     needleMat.defines = { CONIFER: '' };
@@ -826,7 +829,8 @@ export class World {
       if (!set.trees.length) continue;
       const count = set.trees.length;
       const mk = (geo, mat) => new InstancedMesh(geo, mat, count);
-      const trunks = set.trunks.map((g) => mk(g, barkMat));
+      // (Leafy style: the plain trunks give way to detailed ones close up.)
+      const trunks = set.trunks.map((g) => mk(g, broadTrunkMat));
       const conTrunks = mk(conTrunk, barkMat);
       const crowns = set.crowns.map((g) => mk(g, set.leafMat ?? leafMat));
       const conifers = set.conifers.map((g) => mk(g, needleMat));
@@ -894,6 +898,19 @@ export class World {
         leafyMat: cardMat,
         solidMat: this.#impostorMat(),
         radius: q.leafy.radius,
+        // Detailed wood near the camera.
+        close: {
+          radius: q.leafy.close ?? 0,
+          wood: CROWN_SEEDS.map((sd) => detailedBranches(sd)),
+          woodMat: this.#closeWoodMat(),
+          trunks: [trunk(3, true), trunk(41, true), trunk(67, true)],
+          trunkMat: this.closeTrunkMat ||= addCloseSwitch(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })), true),
+          trunkMatrix: (t, out) => {
+            treeMatrices(t, o, out, _crownM);
+            return out;
+          },
+          trunkKind: (t) => t.pick % 3, // as the plain near trunks
+        },
         onDraw: (t, mesh, slot) => (t.drawn.crown = [mesh, slot]),
       });
       this.#addLod(lod, CROWN_SEEDS.map((sd) => crownBranches(sd)), CROWN_SEEDS.map((sd) => blobCrown(sd)), 'tree', lodTrees);
@@ -923,7 +940,7 @@ export class World {
       m.userData.leafCards = true;
       m.customDepthMaterial = fluffyDepthMaterial(this.quality.leafy.detail);
       pickAsBall(m);
-      this.twigMat ||= addLodFade(branchesBySpecies(addCloudShadows(new MeshLambertMaterial({ color: 0xaaaaaa, vertexColors: true }))), false);
+      this.twigMat ||= addCloseSwitch(addLodFade(branchesBySpecies(addCloudShadows(new MeshLambertMaterial({ color: 0xaaaaaa, vertexColors: true }))), false), false);
       const tw = new InstancedMesh(twigShapes[k], this.twigMat, 1);
       tw.instanceMatrix = m.instanceMatrix;
       tw.instanceColor = lod.barkAttr[k]; // bark colour, by species
@@ -945,6 +962,15 @@ export class World {
       this.scene.add(m);
     }
     this.twigMeshes.push(...lod.twigs);
+    // Close-up wood: detailed branches (shown with the bare twigs) and trunks.
+    for (const m of [...(lod.closeWood ?? []), ...(lod.closeTrunk ?? [])]) {
+      m.castShadow = false; // (the plain ones cast the shadows)
+      m.receiveShadow = true;
+      m.userData.kind = kind;
+      if (kind === 'tree') m.userData.trees = list;
+      this.scene.add(m);
+    }
+    this.twigMeshes.push(...(lod.closeWood ?? []));
   }
 
   #syncTwigs(lod) {
@@ -956,6 +982,11 @@ export class World {
       sh.count = lod.solid[k].count;
       sh.boundingSphere = lod.sphere;
     });
+  }
+
+  /** Close-up branches: shaped and coloured by species, only near the camera. */
+  #closeWoodMat() {
+    return (this.closeWoodMat ||= addCloseSwitch(branchesBySpecies(addCloudShadows(new MeshLambertMaterial({ color: 0xaaaaaa, vertexColors: true }))), true));
   }
 
   /** The distant trees' material: pictures of the leafy crowns, drawn once. */
