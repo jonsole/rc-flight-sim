@@ -33,5 +33,6 @@
     "wing": "#efefea",
     "tail": "#c62828"
   },
+  "model": "buschtrottel-highlander.glb",
   "tuning": {}
 }

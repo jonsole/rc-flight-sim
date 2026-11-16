@@ -64,5 +64,6 @@
   "upperWingDihedralEffectDeg": 1,
   "visualDihedralDeg": 2.5,
   "defaultAssist": "as3x",
+  "model": "eflite-se5a-900.glb",
   "tuning": {}
 }

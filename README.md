@@ -227,7 +227,7 @@ npm test           # flight-model checks: stability, trim, stall, controls, take
 
 ```
 src/sim/       physics (no rendering): aero.js, aircraft.js, obstacles.js, terrain.js, wind.js
-src/aircraft/  aircraft registry (index.js) and models: definitions + procedural 3D
+src/aircraft/  aircraft registry (index.js), settings and 3D model files (models/), builders + code-drawn 3D
 src/world/     sky, terrain, runway, trees, windsock
 src/view/      camera rig (LOS / FPV / chase)
 src/input/     transmitter (Gamepad API) + keyboard, expo & rates
@@ -251,7 +251,8 @@ can be read and edited on GitHub:
 
 Each has `builder` (the code that turns the settings into a flight model and
 3D model: `se5a`, `buschtrottel` or `f22`), `id`, `name`, `summary`, `notes`
-(explanations, ignored by the code), the builder's settings, and `tuning`.
+(explanations, ignored by the code), the builder's settings, `model` (its 3D
+model file, below) and `tuning`.
 Units are metres, kilograms, newtons and seconds; angles are in degrees
 where the name ends in `Deg` (`"elevatorThrowDeg": 12`). `tuning` holds
 built-in changes in the Tuning tab's terms (`"elevator": 10`, `"cells": 4`,
@@ -259,6 +260,50 @@ built-in changes in the Tuning tab's terms (`"elevator": 10`, `"cells": 4`,
 make it the model's default for everyone. `src/aircraft/index.js` reads every
 file in the folder: a new file (say a copy of the ShockCub with other
 colours, prop or mass) is a new aircraft in the list.
+
+## 3D models (Blender)
+
+Each aircraft's 3D model is a glTF file, `src/aircraft/models/<id>.glb`,
+named by `"model"` in its JSON file. It is only the look: how it flies comes
+from the JSON settings. Without a model file (or until it has loaded) the
+game draws the model built in code.
+
+**Editing in Blender:** File → Import → glTF 2.0, open the `.glb`. The nose
+points along +X, the right wing along −Y, Z is up; units are metres. Edit
+away, then File → Export → glTF 2.0 with Format *glTF Binary (.glb)* and
+save over the same file. On GitHub, upload it into `src/aircraft/models/`
+(Add file → Upload files) to replace the old one. Tick *Data → Mesh → Loose
+Edges* when exporting to keep thin lines such as the S.E.5a's rigging wires.
+
+The game finds the parts that move by their object names (Blender's `.001`
+endings are fine; children of a named object go with it):
+
+| Name | What it does |
+| --- | --- |
+| `aileron_R`, `aileron_L` | Ailerons |
+| `elevator`, `rudder` | Elevator and rudder |
+| `elevon_R`, `elevon_L` | Elevons (the F-22) |
+| `wheel_R`, `wheel_L` | Roll along the ground and ride up on the tyre |
+| `tailwheel` | Steers with the rudder |
+| `prop` | An empty on the prop shaft, its X axis along it: the prop set in the Tuning tab is drawn and spun there (don't model the prop) |
+| `pilot` | Hidden in the FPV (cockpit) view |
+| `wing_R`, `wing_L`, `tail`, `gear_R`, `gear_L`, `canopy` | Groups that break off in a crash |
+
+A control surface (and a wheel or tail wheel) turns about its object's
+**origin**, along the object's **local X axis** (the red arrow; show it with
+Object properties → Viewport Display → Axes). Put the origin on the hinge
+line and the X axis along the hinge, either way round: the game works out
+which way is trailing edge down. To move or turn just the origin, tick
+Options → Transform → Affect Only *Origins* in the 3D view. Everything else
+can be named and arranged however you like. A material whose name starts
+with `decal` (roundels, lettering) is drawn over the surface it sits on
+without flickering. The flat-shaded foam pieces come in as loose triangles:
+Mesh → Clean Up → Merge by Distance joins them, then Shade Flat keeps the
+faceted look.
+
+The files here were made from the models drawn in code by
+`node scripts/export-models.mjs [id ...]`, which overwrites the file: don't
+run it for a model you've edited.
 
 ## Adding an aircraft
 
@@ -273,7 +318,8 @@ JSON file:
   motor, battery, trim, assist gains), as consumed by `src/sim/aircraft.js`.
 - `views`: camera mounts in body axes (`cockpit`, `pod`), `span` for LOS
   auto-zoom, and `chase` distances.
-- `createModel()`: returns `{ root, update(aircraft, dt), setPilotVisible(bool) }`.
+- `createModel()`: returns `{ root, parts, update(aircraft, dt), setPilotVisible(bool) }`:
+  from the model file once `loadModelFiles()` has loaded it, else drawn in code.
 - `def.handLaunch` (optional): `{ height, speed, pitch, throttle }` for a model
   with no wheels. It starts in the pilot's hand and is thrown along its nose
   once the throttle reaches `throttle`. The wheel tests are skipped for it.
