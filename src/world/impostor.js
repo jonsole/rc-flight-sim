@@ -72,9 +72,9 @@ const BAKE_FRAG = /* glsl */ `
       if (t.a < 0.5) discard;
       float kk = pow(t.r / t.a, 2.2);
       c *= vec3(kk, kk, kk * 0.83);
-      c *= mix(0.78, 1.12, vUp);
+      c *= mix(0.62, 1.2, vUp);
       float tint = t.b / t.a - 0.5; // each leaf's own tint (as on the leafy cards)
-      c *= vec3(1.0 + tint * 0.28, 1.0 + tint * 0.06, 1.0 - tint * 0.4);
+      c *= vec3(1.0 + tint * 0.55, 1.0 + tint * 0.12, 1.0 - tint * 0.75) * (1.0 + tint * 0.12);
       fallAt = clamp((t.g / t.a) / 1.02 / (1.0 + 0.5 * (1.0 - vWhen)), 0.0, 1.0);
     }
     // (Bark is drawn at half brightness: its colours go over 1.)
