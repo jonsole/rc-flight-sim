@@ -28,6 +28,24 @@ import { GoogleTiles } from './world/googleTiles.js';
 import { loadEdits } from './sim/edits.js';
 import { Editor } from './editor/editor.js';
 
+// The version running: the GitHub commit it was built from, and its date.
+{
+  const v = typeof __VERSION__ !== 'undefined' ? __VERSION__ : {};
+  const line = document.createElement('p');
+  line.className = 'version';
+  if (v.sha) {
+    const d = new Date(v.date);
+    const when = isNaN(d) ? '' : d.toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const a = document.createElement('a');
+    a.href = `https://github.com/jonsole/rc-flight-sim/commit/${v.sha}`;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = v.sha.slice(0, 7);
+    line.append('Version ', a, when ? ` · ${when}` : '');
+  } else line.textContent = 'Version: local build';
+  document.querySelector('#splash h1')?.after(line);
+}
+
 // Development builds (the /dev/ page) are badged so they're never mistaken for live.
 if (import.meta.env.VITE_CHANNEL === 'dev') {
   document.title = `[DEV] ${document.title}`;
