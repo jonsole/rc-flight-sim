@@ -31,15 +31,19 @@ const BAKE_VERT = /* glsl */ `
   varying vec3 vCol;
   varying vec3 vN;
   varying float vWhen;
+  varying float vUp;
   uniform float uLeafy;
   void main() {
+    vUp = 0.5;
     vec3 transformed = position;
     if (uLeafy > 0.5) {
       float an = aCard.z * 6.2831853;
       vec2 cr = mat2(cos(an), sin(an), -sin(an), cos(an)) * aCorner * aCard.x;
       vec3 camR = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
       vec3 camU = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
-      transformed += camR * cr.x + camU * cr.y;
+      vec3 off = camR * cr.x + camU * cr.y;
+      transformed += off;
+      vUp = clamp(0.5 + 0.5 * off.y / max(aCard.x * 1.42, 1e-4), 0.0, 1.0); // (as the leafy cards)
       vWhen = aCard.y;
     } else vWhen = 1.0;
     vUv = uv;
@@ -56,6 +60,7 @@ const BAKE_FRAG = /* glsl */ `
   varying vec3 vCol;
   varying vec3 vN;
   varying float vWhen;
+  varying float vUp;
   void main() {
     vec3 c = vCol;
     float fallAt = 1.0;
@@ -67,6 +72,9 @@ const BAKE_FRAG = /* glsl */ `
       if (t.a < 0.5) discard;
       float kk = pow(t.r / t.a, 2.2);
       c *= vec3(kk, kk, kk * 0.83);
+      c *= mix(0.78, 1.12, vUp);
+      float tint = t.b / t.a - 0.5; // each leaf's own tint (as on the leafy cards)
+      c *= vec3(1.0 + tint * 0.28, 1.0 + tint * 0.06, 1.0 - tint * 0.4);
       fallAt = clamp((t.g / t.a) / 1.02 / (1.0 + 0.5 * (1.0 - vWhen)), 0.0, 1.0);
     }
     // (Bark is drawn at half brightness: its colours go over 1.)

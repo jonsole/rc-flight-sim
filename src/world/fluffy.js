@@ -157,8 +157,9 @@ export function leafTexture() {
         const len = (T * LEAF_FRAC * sz * (0.88 + rnd() * 0.24)) / 2;
         const k = Math.round(170 + (i / count) * 50 + rnd() * 25);
         // Red: the leaf's brightness. Green: when it falls (it's gone once the
-        // season's leaf fall passes this; see LEAF_FALL).
-        g.fillStyle = `rgb(${k},${Math.round(5 + rnd() * 250)},0)`;
+        // season's leaf fall passes this; see LEAF_FALL). Blue: its own tint,
+        // from a little bluer-green (0) to a little yellower (255).
+        g.fillStyle = `rgb(${k},${Math.round(5 + rnd() * 250)},${Math.round(rnd() * 255)})`;
         g.save();
         g.translate(x, y);
         // Leaves point roughly outwards from the middle.
@@ -368,6 +369,9 @@ const CARD_VERTEX = /* glsl */ `
     vec3 camR = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
     vec3 camU = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
     vec3 off = camR * cr.x + camU * cr.y;
+    // Lighter towards the card's top, darker towards its bottom (by the real
+    // up, however the card is turned): 0 at the bottom corner, 1 the top.
+    vCardUp = clamp(0.5 + 0.5 * off.y / max(aCard.x * 1.42, 1e-4), 0.0, 1.0);
     // The tree's typical card half-size (m): one leaf size for all its cards.
     float h = uCardTypical;
     #ifdef USE_INSTANCING
@@ -383,8 +387,8 @@ const CARD_VERTEX = /* glsl */ `
     ${leafCellGlsl()}
   }
 `;
-const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nattribute float aBare;\nattribute float aSpecies;\nuniform float uBare;\nuniform float uCardTypical;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;';
-const CARD_FRAG_DECLS = 'varying float vLeafDrop;\nvarying vec2 vLeafCell;';
+const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nattribute float aBare;\nattribute float aSpecies;\nuniform float uBare;\nuniform float uCardTypical;\nvarying float vCardUp;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;';
+const CARD_FRAG_DECLS = 'varying float vLeafDrop;\nvarying vec2 vLeafCell;\nvarying float vCardUp;';
 
 /**
  * Read the leaf picture (see leafTexture): its brightness (as colour) into
@@ -398,6 +402,11 @@ export const LEAF_FRAGMENT = /* glsl */ `
     float cov = max(tx.a, 0.01);
     float kk = pow(tx.r / cov, 2.2);
     diffuseColor.rgb *= vec3(kk, kk, kk * 0.83);
+    // Each leaf's own tint: yellower or bluer-green.
+    float tint = tx.b / cov - 0.5;
+    diffuseColor.rgb *= vec3(1.0 + tint * 0.28, 1.0 + tint * 0.06, 1.0 - tint * 0.4);
+    // Shaded across the card, top to bottom.
+    diffuseColor.rgb *= mix(0.78, 1.12, vCardUp);
     diffuseColor.a *= tx.a;
     if (tx.g / cov <= vLeafDrop * 1.02) discard;
   }
