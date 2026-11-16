@@ -28,6 +28,7 @@ const FRAME = 1.45;
 const BAKE_VERT = /* glsl */ `
   attribute vec2 aCorner;
   attribute vec3 aCard;
+  attribute vec3 aFlat;
   varying vec2 vUv;
   varying vec3 vCol;
   varying vec3 vN;
@@ -43,6 +44,13 @@ const BAKE_VERT = /* glsl */ `
       vec3 camR = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
       vec3 camU = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
       vec3 off = camR * cr.x + camU * cr.y;
+      if (dot(aFlat, aFlat) > 1e-6) {
+        // (Flat sprays along their boughs, as on the leafy conifers.)
+        vec3 along = normalize(aFlat);
+        vec3 across = normalize(cross(vec3(0.0, 1.0, 0.0), along) + vec3(1e-4, 0.0, 0.0));
+        vec2 cf = aCorner * aCard.x;
+        off = along * cf.y * 1.2 + across * cf.x * 0.85;
+      }
       transformed += off;
       vUp = clamp((transformed.y + 0.6) / 1.3, 0.0, 1.0); // (as the leafy cards: up the crown)
       vWhen = aCard.y;
@@ -56,6 +64,7 @@ const BAKE_FRAG = /* glsl */ `
   #define LEAF_GRID vec2(4.0, ${LEAF_ROWS.length}.0)
   uniform sampler2D uLeaf;
   uniform float uMode; // 0 colour, 1 normal and when
+  uniform float uLeafRow;
   uniform float uLeafy;
   varying vec2 vUv;
   varying vec3 vCol;
@@ -69,7 +78,7 @@ const BAKE_FRAG = /* glsl */ `
       // The leaf picture (src/world/fluffy.js leafTexture): brightness, and
       // the leaf's fall time, here turned into the season's leaf fall
       // (uBare) at which it has gone (fluffy.js LEAF_FALL, solved for it).
-      vec4 t = texture2D(uLeaf, (vUv + vec2(1.0, ${LEAF_ROWS.indexOf('beech')}.0)) / LEAF_GRID); // (beech leaves, the second size: typical crowns, far off)
+      vec4 t = texture2D(uLeaf, (vUv + vec2(1.0, uLeafRow)) / LEAF_GRID); // (its leaves, the second size: typical crowns, far off)
       if (t.a < 0.5) discard;
       float kk = pow(t.r / t.a, 2.2);
       c *= vec3(kk, kk, kk * 0.83);
@@ -104,7 +113,7 @@ export function bakeImpostors(renderer, shapes, tile = 128) {
   const mat = new ShaderMaterial({
     vertexShader: BAKE_VERT,
     fragmentShader: BAKE_FRAG,
-    uniforms: { uLeaf: { value: leafTexture() }, uMode: { value: 0 }, uLeafy: { value: 1 } },
+    uniforms: { uLeaf: { value: leafTexture() }, uMode: { value: 0 }, uLeafy: { value: 1 }, uLeafRow: { value: LEAF_ROWS.indexOf('beech') } },
     vertexColors: true,
     side: DoubleSide,
   });
@@ -120,6 +129,8 @@ export function bakeImpostors(renderer, shapes, tile = 128) {
     mat.uniforms.uMode.value = mode;
     mat.uniforms.uLeafy.value = leafy;
     shapes.forEach((s, col) => {
+      // (Its own leaves: a row of the leaf atlas; broadleaf crowns, beech.)
+      mat.uniforms.uLeafRow.value = s.leafRow ?? LEAF_ROWS.indexOf('beech');
       const mesh = new Mesh(leafy ? s.leafy : s.twigs, mat);
       mesh.frustumCulled = false;
       scene.add(mesh);

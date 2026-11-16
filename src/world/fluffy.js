@@ -34,7 +34,7 @@ const LEAF_SIZES = [1, 0.7, 0.5, 0.35];
 /** Leaf length in the first version, as a fraction of the card's width. */
 const LEAF_FRAC = 0.1;
 /** The atlas's rows: a leaf shape each (in the species' order, SPECIES_ORDER). */
-export const LEAF_ROWS = ['oak', 'ash', 'beech', 'sycamore', 'horseChestnut', 'birch', 'hawthorn'];
+export const LEAF_ROWS = ['oak', 'ash', 'beech', 'sycamore', 'horseChestnut', 'birch', 'hawthorn', 'scotsPine', 'spruce', 'leyland', 'larch', 'yew'];
 /**
  * Each species' leaf: how big against the 22 cm average, how many more to
  * cover as much (open, compound leaves need more), and its outline, drawn
@@ -68,7 +68,56 @@ const LEAF_FORMS = {
   birch: { size: 0.7, more: 1, draw: (g, len) => outline(g, len, (t) => 0.4 * Math.min(1, t * 1.25) * Math.pow(1 - t, 0.35)) },
   // Small and deeply lobed.
   hawthorn: { size: 0.7, more: 1.25, draw: (g, len) => palmate(g, len, 3, 0.3, 0.85) },
+  // Conifers' needles.
+  // Scots pine: tufts of long paired needles.
+  scotsPine: { size: 1.5, more: 1.3, draw: (g, len) => {
+    for (let k = 0; k < 12; k++) needle(g, 0, len * 0.6, ((k / 11) - 0.5) * 2.2, len * 1.5, len * 0.07);
+  } },
+  // Spruce: bottlebrush twigs of short stiff needles.
+  spruce: { size: 1.1, more: 1.1, draw: (g, len) => {
+    g.fillRect(-len * 0.04, -len, len * 0.08, len * 2);
+    for (let k = 0; k < 14; k++) {
+      const y = -len * 0.9 + (k / 13) * len * 1.8;
+      for (const sd of [-1, 1]) needle(g, 0, y, sd * 0.9, len * 0.38, len * 0.06);
+    }
+  } },
+  // Leyland cypress: flat feathery fronds of tiny scale-leaves.
+  leyland: { size: 1.1, more: 1.05, draw: (g, len) => {
+    for (let k = -2; k <= 2; k++) {
+      const a = k * 0.35;
+      for (let j = 0; j < 6; j++) {
+        const d = len * (0.15 + j * 0.17);
+        leaflet(g, Math.sin(a) * d, len * 0.8 - Math.cos(a) * d, len * 0.13, len * 0.07, a);
+      }
+    }
+  } },
+  // Larch: soft rosettes of short needles.
+  larch: { size: 0.7, more: 1.2, draw: (g, len) => {
+    for (let k = 0; k < 16; k++) needle(g, 0, 0, (k / 16) * Math.PI * 2, len * 0.75, len * 0.07);
+  } },
+  // Yew: flat sprays of short flat needles either side of a twig.
+  yew: { size: 0.9, more: 1.05, draw: (g, len) => {
+    g.fillRect(-len * 0.03, -len, len * 0.06, len * 2);
+    for (let k = 0; k < 11; k++) {
+      const y = -len * 0.85 + (k / 10) * len * 1.7;
+      for (const sd of [-1, 1]) needle(g, 0, y, sd * 1.35, len * 0.42, len * 0.1);
+    }
+  } },
 };
+
+/** A needle from (x, y), pointing at angle a (0 up), l long, w wide. */
+function needle(g, x, y, a, l, w) {
+  g.save();
+  g.translate(x, y);
+  g.rotate(a);
+  g.beginPath();
+  g.moveTo(-w / 2, 0);
+  g.lineTo(0, -l);
+  g.lineTo(w / 2, 0);
+  g.closePath();
+  g.fill();
+  g.restore();
+}
 
 /** A leaf from its half-width along it (t 0 at the tip, 1 at the stalk), x len. */
 function outline(g, len, half) {
@@ -444,11 +493,22 @@ const CARD_VERTEX = /* glsl */ `
       vec3 is2 = vec3(dot(im[0], im[0]), dot(im[1], im[1]), dot(im[2], im[2]));
       // Sized by the crown's width, in the (possibly squashed) crown's space.
       float isc = sqrt((is2.x + is2.z) * 0.5);
-      transformed += (transpose(im) * (off * isc)) / is2;
       h *= isc;
-    #else
-      transformed += off;
     #endif
+    if (dot(aFlat, aFlat) > 1e-6) {
+      // A flat spray (conifer boughs): lying along its bough (aFlat, in the
+      // crown's space), not turned to the camera.
+      vec3 along = normalize(aFlat);
+      vec3 across = normalize(cross(vec3(0.0, 1.0, 0.0), along) + vec3(1e-4, 0.0, 0.0));
+      vec2 cf = aCorner * aCard.x * grow;
+      transformed += along * cf.y * 1.2 + across * cf.x * 0.85;
+    } else {
+      #ifdef USE_INSTANCING
+        transformed += (transpose(im) * (off * isc)) / is2;
+      #else
+        transformed += off;
+      #endif
+    }
     ${leafCellGlsl()}
     // Lighter up the crown, darker underneath: by height in the whole crown
     // (unit crown, its leaves about -0.6 to 0.7), so it runs smoothly across
@@ -456,7 +516,7 @@ const CARD_VERTEX = /* glsl */ `
     vCardUp = clamp((transformed.y + 0.6) / 1.3, 0.0, 1.0);
   }
 `;
-const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nattribute float aBare;\nattribute float aSpecies;\nuniform float uBare;\nuniform float uCardTypical;\nvarying float vCardUp;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;';
+const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nattribute vec3 aFlat;\nattribute float aBare;\nattribute float aSpecies;\nuniform float uBare;\nuniform float uCardTypical;\nvarying float vCardUp;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;';
 const CARD_FRAG_DECLS = 'varying float vLeafDrop;\nvarying vec2 vLeafCell;\nvarying float vCardUp;';
 
 /**
@@ -639,4 +699,142 @@ function barkShade(geo, twigDark = 0) {
 /** Detailed branches for a crown (close up): see crownWood. */
 export function detailedBranches(seed, opts = {}) {
   return crownWood(seed, { ...opts, close: true });
+}
+
+// --- Conifers ----------------------------------------------------------------
+// Conifer crowns of needle cards, as the broadleaf ones (fluffyCrown) but
+// shaped by species (src/world/species.js CONIFER): tiers of boughs (spruce,
+// larch, pine), or a dense mass (Leyland cypress, yew). Unit space: the
+// crown from y -0.5 (its base) to 0.5 (the top), radius 1 at its widest
+// (drawn with the tree's crown radius and height: src/world/world.js).
+
+/** A card's data, pushed onto the arrays (as fluffyCrown's cards). */
+function cardPusher() {
+  const a = { pos: [], nrm: [], col: [], uv: [], corner: [], card: [], flat: [], index: [] };
+  a.push = (p, n, shade, size, when, spin, flat = null) => {
+    const base = a.pos.length / 3;
+    for (const [ax, ay] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      a.pos.push(p.x, p.y, p.z);
+      a.nrm.push(n.x, n.y, n.z);
+      a.col.push(shade, shade * 1.02, shade * 0.9);
+      a.uv.push(ax * 0.5 + 0.5, ay * 0.5 + 0.5);
+      a.corner.push(ax, ay);
+      a.card.push(size, when, spin);
+      a.flat.push(flat?.x ?? 0, flat?.y ?? 0, flat?.z ?? 0);
+    }
+    a.index.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  };
+  a.geometry = (radius = 1.35) => {
+    const geo = new BufferGeometry();
+    geo.setAttribute('position', new Float32BufferAttribute(a.pos, 3));
+    geo.setAttribute('normal', new Float32BufferAttribute(a.nrm, 3));
+    geo.setAttribute('color', new Float32BufferAttribute(a.col, 3));
+    geo.setAttribute('uv', new Float32BufferAttribute(a.uv, 2));
+    geo.setAttribute('aCorner', new Float32BufferAttribute(a.corner, 2));
+    geo.setAttribute('aCard', new Float32BufferAttribute(a.card, 3));
+    geo.setAttribute('aFlat', new Float32BufferAttribute(a.flat, 3));
+    geo.setIndex(a.index);
+    geo.boundingSphere = new Sphere(new Vector3(), radius);
+    return geo;
+  };
+  return a;
+}
+
+/**
+ * A conifer's crown of needle cards (unit space, see above).
+ * @param {object} c  its shape (species.js CONIFER)
+ */
+export function fluffyConifer(c, seed, detail = 2) {
+  const rnd = rng(seed);
+  const A = cardPusher();
+  const q = { 2: 1, 1: 0.7, 0: 0.5, blob: 0.35 }[detail] ?? 1;
+  const sizeK = 1 / Math.sqrt(q);
+  const p = new Vector3();
+  const n = new Vector3();
+  const card = (x, y, z, size, flat = null) => {
+    p.set(x, y, z);
+    const yn = y + 0.5;
+    const out = Math.min(1, Math.hypot(x, z) / Math.max(0.05, c.profile(yn) * c.width));
+    // Lit as the crown: out from its axis, and up.
+    n.set(x, 0, z).normalize().multiplyScalar(0.8).add(new Vector3(0, 0.45, 0)).normalize();
+    const shade = (0.55 + 0.45 * out) * (0.75 + 0.25 * yn) * (0.9 + 0.2 * noise3(x * 5, y * 5, z * 5 + seed));
+    A.push(p, n, shade, size * sizeK * (0.85 + rnd() * 0.3), Math.min(0.999, rnd() * 0.85 + out * 0.15), rnd(), flat);
+  };
+  if (c.tiers) {
+    // Tiers of boughs, a whorl at each, sprays of needles along them (more
+    // out towards their tips), drooping or lifting.
+    for (let i = 0; i < c.tiers; i++) {
+      const yn = (i + 0.4 + rnd() * 0.2) / c.tiers;
+      const R = c.profile(yn) * c.width;
+      const nb = 5 + Math.floor(rnd() * 3);
+      const turn = rnd() * Math.PI * 2;
+      for (let b = 0; b < nb; b++) {
+        const a = turn + (b / nb) * Math.PI * 2 + (rnd() - 0.5) * 0.5;
+        const len = R * (0.75 + rnd() * 0.3);
+        const nCards = Math.max(2, Math.round((3 + len * 9) * q * (1 - c.open * 0.4)));
+        for (let k = 0; k < nCards; k++) {
+          const t = 0.3 + 0.7 * Math.sqrt((k + rnd()) / nCards);
+          const d = len * t;
+          const y = yn - 0.5 + c.up * d * 0.25 - c.droop * d * d * 0.5 + (rnd() - 0.5) * 0.05;
+          const sp = (rnd() - 0.5) * 0.35 * (1 - c.open * 0.5);
+          // Mostly flat sprays along the bough (sloping as it droops), some
+          // turned to the camera for body.
+          const slope = c.up * 0.25 - c.droop * d;
+          const flat = rnd() < 0.7 ? new Vector3(Math.cos(a + sp), slope, Math.sin(a + sp)) : null;
+          card(Math.cos(a + sp) * d, y, Math.sin(a + sp) * d, (0.11 + 0.06 * t + (1 - yn) * 0.03) * (flat ? 1.3 : 1), flat);
+        }
+      }
+    }
+    // The top: a spire of sprays.
+    for (let k = 0; k < Math.round(6 * q); k++) card((rnd() - 0.5) * 0.08, 0.38 + rnd() * 0.12, (rnd() - 0.5) * 0.08, 0.08);
+  } else {
+    // A dense mass of sprays near its surface (in clumps, for a yew).
+    const nCards = Math.round(260 * q * (c.cards ?? 1));
+    const clumps = Array.from({ length: 9 }, () => [rnd() * Math.PI * 2, rnd()]);
+    for (let k = 0; k < nCards; k++) {
+      let a = rnd() * Math.PI * 2;
+      let yn = Math.pow(rnd(), 0.9);
+      if (rnd() < c.clumpy) {
+        const [ca, cy] = clumps[Math.floor(rnd() * clumps.length)];
+        a = ca + (rnd() - 0.5) * 0.7;
+        yn = Math.min(1, Math.max(0, cy + (rnd() - 0.5) * 0.25));
+      }
+      // Filled right through (thickest towards the outside).
+      const R = c.profile(yn) * c.width * (0.25 + 0.75 * Math.pow(rnd(), c.fill ?? 0.4));
+      card(Math.cos(a) * R, yn - 0.5, Math.sin(a) * R, 0.15 * (c.size ?? 1));
+    }
+  }
+  return A.geometry(Math.max(1.35, c.width * 1.3));
+}
+
+/**
+ * A conifer's wood (unit crown space, as fluffyConifer): the trunk on up
+ * through the crown, and its boughs (plain, or detailed close up), which
+ * show where the needles are thin (pine, larch in winter).
+ */
+export function coniferWood(c, seed, { close = false, wood = {} } = {}) {
+  const rnd = rng(seed * 3 + 1);
+  const parts = [];
+  const T = close ? roundTube : (pts, r0, r1, radial, segs) => tube(pts, r0, r1, Math.max(3, radial - 3), Math.max(2, segs - 2));
+  const th = wood.thick ?? 1;
+  parts.push(T([new Vector3(0, -0.55, 0), new Vector3(0, 0, 0), new Vector3(0, 0.48, 0)], 0.045 * th, 0.004, 8, 6));
+  const tiers = c.tiers || 6;
+  for (let i = 0; i < tiers; i++) {
+    const yn = (i + 0.5) / tiers;
+    const R = c.profile(yn) * c.width;
+    const nb = c.tiers ? 4 + Math.floor(rnd() * 3) : 3;
+    const turn = rnd() * Math.PI * 2;
+    for (let b = 0; b < nb; b++) {
+      const a = turn + (b / nb) * Math.PI * 2;
+      const len = R * (0.7 + rnd() * 0.25) * (c.tiers ? 1 : 0.6);
+      const pts = [0, 0.5, 1].map((t) => {
+        const d = len * t;
+        return new Vector3(Math.cos(a) * d, yn - 0.5 + c.up * d * 0.25 - c.droop * d * d * 0.5, Math.sin(a) * d);
+      });
+      parts.push(T(pts, 0.012 * th * (1 - yn * 0.5), 0.002, 5, 4));
+    }
+  }
+  const geo = mergeGeometries(close ? parts : parts.map((g) => (g.index ? g.toNonIndexed() : g)));
+  if (!close) geo.computeVertexNormals();
+  return barkShade(geo);
 }

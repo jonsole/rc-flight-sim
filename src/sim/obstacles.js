@@ -15,7 +15,7 @@
 
 import { heightAt } from './terrain.js';
 import { CROWN_SEEDS, crownShape, lumpScale, crownOf } from './treeShapes.js';
-import { trunkThickness } from '../world/species.js';
+import { trunkThickness, coniferBase, coniferWidth } from '../world/species.js';
 import { LOCATION, clubAngle, clubToWorld, inMown } from './location.js';
 import { prepareBuilding, roofAt, insideFootprint, nearestWall } from './buildings.js';
 import { EDITS, applyTreeEdits, applyBushEdits, applyBuildingEdits, applyFenceEdits, treeId } from './edits.js';
@@ -244,7 +244,7 @@ function editedTree(spec, orig) {
   t.y = heightAt(t.x, t.z);
   // Its species: set in the editor ('mixed' for the natural mix), else as it was.
   const species = spec.species !== undefined ? spec.species : orig?.species;
-  if (species && species !== 'mixed' && !conifer) t.species = species;
+  if (species && species !== 'mixed') t.species = species; // (of its kind: speciesOf checks)
   const base = spec.base ?? orig?.base;
   if (base != null) t.base = base;
   if (orig && orig.conifer === conifer) {
@@ -272,6 +272,11 @@ export class Obstacles {
     this.trees.forEach((t) => {
       t.pick = Math.floor(hashId(t.id) * 1000);
       t.variant = t.pick % CROWN_SEEDS.length;
+      // A conifer's crown starts where its species' does (a Scots pine's
+      // trunk is bare to half way), unless edited.
+      if (t.conifer && t.base == null) t.base = coniferBase(t);
+      // ... and is as wide as its species grows (unless edited or surveyed).
+      if (t.conifer && t.crownW == null) t.crownW = coniferWidth(t);
     });
     this.shapes = [];
     for (const t of this.trees) {
