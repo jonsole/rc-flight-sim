@@ -1,7 +1,8 @@
 import { WebGLRenderer, ACESFilmicToneMapping, PCFSoftShadowMap, SRGBColorSpace, Vector3 } from 'three';
 import { Aircraft } from './sim/aircraft.js';
 import { physicsGround as ground } from './sim/terrain.js';
-import { Obstacles } from './sim/obstacles.js';
+import { Obstacles, setLeafiness } from './sim/obstacles.js';
+import { seasonFor } from './world/seasons.js';
 import { Wind } from './sim/wind.js';
 import { World, RUNWAY } from './world/world.js';
 import { AIRCRAFT, getAircraft, loadModelFiles } from './aircraft/index.js';
@@ -87,7 +88,7 @@ renderer.shadowMap.type = PCFSoftShadowMap;
 // Scenery edits for this field (src/sim/edits.js), before anything is built.
 loadEdits(LOCATION.id, LOCATION.layout.edits);
 const obstacles = new Obstacles();
-const world = new World(obstacles, { quality, viewDistance: viewDistance(settings) });
+const world = new World(obstacles, { quality, viewDistance: viewDistance(settings), treeStyle: settings.treeStyle, renderer });
 const wind = new Wind();
 wind.setTrees(obstacles.trees); // trees shelter the field and stir up the air behind them
 const input = new Input();
@@ -247,6 +248,8 @@ function applyTime() {
   const day = settings.useClock ? dayOfYear(now) : Number(settings.dayOfYear);
   world.setTime(hours, day);
   world.setSeason(day);
+  // Bare trees and bushes catch less (src/sim/obstacles.js).
+  setLeafiness(1 - seasonFor(day).bare);
   renderer.toneMappingExposure = world.exposure;
 }
 let clockTimer = 0;
@@ -426,7 +429,7 @@ const panel = new Panel(document.getElementById('panel'), {
     if (key === 'aircraft') selectAircraft(value);
     if (key === 'location') changeField(value);
     // The scenery is built for these once, so they take effect on a reload.
-    if (key === 'graphics' || key === 'viewDistance') reloadKeepingRoom();
+    if (key === 'graphics' || key === 'viewDistance' || key === 'treeStyle') reloadKeepingRoom();
     if (key === 'googleKey' && googleTiles) {
       // A new key needs a new session.
       world.scene.remove(googleTiles.group);
@@ -632,6 +635,7 @@ function frame(now) {
   }
   world.updateShadows();
   world.updateTrees(now / 1000, wind.speed + wind.gust.length() * 0.5, wind.directionDeg);
+  world.updateLod(rig.camera.position); // leafy crowns near the camera (src/world/lod.js)
   planeShadow.update(renderer, aircraft.position, world.lightDir, shadowDark);
   world.updateWindsock(wind.at(windsockPos, 0, windTmp), dt, now / 1000);
   if (!paused) world.updateClouds(dt, windTmp);

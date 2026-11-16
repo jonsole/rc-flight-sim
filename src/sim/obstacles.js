@@ -15,11 +15,26 @@
 
 import { heightAt } from './terrain.js';
 import { CROWN_SEEDS, crownShape, lumpScale, crownOf } from './treeShapes.js';
+import { trunkThickness } from '../world/species.js';
 import { LOCATION, clubAngle, clubToWorld, inMown } from './location.js';
 import { prepareBuilding, roofAt, insideFootprint, nearestWall } from './buildings.js';
 import { EDITS, applyTreeEdits, applyBushEdits, applyBuildingEdits, applyFenceEdits, treeId } from './edits.js';
 
 const _lp = { x: 0, y: 0, z: 0 };
+
+/**
+ * How leafy the broadleaf trees, bushes and hedges are (1 in leaf, 0 bare in
+ * winter; src/world/seasons.js), for their collisions: a bare or thinning
+ * crown is mostly open twigs, so only its inner branches catch a model, and
+ * less firmly. Conifers keep their needles.
+ */
+let leafiness = 1;
+export function setLeafiness(v) {
+  leafiness = Math.min(1, Math.max(0, v));
+}
+/** How much of a leafy shape still catches (clump size), and how sparse it is (0 in full leaf). */
+const caught = () => 0.45 + 0.55 * leafiness;
+const SPARSE = () => 1 - leafiness;
 
 const CELL = 12; // spatial-hash cell size (m)
 
@@ -57,12 +72,16 @@ function realTrees() {
   }
   for (const belt of L.treeBelts ?? []) growBelt(raw, belt, rand);
   for (const group of L.trees ?? []) {
-    for (const [x, z] of group.at) raw.push({ x, z, h: group.h * (0.9 + rand() * 0.2), r: group.r * (0.9 + rand() * 0.2) });
+    for (const [x, z] of group.at) raw.push({ x, z, h: group.h * (0.9 + rand() * 0.2), r: group.r * (0.9 + rand() * 0.2), species: group.species });
   }
-  for (const { x, z, h, r } of raw) {
+  for (const { x, z, h, r, species } of raw) {
     // Narrow for its height: probably a conifer (or a Lombardy poplar).
     const conifer = L.conifers !== false && r < h * 0.17 && h > 8;
-    trees.push(dressTree({ x, y: heightAt(x, z), z, h, conifer, rot: rand() * Math.PI * 2 }, rand, Math.max(1.2, r)));
+    const t = dressTree({ x, y: heightAt(x, z), z, h, conifer, rot: rand() * Math.PI * 2 }, rand, Math.max(1.2, r));
+    // Its species, if the site says (else a natural mix: src/world/species.js).
+    const area = (L.treeSpecies ?? []).find((a) => x >= a.x0 && x <= a.x1 && z >= a.z0 && z <= a.z1);
+    if (!conifer && (species || area)) t.species = species ?? area.species;
+    trees.push(t);
   }
   // Clumps of woodland on the skyline, outside the baked area.
   const half = d.size / 2;
@@ -215,7 +234,7 @@ function editedBush(spec, orig) {
   };
 }
 
-/** A whole tree from an edited or added one ({ x, z, h, r, conifer }), keeping what it can of `orig`. */
+/** A whole tree from an edited or added one ({ x, z, h, r, conifer, species }), keeping what it can of `orig`. */
 function editedTree(spec, orig) {
   let rnd = Math.floor(hashId(spec.id) * 2147483646) + 1;
   const rand = () => ((rnd = (rnd * 16807) % 2147483647) / 2147483647);
@@ -223,6 +242,9 @@ function editedTree(spec, orig) {
   const h = spec.h ?? orig?.h ?? 12;
   const t = { id: spec.id, x: spec.x ?? orig.x, z: spec.z ?? orig.z, h, conifer, rot: orig?.rot ?? rand() * Math.PI * 2 };
   t.y = heightAt(t.x, t.z);
+  // Its species: set in the editor ('mixed' for the natural mix), else as it was.
+  const species = spec.species !== undefined ? spec.species : orig?.species;
+  if (species && species !== 'mixed' && !conifer) t.species = species;
   const base = spec.base ?? orig?.base;
   if (base != null) t.base = base;
   if (orig && orig.conifer === conifer) {
@@ -254,7 +276,8 @@ export class Obstacles {
     this.shapes = [];
     for (const t of this.trees) {
       // Trunk (solid): drawn tapering from 0.024 h to under 0.01 h across.
-      this.shapes.push({ type: 'cylinder', name: 'a tree trunk', x: t.x, z: t.z, r: t.h * (t.conifer ? 0.014 : 0.019), y0: t.y - 0.2, y1: t.y + t.h * (t.conifer ? 0.2 : 0.42) });
+      // (As thick as its species' trunk is drawn: src/world/species.js.)
+      this.shapes.push({ type: 'cylinder', name: 'a tree trunk', x: t.x, z: t.z, r: t.h * (t.conifer ? 0.014 : 0.019) * trunkThickness(t), y0: t.y - 0.2, y1: t.y + t.h * (t.conifer ? 0.2 : 0.42) });
       if (t.conifer) {
         // As drawn (crownOf): boughs from `base` up, cone of radius r.
         const c = crownOf(t);
@@ -335,7 +358,7 @@ export class Obstacles {
     this.bushes = applyBushEdits(makeBushes(), editedBush);
     for (const b of this.bushes) {
       const y = heightAt(b.x, b.z);
-      this.shapes.push({ type: 'ellipsoid', name: 'a bush', cx: b.x, cy: y + b.h * 0.5, cz: b.z, rx: b.w * 0.9, ry: b.h * 0.5, rz: b.w * 0.9 });
+      this.shapes.push({ type: 'ellipsoid', name: 'a bush', cx: b.x, cy: y + b.h * 0.5, cz: b.z, rx: b.w * 0.9, ry: b.h * 0.5, rz: b.w * 0.9, deciduous: true });
     }
     // Buildings at a real site.
     this.buildings = applyBuildingEdits(LOCATION.data?.buildings ?? []).map((b) => ({ ...prepareBuilding(b), index: b.index }));
@@ -430,10 +453,12 @@ export class Obstacles {
         return { depth: side, nx: r > 1e-6 ? dx * inv : 1, ny: 0, nz: dz * inv };
       }
       case 'ellipsoid': {
-        const u = (x - s.cx) / s.rx;
-        const v = (y - s.cy) / s.ry;
-        const w = (z - s.cz) / s.rz;
-        return u * u + v * v + w * w < 1 ? { soft: true } : null;
+        // (Bushes: lose their leaves like the trees.)
+        const k = s.deciduous ? caught() : 1;
+        const u = (x - s.cx) / (s.rx * k);
+        const v = (y - s.cy) / (s.ry * k);
+        const w = (z - s.cz) / (s.rz * k);
+        return u * u + v * v + w * w < 1 ? { soft: true, sparse: s.deciduous ? SPARSE() : 0 } : null;
       }
       case 'crown': {
         // Into the crown's own frame (undo its turn and size), then inside
@@ -446,7 +471,10 @@ export class Obstacles {
         const lz = (dx * s.sin + dz * s.cos) / s.sx;
         // 1. Outside the whole crown's bounding shell?
         if (lx * lx + ly * ly + lz * lz > 1.1) return null;
-        for (const [cx, cy, cz, r] of s.clumps) {
+        // Out of leaf: only the clumps' inner branches catch.
+        const shrink = caught();
+        for (const [cx, cy, cz, r0] of s.clumps) {
+          const r = r0 * shrink;
           const ex = lx - cx;
           const ey = ly - cy;
           const ez = lz - cz;
@@ -462,7 +490,7 @@ export class Obstacles {
           const fx = lx * k - cx;
           const fy = ly * k - cy;
           const fz = lz * k - cz;
-          if (fx * fx + fy * fy + fz * fz < r * r) return { soft: true };
+          if (fx * fx + fy * fy + fz * fz < r * r) return { soft: true, sparse: SPARSE() };
         }
         return null;
       }

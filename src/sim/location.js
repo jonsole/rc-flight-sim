@@ -24,7 +24,10 @@ import { flightLineMiddle } from './edits.js';
 //                       mown in rings), or { x0, x1, z0, z1 } rectangle (mown in stripes).
 //                       club: true puts an oval in the club frame. Without a
 //                       list the whole field is short grass.
-//   trees               real sites: extra trees { at: [[x, z], ...], h, r } (grown since the survey)
+//   trees               real sites: extra trees { at: [[x, z], ...], h, r, species? } (grown since the survey)
+//   treeSpecies         real sites: areas of one kind of tree { x0, x1, z0, z1, species }
+//                       (oak, ash, sycamore, birch, beech, horseChestnut: see
+//                       src/world/species.js); elsewhere a natural mix
 //   treeGrowth          real sites: areas whose trees have grown since the survey:
 //                       { x0, x1, z0, z1, grow, minH } (world frame)
 //   flat                ground forced level to y = 0 here (rectangle), fading out over `fade` m

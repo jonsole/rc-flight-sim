@@ -92,7 +92,10 @@ export class CameraRig {
         fov = MathUtils.clamp(wanted, Math.min(fov, strong ? 10 : 20), fov);
       }
       cam.fov = MathUtils.lerp(cam.fov, fov, 1 - Math.exp(-dt * 4));
-      cam.near = 0.1;
+      // Nothing is ever this close to the pilot. Every bit nearer costs depth
+      // precision far away (where leaf cards of trees, only centimetres
+      // apart, would flicker through each other).
+      cam.near = 0.5;
     } else if (this.mode === 'fpv') {
       const mount = _m.fromArray(s.fpvMount === 'wing' ? this.views.pod : this.views.cockpit);
       _v.copy(mount).applyQuaternion(aircraft.orientation).add(aircraft.position);
@@ -122,7 +125,7 @@ export class CameraRig {
       cam.up.set(0, 1, 0);
       cam.lookAt(aircraft.position);
       cam.fov = hToVFov(80, aspect);
-      cam.near = 0.05;
+      cam.near = 0.25; // (as LOS: depth precision for the trees)
     }
     cam.updateProjectionMatrix();
   }

@@ -40,6 +40,7 @@ export class Panel {
   }
 
   show(v = !this.visible) {
+    if (v && !this.visible) this.openedAt = performance.now();
     this.visible = v;
     this.root.classList.toggle('open', v);
     if (v) this.render();
@@ -88,7 +89,8 @@ export class Panel {
       el('div', { class: 'panel' },
         el('div', { class: 'panel-head' },
           el('h2', {}, 'RC Flight Sim'),
-          el('button', { class: 'close', onclick: () => this.opts.onClose() }, 'Resume ▶')),
+          // (Not the tap that opened the menu, landing where this now is.)
+          el('button', { class: 'close', onclick: () => performance.now() - (this.openedAt ?? 0) > 400 && this.opts.onClose() }, 'Resume ▶')),
         el('div', { class: 'tabs' }, Object.entries(tabs).map(([k, t]) =>
           el('button', { class: k === this.tab ? 'tab on' : 'tab', onclick: () => { this.tab = k; this.render(); } }, t))),
         el('div', { class: 'body' }, this[`tab_${this.tab}`]())));
@@ -318,7 +320,8 @@ export class Panel {
       el('h3', {}, 'Graphics'),
       this.#select('Quality', 'graphics', Object.fromEntries(Object.entries(QUALITY).map(([k, q]) => [k, q.name]))),
       this.#select('Scenery distance', 'viewDistance', DISTANCES),
-      el('p', { class: 'hint' }, 'Lower these if the picture is jerky. Low draws simpler trees and fewer pixels; a shorter distance leaves out far trees and brings the haze in. Changing either reloads the simulator.'),
+      this.#select('Trees and bushes', 'treeStyle', { fluffy: 'Leafy', classic: 'Classic (solid)' }),
+      el('p', { class: 'hint' }, 'Lower these if the picture is jerky. Low draws simpler trees and fewer pixels; a shorter distance leaves out far trees and brings the haze in. Leafy trees lose their leaves in winter; classic ones are a little quicker to draw. Changing any of these reloads the simulator.'),
       ...(LOCATION.data ? [
         this.#select('Scenery', 'scenery', { built: 'Built in (LIDAR and OpenStreetMap)', google: 'Google photorealistic 3D' }),
         this.#text('Google Maps API key', 'googleKey', { type: 'password', placeholder: 'AIza…' }),

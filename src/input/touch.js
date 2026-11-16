@@ -92,21 +92,29 @@ export class TouchControls {
 
     const bar = document.createElement('div');
     bar.className = 'touch-bar';
-    const button = (label, title, fn) => {
+    const button = (label, title, fn, onTap = false) => {
       const b = document.createElement('button');
       b.textContent = label;
       b.title = title;
+      // At once, on touching; or (onTap) once the finger lifts, for one that
+      // opens something under the finger (else the lift taps that too).
       b.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        fn();
+        if (!onTap) fn();
       });
+      if (onTap) {
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          fn();
+        });
+      }
       bar.append(b);
     };
     button('CAM', 'Change camera', () => opts.onAction('KeyC'));
     button('RESET', 'Reset aircraft', () => opts.onAction('KeyR'));
     button('ASSIST', 'Flight assist: manual / AS3X / SAFE', () => opts.onAction('KeyG'));
-    button('☰', 'Menu', () => opts.onMenu());
+    button('☰', 'Menu', () => opts.onMenu(), true);
     this.root.append(bar);
     this.bar = bar;
     document.body.append(this.root);

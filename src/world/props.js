@@ -9,6 +9,7 @@ import {
 } from 'three';
 import { heightAt } from '../sim/terrain.js';
 import { broadleafCrown, blobCrown } from './trees.js';
+import { fluffyCrown, crownBranches } from './fluffy.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 function rng(seed) {
@@ -330,9 +331,14 @@ export function bushMatrix(b, out) {
 }
 
 /** Two bush shapes at a quality's detail (a number, or 'blob'). */
-function bushShapes(detail) {
+export function bushShapes(detail) {
   return detail === 'blob' ? [blobCrown(101), blobCrown(131)] : [broadleafCrown(101, detail), broadleafCrown(131, detail)];
 }
+
+/** The leafy bush shapes (src/world/fluffy.js), and their bare twigs from the ground (y -0.9 in the unit shape, see bushMatrix). */
+export const BUSH_SEEDS = [101, 131];
+export const leafyBushShapes = (detail) => BUSH_SEEDS.map((s) => fluffyCrown(s, detail));
+export const bushTwigShapes = () => BUSH_SEEDS.map((s) => crownBranches(s, { from: -0.9 }));
 
 /**
  * A site fence along its path (src/sim/location.js): chain link, or

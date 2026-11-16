@@ -3,7 +3,7 @@ import {
   Scene, Color, FogExp2, HemisphereLight, Points, PointsMaterial, BufferGeometry, Sprite, SpriteMaterial, DirectionalLight, Mesh, PlaneGeometry, MeshStandardMaterial,
   CanvasTexture, RepeatWrapping, SRGBColorSpace, InstancedMesh, CylinderGeometry, IcosahedronGeometry,
   Object3D, BoxGeometry, ConeGeometry, Group, Vector3, MathUtils, DoubleSide, Float32BufferAttribute,
-  MeshBasicMaterial, ShaderMaterial, SphereGeometry, BackSide, MeshLambertMaterial, Matrix4,
+  MeshBasicMaterial, ShaderMaterial, SphereGeometry, BackSide, MeshLambertMaterial, Matrix4, Vector2,
 } from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY, PILOT_PAD } from '../sim/terrain.js';
@@ -14,9 +14,14 @@ import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail, groundUniforms } from './ground.js';
 import { seasonFor } from './seasons.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
+import { fluffyCrown, crownBranches, makeFluffy, fluffyDepthMaterial, pickAsBall, setLeafDetail } from './fluffy.js';
+import { CrownLod, addLodFade } from './lod.js';
+import { speciesOf, bushSpeciesAt, barkColor, trunkThickness, SPECIES } from './species.js';
+import { LEAF_ROWS } from './fluffy.js';
+import { bakeImpostors, impostorGeometry, makeImpostor } from './impostor.js';
 import { QUALITY } from './quality.js';
 import { CROWN_SEEDS, crownOf } from '../sim/treeShapes.js';
-import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes, bushMatrix, siteFence } from './props.js';
+import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes, bushMatrix, siteFence, bushShapes, leafyBushShapes, bushTwigShapes } from './props.js';
 
 const smooth = (e0, e1, x) => {
   const t = MathUtils.clamp((x - e0) / (e1 - e0), 0, 1);
@@ -305,7 +310,9 @@ const _crownM = new Matrix4();
 function treeMatrices(t, o, trunkM, crownM) {
   o.rotation.set(0, t.rot, 0);
   o.position.set(t.x, t.y - 0.15, t.z);
-  o.scale.setScalar(t.h);
+  // Thicker or slimmer for its species (src/world/species.js).
+  const th = trunkThickness(t);
+  o.scale.set(t.h * th, t.h, t.h * th);
   o.updateMatrix();
   trunkM.copy(o.matrix);
   const c = crownOf(t);
@@ -323,6 +330,34 @@ function treeMatrices(t, o, trunkM, crownM) {
 /** Built scenery still drawn over Google's tiles. */
 const KEEP_OVER_GOOGLE = new Set(['tree', 'bush', 'fence']);
 
+/**
+ * Bare branches shaped by species (src/world/species.js): spread wider or
+ * narrower from the trunk, tips turned up or hanging, in the crown's own
+ * space (the branch geometry, src/world/fluffy.js crownBranches).
+ */
+function branchesBySpecies(material) {
+  const rows = LEAF_ROWS.map((n) => SPECIES[n] ?? {});
+  const uBranch = { value: rows.map((sp) => new Vector2(sp.spread ?? 1, sp.bend ?? 0)) };
+  const prev = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    prev?.(shader, renderer);
+    shader.uniforms.uBranch = uBranch;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\nattribute float aSpecies;\nuniform vec2 uBranch[${rows.length}];`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        {
+          vec2 b = uBranch[int(aSpecies + 0.5)];
+          float d = length(transformed.xz);
+          transformed.xz *= b.x;
+          transformed.y += b.y * d * d;
+        }`);
+  };
+  const prevKey = material.customProgramCacheKey?.bind(material);
+  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|branchSpecies`;
+  material.needsUpdate = true;
+  return material;
+}
+
 export class World {
   /** @param {import('../sim/obstacles.js').Obstacles} obstacles */
   /**
@@ -336,6 +371,11 @@ export class World {
     // Google's photorealistic tiles replace when they're on.
     this.builtScenery = [];
     this.viewDistance = opts.viewDistance ?? Infinity;
+    // Leafy crowns and bushes (src/world/fluffy.js), or the classic solid ones.
+    this.fluffy = opts.treeStyle !== 'classic';
+    this.renderer = opts.renderer; // for drawing the distant trees' pictures (impostors)
+    if (this.quality.leafy?.leafPx) setLeafDetail(this.quality.leafy.leafPx);
+    this.twigMeshes = [];
     this.scene = new Scene();
     this.scene.background = new Color('#9cc3e6');
     // Exponential haze: distant hills fade into the colour of the horizon.
@@ -385,6 +425,9 @@ export class World {
     // is redrawn only when it moves (shadows.js).
     const sun = new DirectionalLight('#fff3df', 2.6);
     this.sun = sun;
+    // Layer 1: drawn into the shadow map only (the distant leafy trees'
+    // shadows come from plain shapes; their pictures cast none).
+    sun.shadow.camera.layers.enable(1);
     this.scene.add(sun, sun.target);
   }
 
@@ -580,6 +623,7 @@ export class World {
   setGoogleMode(on) {
     this.googleMode = on;
     for (const o of this.builtScenery) o.visible = !on || KEEP_OVER_GOOGLE.has(o.userData.kind);
+    for (const m of this.twigMeshes) m.visible = !!this.twigsOn; // bare branches only out of leaf
     if (this.shadows) this.shadows.dirty = true;
   }
 
@@ -594,11 +638,26 @@ export class World {
     leafUniforms.uAutumn.value = s.autumn;
     leafUniforms.uFresh.value = s.fresh;
     groundUniforms.uGrassTint.value.set(...s.grass);
+    // Branches show once leaves are going; leafy crowns' shadows follow their
+    // leaves (the shadow map is only redrawn when they've changed a bit).
+    // Leafy trees: each by its species (src/world/species.js).
+    for (const lod of this.lods ?? []) {
+      lod.setSeason(day);
+      this.#syncTwigs(lod);
+    }
+    // Branches show once any tree's leaves are going (species differ).
+    this.twigsOn = s.bare > 0.02 || (this.lods ?? []).some((l) => l.bare.some((b) => b > 0.02));
+    for (const m of this.twigMeshes) m.visible = this.twigsOn;
+    if (this.fluffy && Math.abs(s.bare - (this.shadowBare ?? -1)) > 0.04) {
+      this.shadowBare = s.bare;
+      if (this.shadows) this.shadows.dirty = true;
+    }
     const leafy = s.bare < 0.5;
     if (leafy !== this.leafy) {
       this.leafy = leafy;
-      for (const m of this.trees?.crowns ?? []) m.castShadow = leafy;
-      for (const o of this.siteObjects ?? []) if (o.userData.kind === 'bush') o.castShadow = leafy;
+      // (Classic crowns only: leafy ones lose their shadow with their leaves.)
+      for (const m of this.trees?.crowns ?? []) if (!m.userData.leafCards) m.castShadow = leafy;
+      for (const o of this.siteObjects ?? []) if (o.userData.kind === 'bush' && !o.userData.leafCards) o.castShadow = leafy;
       if (this.shadows) this.shadows.dirty = true;
     }
   }
@@ -617,15 +676,35 @@ export class World {
    */
   #site() {
     this.siteObjects = [];
+    this.twigMeshes = [];
+    this.lods = [];
     const before = this.scene.children.length;
     this.#trees();
     const ob = this.obstacles;
     const q = this.quality;
     const near = { nearDetail: q.bushNear, nearRadius: Math.min(q.nearRadius, 250) };
     const bushFar = Math.min(this.viewDistance, q.bushDistance ?? Infinity);
-    for (const m of bushes(this.leafMat, ob.bushes, { detail: q.bushDetail, ...near, distance: bushFar })) {
-      m.userData.kind = 'bush';
-      this.scene.add(m);
+    if (this.fluffy) {
+      // Leafy near the camera, solid further away (src/world/lod.js).
+      const list = ob.bushes.filter((b) => Math.hypot(b.x, b.z) <= bushFar);
+      this.#addLod(new CrownLod(list, {
+        matrix: (b, out) => bushMatrix(b, out),
+        color: (b, out) => out.setHSL(...b.tint),
+        shape: (b) => b.shape,
+        species: (b) => bushSpeciesAt(b.x, b.z),
+        bark: (b, out) => barkColor({ x: b.x, z: b.z, species: 'hawthorn' }, out),
+        leafy: leafyBushShapes(q.leafy.detail),
+        solid: [0, 1].map((k) => impostorGeometry(CROWN_SEEDS.length + k)),
+        leafyMat: this.cardMat,
+        solidMat: this.#impostorMat(),
+        radius: q.leafy.radius, // (the same as the trees: one fade band)
+        onDraw: (b, mesh, slot) => (b.drawn = [mesh, slot]),
+      }), bushTwigShapes(), bushShapes('blob'), 'bush', list);
+    } else {
+      for (const m of bushes(this.leafMat, ob.bushes, { detail: q.bushDetail, ...near, distance: bushFar })) {
+        m.userData.kind = 'bush';
+        this.scene.add(m);
+      }
     }
     if (ob.buildings.length) {
       const houses = buildingsMesh(ob.buildings);
@@ -682,6 +761,7 @@ export class World {
     m.setMatrixAt(i, bushMatrix({ ...b, ...spec }, _trunkM));
     m.instanceMatrix.needsUpdate = true;
     m.frustumCulled = false;
+    if (m.userData.twigs) m.userData.twigs.frustumCulled = false;
   }
 
   /**
@@ -704,6 +784,7 @@ export class World {
     // Moved out of its set's bounds: don't let it be culled.
     tm.frustumCulled = false;
     cm.frustumCulled = false;
+    if (cm.userData.twigs) cm.userData.twigs.frustumCulled = false;
   }
 
   #trees() {
@@ -713,14 +794,21 @@ export class World {
     const q = this.quality;
     const near = [];
     const far = [];
+    // Leafy crowns (the costly part on a phone) only near the pilot; solid
+    // ones beyond (quality.js `leafy`).
+    const nearR = this.fluffy ? Math.min(q.nearRadius, q.leafy.radius) : q.nearRadius;
     for (const t of this.obstacles.trees) {
       const d = Math.hypot(t.x, t.z);
       if (d > this.viewDistance) continue;
-      (d <= q.nearRadius ? near : far).push(t);
+      (d <= nearR ? near : far).push(t);
     }
     const leafMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })));
     this.leafMat = leafMat;
-    const barkMat = addCloudShadows(new MeshLambertMaterial({ color: '#5a4632', vertexColors: true }));
+    const cardMat = this.fluffy ? addLodFade(makeFluffy(addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true }))), { smooth: q.leafy.smooth, detail: q.leafy.detail }), false) : null;
+    this.cardMat = cardMat;
+    // Bark: its colour per tree (instance colour, by species).
+    const barkMat = addCloudShadows(new MeshLambertMaterial({ vertexColors: true }));
+    this.barkMat = barkMat;
     // Conifers are open tiers of boughs: double-sided so their undersides show.
     const needleMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true, side: DoubleSide })));
     needleMat.defines = { CONIFER: '' };
@@ -729,6 +817,10 @@ export class World {
       { trees: near, crowns: CROWN_SEEDS.map((s) => broadleafCrown(s, q.nearDetail)), trunks: [trunk(3), trunk(41), trunk(67)], conifers: [conifer(5), conifer(17), conifer(29)] },
       { trees: far, crowns: CROWN_SEEDS.map((s) => (q.farDetail === 'blob' ? blobCrown(s) : broadleafCrown(s, q.farDetail))), trunks: [simpleTrunk()], conifers: [conifer(5)] },
     ];
+    // Leafy: the broadleaf crowns are drawn by the level-of-detail sorter
+    // (leafy near the camera, solid beyond), not with their sets.
+    const lodTrees = [];
+    if (this.fluffy) for (const set of sets) set.crowns = [];
     this.trees = { trunks: [], conTrunks: [], crowns: [], conifers: [] };
     for (const set of sets) {
       if (!set.trees.length) continue;
@@ -736,7 +828,7 @@ export class World {
       const mk = (geo, mat) => new InstancedMesh(geo, mat, count);
       const trunks = set.trunks.map((g) => mk(g, barkMat));
       const conTrunks = mk(conTrunk, barkMat);
-      const crowns = set.crowns.map((g) => mk(g, leafMat));
+      const crowns = set.crowns.map((g) => mk(g, set.leafMat ?? leafMat));
       const conifers = set.conifers.map((g) => mk(g, needleMat));
       const nTrunk = trunks.map(() => 0);
       const nCrown = crowns.map(() => 0);
@@ -749,11 +841,17 @@ export class World {
         // can move and resize it on the spot (moveTreeDrawing).
         const trunkMesh = t.conifer ? conTrunks : trunks[t.pick % trunks.length];
         const trunkSlot = t.conifer ? nConTrunk++ : nTrunk[t.pick % trunks.length]++;
+        treeMatrices(t, o, _trunkM, _crownM);
+        trunkMesh.setMatrixAt(trunkSlot, _trunkM);
+        trunkMesh.setColorAt(trunkSlot, barkColor(t, col));
+        if (this.fluffy && !t.conifer) {
+          t.drawn = { trunk: [trunkMesh, trunkSlot], crown: null };
+          lodTrees.push(t);
+          continue;
+        }
         const crownMesh = t.conifer ? conifers[t.pick % conifers.length] : crowns[t.variant]; // the shape the collisions use
         const crownSlot = t.conifer ? nCon[t.pick % conifers.length]++ : nCrown[t.variant]++;
         t.drawn = { trunk: [trunkMesh, trunkSlot], crown: [crownMesh, crownSlot] };
-        treeMatrices(t, o, _trunkM, _crownM);
-        trunkMesh.setMatrixAt(trunkSlot, _trunkM);
         crownMesh.setMatrixAt(crownSlot, _crownM);
         // Leaf colour per tree, a little brighter than before (the shapes
         // carry their own shading).
@@ -779,6 +877,103 @@ export class World {
       this.trees.crowns.push(...crowns);
       this.trees.conifers.push(...conifers);
     }
+    if (this.fluffy && lodTrees.length) {
+      const o = new Object3D();
+      const lod = new CrownLod(lodTrees, {
+        matrix: (t, out) => {
+          treeMatrices(t, o, _trunkM, out);
+          return out;
+        },
+        // A little brighter than the solid shapes (which carry their own shading).
+        color: (t, out) => out.setHSL(t.hue, t.sat, t.light * 1.12 + 0.02),
+        shape: (t) => t.variant, // the shape the collisions use
+        species: (t) => speciesOf(t),
+        bark: (t, out) => barkColor(t, out),
+        leafy: CROWN_SEEDS.map((sd) => fluffyCrown(sd, q.leafy.detail)),
+        solid: CROWN_SEEDS.map((_, k) => impostorGeometry(k)),
+        leafyMat: cardMat,
+        solidMat: this.#impostorMat(),
+        radius: q.leafy.radius,
+        onDraw: (t, mesh, slot) => (t.drawn.crown = [mesh, slot]),
+      });
+      this.#addLod(lod, CROWN_SEEDS.map((sd) => crownBranches(sd)), CROWN_SEEDS.map((sd) => blobCrown(sd)), 'tree', lodTrees);
+      this.trees.crowns.push(...lod.meshes, ...lod.shadows);
+    }
+  }
+
+  /**
+   * Add a level-of-detail crown set to the scene: its leafy meshes cast
+   * leaf-card shadows and get bare branches (sharing their matrices).
+   */
+  #addLod(lod, twigShapes, shadowShapes, kind, list) {
+    this.lods.push(lod);
+    // The pictures: no shadows of their own (and none falling on them, which
+    // would cut across the card); plain shapes cast them instead.
+    for (const m of lod.solid) {
+      m.userData.leafCards = true;
+      pickAsBall(m);
+    }
+    lod.shadows = lod.solid.map((m, k) => {
+      const sh = new InstancedMesh(shadowShapes[k], this.leafMat, 1);
+      sh.instanceMatrix = m.instanceMatrix;
+      sh.layers.set(1);
+      return sh;
+    });
+    lod.twigs = lod.leafy.map((m, k) => {
+      m.userData.leafCards = true;
+      m.customDepthMaterial = fluffyDepthMaterial(this.quality.leafy.detail);
+      pickAsBall(m);
+      this.twigMat ||= addLodFade(branchesBySpecies(addCloudShadows(new MeshLambertMaterial({ color: 0xaaaaaa, vertexColors: true }))), false);
+      const tw = new InstancedMesh(twigShapes[k], this.twigMat, 1);
+      tw.instanceMatrix = m.instanceMatrix;
+      tw.instanceColor = lod.barkAttr[k]; // bark colour, by species
+      twigShapes[k].setAttribute('aSpecies', m.geometry.attributes.aSpecies); // branch shape, by species
+      twigShapes[k].setAttribute('aLod', m.geometry.attributes.aLod); // fades with its crown
+      m.userData.twigs = tw;
+      return tw;
+    });
+    lod.update(this.lodAt?.x ?? 0, this.lodAt?.z ?? 0, true);
+    if (this.seasonDay != null) lod.setSeason(this.seasonDay);
+    this.#syncTwigs(lod);
+    for (const m of [...lod.meshes, ...lod.twigs, ...lod.shadows]) {
+      m.castShadow = !lod.solid.includes(m);
+      // Leaf cards take shadows too (the dark gaps between tufts); the
+      // pictures don't (their card would cut across them).
+      m.receiveShadow = !lod.solid.includes(m) && !lod.shadows.includes(m);
+      m.userData.kind = kind;
+      if (kind === 'tree') m.userData.trees = list;
+      this.scene.add(m);
+    }
+    this.twigMeshes.push(...lod.twigs);
+  }
+
+  #syncTwigs(lod) {
+    lod.twigs.forEach((tw, k) => {
+      tw.count = lod.leafy[k].count;
+      tw.boundingSphere = lod.sphere;
+    });
+    lod.shadows.forEach((sh, k) => {
+      sh.count = lod.solid[k].count;
+      sh.boundingSphere = lod.sphere;
+    });
+  }
+
+  /** The distant trees' material: pictures of the leafy crowns, drawn once. */
+  #impostorMat() {
+    if (this.impMat) return this.impMat;
+    const shapes = [
+      ...CROWN_SEEDS.map((sd) => ({ leafy: fluffyCrown(sd, 2), twigs: crownBranches(sd) })),
+      ...leafyBushShapes(2).map((g, k) => ({ leafy: g, twigs: bushTwigShapes()[k] })),
+    ];
+    const atlas = bakeImpostors(this.renderer, shapes, this.quality.leafy.tile);
+    this.impMat = addLodFade(makeImpostor(addLeafShading(addCloudShadows(new MeshLambertMaterial())), atlas), true);
+    return this.impMat;
+  }
+
+  /** Leafy crowns follow the camera (src/world/lod.js): call every frame. */
+  updateLod(camPos) {
+    this.lodAt = { x: camPos.x, z: camPos.z };
+    for (const lod of this.lods ?? []) if (lod.update(camPos.x, camPos.z)) this.#syncTwigs(lod);
   }
 
   #props() {
