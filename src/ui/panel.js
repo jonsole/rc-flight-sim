@@ -322,6 +322,7 @@ export class Panel {
       this.#select('Scenery distance', 'viewDistance', DISTANCES),
       this.#select('Trees and bushes', 'treeStyle', { fluffy: 'Leafy', classic: 'Classic (solid)' }),
       this.#check('Leaves face the camera (off: face the screen, as before)', 'cardsFaceCamera'),
+      this.#check('Sun glare', 'sunGlare'),
       el('p', { class: 'hint' }, 'Lower these if the picture is jerky. Low draws simpler trees and fewer pixels; a shorter distance leaves out far trees and brings the haze in. Leafy trees lose their leaves in winter; classic ones are a little quicker to draw. Changing any of these reloads the simulator.'),
       ...(LOCATION.data ? [
         this.#select('Scenery', 'scenery', { built: 'Built in (LIDAR and OpenStreetMap)', google: 'Google photorealistic 3D' }),
@@ -345,6 +346,8 @@ export class Panel {
       this.#range('Time of year', 'dayOfYear', 1, 365, 1, formatDay),
       this.#check('Use my clock (time and date)', 'useClock'),
       this.#range('Cloud cover', 'cloudCover', 0, 1, 0.05, (v) => (v < 0.05 ? 'Clear' : v > 0.85 ? 'Overcast' : `${Math.round(v * 100)}%`)),
+      this.#select('Mist and fog', 'mist', { seasonal: 'Seasonal (spring and autumn mornings)', off: 'Off', light: 'Light mist', thick: 'Thick fog' }),
+      this.#select('Low cloud', 'lowCloud', { seasonal: 'Seasonal (spring and autumn)', off: 'Off', broken: 'Broken', overcast: 'Overcast' }),
       el('p', { class: 'hint' }, 'You stand at the flight line facing north; the runway runs east–west in front of you.'),
     ];
   }
