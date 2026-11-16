@@ -340,6 +340,8 @@ const TRUNK_SEEDS = [3, 41, 67];
 const BUSH_SEEDS = [101, 131];
 
 const _mistColour = new Color();
+const _cloudTop = new Color();
+const _cloudSun = new Color();
 
 export class World {
   /** @param {import('../sim/obstacles.js').Obstacles} obstacles */
@@ -565,11 +567,6 @@ export class World {
     fog4.sun.y = this.sunDir.y;
     fog4.sun.z = this.sunDir.z;
     fog4.sun.w = 0.25 * smooth(-2, 10, this.sunElevation ?? 30);
-    // Cloud: grey underneath, sunlit on top (in screen colours).
-    _mistColour.setRGB(0.55, 0.58, 0.62).multiplyScalar(0.85 * day + 0.05).convertLinearToSRGB();
-    Object.assign(fog4.under, { x: _mistColour.r, y: _mistColour.g, z: _mistColour.b });
-    _mistColour.copy(this.sun.color).multiplyScalar(0.92 * day + 0.04).convertLinearToSRGB();
-    Object.assign(fog4.top, { x: _mistColour.r, y: _mistColour.g, z: _mistColour.b });
     // How much is over and around the camera (the sky's light, the sun's).
     const inCloud = lc.inside(camPos);
     const H = Math.max(top * 0.3, 4);
@@ -594,6 +591,14 @@ export class World {
     // than the sky behind them.)
     _mistColour.setRGB(lum, lum * 1.02, lum * 1.06).lerp(h, 0.35).multiplyScalar(0.92);
     fog.color.copy(h).lerp(_mistColour, Math.min(1, mist * 1.2));
+    // Low cloud: underneath, the same grey as the mist (a shade darker);
+    // on top, brighter in the sun (screen colours, as the fog uses them).
+    _mistColour.setRGB(lum, lum * 1.02, lum * 1.06).lerp(h, 0.35).multiplyScalar(0.88);
+    _cloudTop.copy(_mistColour);
+    _mistColour.convertLinearToSRGB();
+    Object.assign(fog4.under, { x: _mistColour.r, y: _mistColour.g, z: _mistColour.b });
+    _cloudTop.lerp(_cloudSun.copy(this.sun.color).multiplyScalar(0.95), 0.6 * day).convertLinearToSRGB();
+    Object.assign(fog4.top, { x: _cloudTop.r, y: _cloudTop.g, z: _cloudTop.b });
     this.scene.background.copy(fog.color);
     const su = this.sky.material.uniforms;
     su.skyFog.value = 0;
