@@ -311,6 +311,7 @@ export function addLeafShading(material) {
           float lum = dot(diffuseColor.rgb, vec3(0.3, 0.55, 0.15));
           // Each tree turns its own colour in autumn (by where it stands),
           // from yellow through orange to brown, some later than others.
+          #ifndef SPECIES
           if (uAutumn > 0.0) {
             float tone = cNoise(wp.xz * 0.09 + 7.0);
             float turn = uAutumn * smoothstep(0.15, 0.6, tone + uAutumn * 0.6);
@@ -319,6 +320,7 @@ export function addLeafShading(material) {
           }
           // New leaves in spring: paler, fresher green.
           diffuseColor.rgb = mix(diffuseColor.rgb, lum * vec3(1.15, 1.75, 0.6), uFresh * 0.5);
+          #endif
           // Winter: bare. Most of the crown goes (see-through), what's left
           // is grey-brown twigs. (Leafy crowns, src/world/fluffy.js, lose
           // their leaf cards instead.)

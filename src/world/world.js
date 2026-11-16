@@ -16,6 +16,7 @@ import { seasonFor } from './seasons.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
 import { fluffyCrown, crownBranches, makeFluffy, fluffyDepthMaterial, pickAsBall } from './fluffy.js';
 import { CrownLod, addLodFade } from './lod.js';
+import { speciesAt, bushSpeciesAt } from './species.js';
 import { bakeImpostors, impostorGeometry, makeImpostor } from './impostor.js';
 import { QUALITY } from './quality.js';
 import { CROWN_SEEDS, crownOf } from '../sim/treeShapes.js';
@@ -607,7 +608,13 @@ export class World {
     groundUniforms.uGrassTint.value.set(...s.grass);
     // Branches show once leaves are going; leafy crowns' shadows follow their
     // leaves (the shadow map is only redrawn when they've changed a bit).
-    this.twigsOn = s.bare > 0.02;
+    // Leafy trees: each by its species (src/world/species.js).
+    for (const lod of this.lods ?? []) {
+      lod.setSeason(day);
+      this.#syncTwigs(lod);
+    }
+    // Branches show once any tree's leaves are going (species differ).
+    this.twigsOn = s.bare > 0.02 || (this.lods ?? []).some((l) => l.bare.some((b) => b > 0.02));
     for (const m of this.twigMeshes) m.visible = this.twigsOn;
     if (this.fluffy && Math.abs(s.bare - (this.shadowBare ?? -1)) > 0.04) {
       this.shadowBare = s.bare;
@@ -652,6 +659,7 @@ export class World {
         matrix: (b, out) => bushMatrix(b, out),
         color: (b, out) => out.setHSL(...b.tint),
         shape: (b) => b.shape,
+        species: (b) => bushSpeciesAt(b.x, b.z),
         leafy: leafyBushShapes(q.leafy.detail),
         solid: [0, 1].map((k) => impostorGeometry(CROWN_SEEDS.length + k)),
         leafyMat: this.cardMat,
@@ -844,6 +852,7 @@ export class World {
         // A little brighter than the solid shapes (which carry their own shading).
         color: (t, out) => out.setHSL(t.hue, t.sat, t.light * 1.12 + 0.02),
         shape: (t) => t.variant, // the shape the collisions use
+        species: (t) => speciesAt(t.x, t.z),
         leafy: CROWN_SEEDS.map((sd) => fluffyCrown(sd, q.leafy.detail)),
         solid: CROWN_SEEDS.map((_, k) => impostorGeometry(k)),
         leafyMat: cardMat,
@@ -886,6 +895,7 @@ export class World {
       return tw;
     });
     lod.update(this.lodAt?.x ?? 0, this.lodAt?.z ?? 0, true);
+    if (this.seasonDay != null) lod.setSeason(this.seasonDay);
     this.#syncTwigs(lod);
     for (const m of [...lod.meshes, ...lod.twigs, ...lod.shadows]) {
       m.castShadow = !lod.solid.includes(m);

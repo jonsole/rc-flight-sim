@@ -159,7 +159,7 @@ export function impostorGeometry(index) {
 export function makeImpostor(material, atlas) {
   material.alphaTest = 0.5;
   material.side = DoubleSide;
-  material.defines = { ...(material.defines || {}), FLUFFY: '', IMPOSTOR: '' };
+  material.defines = { ...(material.defines || {}), FLUFFY: '', IMPOSTOR: '', SPECIES: '' };
   const uniforms = {
     uImpAlbedo: { value: atlas.albedo },
     uImpNormal: { value: atlas.normal },
@@ -174,6 +174,8 @@ export function makeImpostor(material, atlas) {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `#include <common>
         attribute float aShape;
+        attribute float aBare;
+        varying float vBare;
         varying vec2 vImpUv;
         varying float vImpShape;
         varying float vImpRow;`)
@@ -198,6 +200,7 @@ export function makeImpostor(material, atlas) {
           transformed = (transpose(im) * off) / is2;
           vImpUv = position.xy * 0.5 + 0.5;
           vImpShape = aShape;
+          vBare = aBare;
         }`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
@@ -208,6 +211,7 @@ export function makeImpostor(material, atlas) {
         varying vec2 vImpUv;
         varying float vImpShape;
         varying float vImpRow;
+        varying float vBare;
         vec2 impAt(float row) {
           return vec2((vImpShape + vImpUv.x) / uImpCols, (row + vImpUv.y) / ${ROWS.length}.0);
         }`)
@@ -221,7 +225,7 @@ export function makeImpostor(material, atlas) {
         vec4 brk = mix(texture2D(uImpBark, u0), texture2D(uImpBark, u1), rt);
         // Leaves still on at this time of year (as on the leafy cards).
         float fallAt = nrm.a / max(alb.a, 0.01);
-        bool leaf = alb.a > 0.35 && uBare < fallAt - 0.005;
+        bool leaf = alb.a > 0.35 && vBare < fallAt - 0.005;
         vec3 impN = vec3(0.0, 0.0, 1.0);
         if (leaf) {
           diffuseColor.rgb *= alb.rgb / max(alb.a, 0.01);

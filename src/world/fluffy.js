@@ -243,11 +243,11 @@ export function crownBranches(seed, { from, twigs = true } = {}) {
 // The card-spreading part of the vertex shader, shared by the drawing and the
 // shadow (depth) materials. Cards whose leaves aren't out (by the season,
 // uBare) shrink to nothing: no pixels drawn for them at all.
-// Leaf fall: how far through it this card is (0 in leaf, 1 bare), by the
-// season (uBare) and the card (some lose their leaves sooner: aCard.y).
+// Leaf fall: how far through it this card is (0 in leaf, 1 bare), by its
+// tree's own year (aBare, src/world/species.js) and the card (some lose their leaves sooner: aCard.y).
 // Each leaf in the picture goes once this passes its own fall time, so the
 // crown thins out leaf by leaf; a card with none left isn't drawn at all.
-const LEAF_FALL = 'clamp(uBare * (1.0 + 0.5 * (1.0 - aCard.y)), 0.0, 1.0)';
+const LEAF_FALL = 'clamp(aBare * (1.0 + 0.5 * (1.0 - aCard.y)), 0.0, 1.0)';
 const CARD_VERTEX = /* glsl */ `
   {
     vLeafDrop = ${LEAF_FALL};
@@ -271,7 +271,7 @@ const CARD_VERTEX = /* glsl */ `
     ${leafCellGlsl()}
   }
 `;
-const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nuniform float uBare;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;';
+const CARD_DECLS = 'attribute vec2 aCorner;\nattribute vec3 aCard;\nattribute float aBare;\nuniform float uBare;\nvarying float vLeafDrop;\nvarying vec2 vLeafCell;';
 const CARD_FRAG_DECLS = 'varying float vLeafDrop;\nvarying vec2 vLeafCell;';
 
 /**
@@ -301,7 +301,9 @@ export function makeFluffy(material, { smooth = true, detail = 2 } = {}) {
   // Soft cut-out edges with the screen's anti-aliasing (skipped on phones).
   material.alphaToCoverage = smooth;
   material.side = DoubleSide;
-  material.defines = { ...(material.defines || {}), FLUFFY: '' };
+  // SPECIES: each tree's colour through the year is its instance colour
+  // (src/world/species.js), not worked out here.
+  material.defines = { ...(material.defines || {}), FLUFFY: '', SPECIES: '' };
   const prev = material.onBeforeCompile;
   material.onBeforeCompile = (shader, renderer) => {
     prev?.(shader, renderer);

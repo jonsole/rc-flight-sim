@@ -4,6 +4,7 @@
 // only once it has gone a little way), so flying FPV past a far wood brings
 // its trees in leafy.
 import { InstancedMesh, Color, Matrix4, InstancedBufferAttribute, Sphere, Vector3, Box3 } from 'three';
+import { leafState } from './species.js';
 
 const _c = new Color();
 /**
@@ -74,11 +75,16 @@ export class CrownLod {
       m.count = 0;
       // Per instance: when it began fading in (+) or out (-).
       m.geometry.setAttribute('aLod', new InstancedBufferAttribute(new Float32Array(n), 1));
+      // Per instance: how bare its leaves are (its species' own year).
+      m.geometry.setAttribute('aBare', new InstancedBufferAttribute(new Float32Array(n), 1));
     }
     // Each item's matrix, colour and shape, worked out once.
     this.m = items.map((it) => o.matrix(it, new Matrix4()));
     this.col = items.map((it) => o.color(it, new Color()).clone());
     this.shape = items.map((it) => o.shape(it));
+    // Species (src/world/species.js): colours and leaf fall through the year.
+    this.who = o.species ? items.map((it) => o.species(it)) : null;
+    this.bare = new Float32Array(items.length);
     this.pos = items.map((it, i) => [this.m[i].elements[12], this.m[i].elements[14]]);
     // Bounds of the whole set, for culling: worked out once (re-sorting
     // often, recomputing them each time would be the slow part).
@@ -96,6 +102,13 @@ export class CrownLod {
     this.since = items.map(() => -1e4); // when it last changed (long ago: no fade)
     this.fadingUntil = 0;
     this.at = null;
+  }
+
+  /** The time of year (day 1-366): each tree's colour and leaf fall, for its species. */
+  setSeason(day) {
+    if (!this.who) return;
+    for (let i = 0; i < this.items.length; i++) this.bare[i] = leafState(this.who[i], day, this.col[i]).bare;
+    if (this.at) this.update(this.at[0], this.at[1], true);
   }
 
   /**
@@ -120,6 +133,7 @@ export class CrownLod {
       mesh.setMatrixAt(slot, this.m[i]);
       mesh.setColorAt(slot, _c.copy(this.col[i]));
       mesh.geometry.attributes.aLod.array[slot] = lod;
+      mesh.geometry.attributes.aBare.array[slot] = this.bare[i];
       return [mesh, slot];
     };
     for (let i = 0; i < this.items.length; i++) {
@@ -144,6 +158,7 @@ export class CrownLod {
     this.meshes.forEach((m, k) => {
       m.count = counts[k];
       m.geometry.attributes.aLod.needsUpdate = true;
+      m.geometry.attributes.aBare.needsUpdate = true;
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
       m.boundingSphere = this.sphere;
