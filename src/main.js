@@ -508,14 +508,6 @@ input.onAction = (code) => {
     case 'KeyM':
       sound.muted = !sound.muted;
       break;
-    case 'KeyN': {
-      // Nose light: on / off (from automatic, the opposite of what it is now).
-      const lit = settings.noseLight === 'on' || (settings.noseLight !== 'off' && Math.max(world.night, 1 - smoothDay(world.sunElevation)) > 0.3);
-      settings.noseLight = lit ? 'off' : 'on';
-      saveSettings(settings);
-      toast(`Nose light ${lit ? 'off' : 'on'}`);
-      break;
-    }
     case 'KeyE':
       openEditor();
       break;
@@ -593,12 +585,6 @@ const windTmp = new Vector3();
 const windsockPos = new Vector3(obstacles.windsock?.x ?? 0, obstacles.windsock?.height ?? 5, obstacles.windsock?.z ?? 0);
 let rssi = 99;
 
-/** 1 in full daylight, 0 once the sun is a few degrees down (dusk). */
-function smoothDay(el) {
-  const t = Math.min(1, Math.max(0, ((el ?? 30) + 4) / 10));
-  return t * t * (3 - 2 * t);
-}
-
 function frame(now) {
   requestAnimationFrame(frame);
   // (The first frame's timestamp can be just before `last`.)
@@ -633,9 +619,7 @@ function frame(now) {
   model.root.position.copy(aircraft.position);
   model.root.quaternion.copy(aircraft.orientation);
   model.update(aircraft, paused ? 0 : dt);
-  // The nose light: on when dark (or as set; L toggles).
-  const noseOn = settings.noseLight === 'on' || (settings.noseLight !== 'off' && Math.max(world.night, 1 - smoothDay(world.sunElevation)) > 0.3);
-  navLights.update(world.night, now / 1000, rig.camera, window.innerHeight, aircraft.broken, noseOn);
+  navLights.update(world.night, now / 1000, rig.camera, window.innerHeight, aircraft.broken);
 
   const fpv = rig.mode === 'fpv';
   model.setPilotVisible(!(fpv && settings.fpvMount === 'cockpit'));
