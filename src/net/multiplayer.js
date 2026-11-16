@@ -204,6 +204,7 @@ export function encodeState(ac) {
     q: ac.orientation.toArray().map((v) => r(v, 10000)),
     v: ac.velocity.toArray().map((v) => r(v, 100)),
     rpm: Math.round(ac.rpm),
+    m: Math.round(ac.motorRpm ?? ac.rpm), // what the motor drives (the rest is windmilling)
     d: ac.surfaces.filter((s) => s.controls.length).map((s) => r(s.deflection, 1000)),
     yaw: r(ac.servo.yaw, 100),
   };

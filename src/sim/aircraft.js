@@ -17,7 +17,7 @@ const MAX_SPIN = 60; // rad/s
 // Windmilling prop (see step): turns at this fraction of its pitch speed,
 // from this airspeed (m/s), dragging this fraction of static thrust at the
 // prop's pitch speed.
-const WINDMILL_SLIP = 0.7;
+const WINDMILL_SLIP = 0.5;
 const WINDMILL_START = 3;
 const WINDMILL_DRAG = 0.12;
 
@@ -259,7 +259,7 @@ export class Aircraft {
       def.motor.staticThrust * (rpmFrac * rpmFrac - (rpmFrac * vAxial) / def.motor.pitchSpeed),
     );
     // Windmilling: with the motor slower than the airflow would turn it, the
-    // air drives the prop round (about 70% of the rpm that would screw it
+    // air drives the prop round (about half the rpm that would screw it
     // through the air at its pitch; the motor's cogging holds it still below
     // ~3 m/s) and the prop drags.
     const windFrac = this.propBroken ? 0 : (WINDMILL_SLIP * Math.max(0, vAxial - WINDMILL_START)) / def.motor.pitchSpeed;

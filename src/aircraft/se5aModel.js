@@ -12,6 +12,7 @@ import {
   Quaternion, PlaneGeometry, Matrix4, RingGeometry, Shape, ExtrudeGeometry, Vector2,
 } from 'three';
 import { loft, mirrorZ, airfoilRing, naca } from './geom.js';
+import { shownRpm, DISC_RPM } from './prop.js';
 
 const PC10 = new Color('#4d5a31');
 const LINEN = new Color('#d9cfae');
@@ -641,8 +642,8 @@ export function createSE5aModel(G, scale) {
       // fin normal is +z; positive deflection = TE towards -z
       rudderPivot.rotation.y = fin ? -fin.deflection : 0;
 
-      const rpm = aircraft.rpm;
-      const fast = rpm > 1200;
+      const rpm = shownRpm(aircraft);
+      const fast = rpm > DISC_RPM;
       blades.visible = !fast;
       disc.visible = fast;
       if (fast) disc.material.opacity = Math.min(1, 0.35 + rpm / 9000);

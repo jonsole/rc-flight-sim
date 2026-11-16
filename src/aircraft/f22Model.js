@@ -4,7 +4,7 @@
 
 import { Group, Mesh, MeshStandardMaterial, Vector3, CylinderGeometry, Shape, ExtrudeGeometry } from 'three';
 import { loft } from './geom.js';
-import { createProp } from './prop.js';
+import { createProp, shownRpm } from './prop.js';
 
 const T = 0.005; // foam board thickness
 
@@ -177,7 +177,7 @@ export function createF22Model(G) {
         // TE down positive, from the reflex the elevons are trimmed to.
         e.pivot.rotation.z = (s ? s.deflection : 0) - G.reflex;
       }
-      propeller.update(aircraft.rpm, dt, aircraft.propBroken);
+      propeller.update(shownRpm(aircraft), dt, aircraft.propBroken);
     },
   };
 }
