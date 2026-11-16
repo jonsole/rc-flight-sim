@@ -125,7 +125,6 @@ export class CrownLod {
     this.leafRow = items.map((_, i) => Math.max(0, LEAF_ROWS.indexOf(this.who?.[i]?.name)));
     // Bark colours (the branches drawn with the leafy crowns, by species).
     this.bark = items.map((it) => (o.bark ? o.bark(it, new Color()) : new Color(0x5a4632)));
-    this.barkAttr = this.leafy.map(() => new InstancedBufferAttribute(new Float32Array(n * 3), 3));
     this.pos = items.map((it, i) => [this.m[i].elements[12], this.m[i].elements[14]]);
     // Bounds of the whole set, for culling: worked out once (re-sorting
     // often, recomputing them each time would be the slow part).
@@ -139,20 +138,56 @@ export class CrownLod {
     for (const m of this.m) big = Math.max(big, m.getMaxScaleOnAxis());
     this.sphere = box.isEmpty() ? new Sphere(new Vector3(), 1) : box.getBoundingSphere(new Sphere());
     this.sphere.radius += big * 1.6;
-    // The close tier (o.close): detailed branches (crown matrix, per crown
-    // shape) and trunks (trunk matrix, per trunk design), for the trees
-    // near the camera.
-    const c = o.close;
-    if (c) {
-      this.closeR = c.radius;
-      this.closeWood = c.wood.map((g) => new InstancedMesh(g, c.woodMat, n));
-      this.closeTrunk = (c.trunks ?? []).map((g) => new InstancedMesh(g, c.trunkMat, n));
-      for (const m of [...this.closeWood, ...this.closeTrunk]) {
+    // The wood (o.wood), by crown shape and species (each grows its own):
+    // plain branches with the leafy crowns (they fade with them), and close
+    // to the camera detailed branches and trunks instead.
+    const w = o.wood;
+    this.woodMeshes = [];
+    if (w) {
+      this.closeR = w.closeRadius ?? 0;
+      this.spName = items.map((_, i) => this.who?.[i]?.name ?? '');
+      this.tm = w.trunkMatrix ? items.map((it) => w.trunkMatrix(it, new Matrix4())) : null;
+      this.trunkKind = items.map((it) => w.trunkKind?.(it) ?? 0);
+      const make = (map, key, geo, mat, role) => {
+        if (!map.has(key)) {
+          map.set(key, { geo: geo(), mat, role, n: 0 });
+        }
+        map.get(key).n++;
+      };
+      const plain = new Map();
+      const close = new Map();
+      const trunks = new Map();
+      this.plainKey = [];
+      this.closeKey = [];
+      this.trunkKey = [];
+      items.forEach((_, i) => {
+        const sp = this.spName[i];
+        const shape = this.shape[i];
+        const kp = `${shape}|${sp}`;
+        this.plainKey[i] = kp;
+        make(plain, kp, () => w.plain(shape, sp), w.plainMat, 'twigs');
+        if (w.close) {
+          this.closeKey[i] = kp;
+          make(close, kp, () => w.close(shape, sp), w.closeMat, 'closeWood');
+        }
+        if (w.trunk) {
+          const kt = `${this.trunkKind[i]}|${sp}`;
+          this.trunkKey[i] = kt;
+          make(trunks, kt, () => w.trunk(this.trunkKind[i], sp), w.trunkMat, 'closeTrunk');
+        }
+      });
+      const build = (map) => new Map([...map].map(([k, { geo, mat, role, n: cap }]) => {
+        const m = new InstancedMesh(geo, mat, cap);
         m.count = 0;
-        m.geometry.setAttribute('aSpecies', new InstancedBufferAttribute(new Float32Array(n), 1));
-      }
-      this.tm = c.trunkMatrix ? items.map((it) => c.trunkMatrix(it, new Matrix4())) : null;
-      this.trunkKind = items.map((it) => c.trunkKind?.(it) ?? 0);
+        m.userData.role = role;
+        // (Fades with its crown, for the plain branches.)
+        geo.setAttribute('aLod', new InstancedBufferAttribute(new Float32Array(cap), 1));
+        this.woodMeshes.push(m);
+        return [k, m];
+      }));
+      this.plainWood = build(plain);
+      this.closeWood = build(close);
+      this.closeTrunk = build(trunks);
     }
     this.isLeafy = items.map(() => false);
     this.since = items.map(() => -1e4); // when it last changed (long ago: no fade)
@@ -183,14 +218,14 @@ export class CrownLod {
     const r2out = (this.radius * 1.03) ** 2;
     const counts = this.meshes.map(() => 0);
     const nLeafy = this.leafy.length;
-    const closeSort2 = (this.closeR + this.radius * 0.04 + 5) ** 2;
-    const closeCounts = new Map();
-    const putClose = (mesh, m, i) => {
-      const slot = closeCounts.get(mesh) ?? 0;
-      closeCounts.set(mesh, slot + 1);
+    const closeSort2 = ((this.closeR ?? 0) + this.radius * 0.04 + 5) ** 2;
+    const woodCounts = new Map();
+    const putWood = (mesh, m, i, lod = -1e4) => {
+      const slot = woodCounts.get(mesh) ?? 0;
+      woodCounts.set(mesh, slot + 1);
       mesh.setMatrixAt(slot, m);
       mesh.setColorAt(slot, this.bark[i]);
-      mesh.geometry.attributes.aSpecies.array[slot] = this.leafRow[i];
+      mesh.geometry.attributes.aLod.array[slot] = lod;
     };
     const put = (i, k, lod) => {
       const mesh = this.meshes[k];
@@ -200,7 +235,6 @@ export class CrownLod {
       mesh.geometry.attributes.aLod.array[slot] = lod;
       mesh.geometry.attributes.aBare.array[slot] = this.bare[i];
       mesh.geometry.attributes.aSpecies.array[slot] = this.leafRow[i];
-      if (k < nLeafy) this.barkAttr[k].setXYZ(slot, this.bark[i].r, this.bark[i].g, this.bark[i].b);
       return [mesh, slot];
     };
     for (let i = 0; i < this.items.length; i++) {
@@ -221,18 +255,22 @@ export class CrownLod {
       // Where the editor moves it: the one it is becoming.
       const [mesh, slot] = (leafy ? a : b) ?? a ?? b;
       this.o.onDraw(this.items[i], mesh, slot);
-      // Close: detailed wood (sorted generously: the shader makes the switch
-      // at exactly closeR from where the camera is now).
-      if (this.closeWood && d2 < closeSort2) {
-        putClose(this.closeWood[this.shape[i]], this.m[i], i);
-        if (this.tm && this.closeTrunk.length) putClose(this.closeTrunk[this.trunkKind[i]], this.tm[i], i);
+      if (this.plainWood) {
+        // Plain branches with the leafy crown (fading with it).
+        if (a) putWood(this.plainWood.get(this.plainKey[i]), this.m[i], i, leafy ? s : -s);
+        // Close: detailed wood (sorted generously: the shader makes the
+        // switch at exactly closeR from where the camera is now).
+        if (d2 < closeSort2) {
+          if (this.closeKey[i]) putWood(this.closeWood.get(this.closeKey[i]), this.m[i], i);
+          if (this.tm && this.trunkKey[i]) putWood(this.closeTrunk.get(this.trunkKey[i]), this.tm[i], i);
+        }
       }
     }
-    for (const m of [...(this.closeWood ?? []), ...(this.closeTrunk ?? [])]) {
-      m.count = closeCounts.get(m) ?? 0;
+    for (const m of this.woodMeshes) {
+      m.count = woodCounts.get(m) ?? 0;
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
-      m.geometry.attributes.aSpecies.needsUpdate = true;
+      m.geometry.attributes.aLod.needsUpdate = true;
       m.boundingSphere = this.sphere;
     }
     this.meshes.forEach((m, k) => {
@@ -240,7 +278,6 @@ export class CrownLod {
       m.geometry.attributes.aLod.needsUpdate = true;
       m.geometry.attributes.aBare.needsUpdate = true;
       m.geometry.attributes.aSpecies.needsUpdate = true;
-      if (k < nLeafy) this.barkAttr[k].needsUpdate = true;
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
       m.boundingSphere = this.sphere;

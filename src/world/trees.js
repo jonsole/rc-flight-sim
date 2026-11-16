@@ -184,13 +184,19 @@ function taperedTube(points, r0, r1, radial = 6, segs = 5, round = false) {
  * flared, slightly crooked trunk that forks into a handful of limbs reaching
  * up and out into the crown, each with a smaller side branch.
  */
-export function trunk(seed, detailed = false) {
+/**
+ * A broadleaf trunk for a tree 1 unit tall; `tp` its species' trunk
+ * (src/world/species.js WOOD): `top` where it forks, its main `limbs` (how
+ * many), where they leave it (`y0`), their angle up (`up`, radians) and
+ * length (`len`), and thickness (`limbR`).
+ */
+export function trunk(seed, detailed = false, tp = {}) {
   // Detailed (close up): rounder, finer, with more side branches.
   const R = detailed ? 2 : 1;
   const tube = (pts, r0, r1, radial, segs) => taperedTube(pts, r0, detailed ? Math.max(r1 * 0.5, 0.001) : r1, radial * R - (detailed ? 2 : 0), segs * R, detailed);
   const rnd = rng(seed);
   const lean = (rnd() - 0.5) * 0.02;
-  const top = 0.56;
+  const top = tp.top ?? 0.56;
   const parts = [
     tube([
       new Vector3(0, 0, 0),
@@ -203,19 +209,20 @@ export function trunk(seed, detailed = false) {
       ? new CylinderGeometry(0.022, 0.036, 0.04, 14, 2, true).translate(0, 0.02, 0).deleteAttribute('uv')
       : ni(new CylinderGeometry(0.022, 0.034, 0.03, 7, 1, true).translate(0, 0.015, 0)),
   ];
-  const limbs = 5 + Math.floor(rnd() * 2);
+  const limbs = tp.limbs ? tp.limbs[0] + Math.floor(rnd() * (tp.limbs[1] - tp.limbs[0] + 1)) : 5 + Math.floor(rnd() * 2);
+  const pick = (range, a, b) => (range ? range[0] + rnd() * (range[1] - range[0]) : a + rnd() * b);
   for (let i = 0; i < limbs; i++) {
     const az = (i / limbs) * Math.PI * 2 + rnd() * 0.8;
-    const y0 = 0.3 + rnd() * 0.16;
-    const up = 0.55 + rnd() * 0.45; // 30-55 degrees above level
-    const len = 0.17 + rnd() * 0.1;
+    const y0 = Math.min(top - 0.01, pick(tp.y0, 0.3, 0.16));
+    const up = pick(tp.up, 0.55, 0.45); // 30-55 degrees above level (average)
+    const len = pick(tp.len, 0.17, 0.1);
     const dir = new Vector3(Math.cos(az) * Math.cos(up), Math.sin(up), Math.sin(az) * Math.cos(up));
     const start = new Vector3(lean * (y0 / top), y0, 0);
     const mid = start.clone().addScaledVector(dir, len * 0.5);
     mid.y += len * 0.04;
     const end = start.clone().addScaledVector(dir, len);
     end.y += len * 0.15; // curving upwards
-    const r0 = 0.0085 - (y0 - 0.3) * 0.02;
+    const r0 = Math.max(0.003, 0.0085 - (y0 - 0.3) * 0.02) * (tp.limbR ?? 1);
     parts.push(tube([start, mid, end], r0, 0.0025, 5, 4));
     // A side branch from about halfway along.
     const az2 = az + (rnd() < 0.5 ? -1 : 1) * (0.6 + rnd() * 0.5);
