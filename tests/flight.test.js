@@ -621,6 +621,22 @@ describe('HobbyZone AeroScout (club trainer)', () => {
     expect(withHysteresis).toBeLessThan(1.5); // but it does recover
   });
 
+  it('rudder turns it mostly flat: it yaws more than it rolls', () => {
+    const ac = new Aircraft(d, { ground });
+    ac.assistMode = 'off';
+    ac.resetInAir(new Vector3(0, 120, 0), 0, 13);
+    ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 0.45 };
+    ac.update(3);
+    const a0 = ac.attitude();
+    ac.controls.yaw = 1;
+    ac.update(1);
+    const a1 = ac.attitude();
+    const turned = a1.heading - a0.heading;
+    const rolled = Math.abs(a1.roll - a0.roll);
+    expect(turned).toBeGreaterThan(40 * deg); // was 29° on 22° of rudder
+    expect(rolled).toBeLessThan(0.75 * turned); // was 51° of roll for 39° of turn
+  });
+
   it('SAFE keeps a beginner out of trouble with full stick held', () => {
     const ac = new Aircraft(d, { ground });
     ac.assistMode = 'safe';
@@ -877,11 +893,9 @@ describe('rudder and aileron coupling', () => {
       ac.controls.yaw = 1;
       ac.update(1);
       // Was 41° (ShockCub), 46° (Agro), 72° (S.E.5a: a biplane rolls more).
-      // The AeroScout is a trainer with plenty of dihedral: rudder alone
-      // turns it and rolls it into the turn, but not over.
-      const limit = id.includes('se5a') ? 40 : id.includes('aeroscout') ? 60 : 30;
+      // The AeroScout's rudder throw is bigger: it yaws more than it rolls.
+      const limit = id.includes('se5a') ? 40 : id.includes('aeroscout') ? 35 : 30;
       expect(Math.abs(ac.attitude().roll - r0)).toBeLessThan(limit * deg);
-      if (id.includes('aeroscout')) expect(Math.abs(ac.attitude().roll - r0)).toBeGreaterThan(35 * deg);
     });
 
     it(`${id}: aileron gives adverse yaw at first (nose swings out of the roll)`, () => {

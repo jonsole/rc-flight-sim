@@ -24,6 +24,8 @@ const WINDMILL_DRAG = 0.12;
 // separate and to reattach.
 const SEPARATE_CHORDS = 2;
 const REATTACH_CHORDS = 10;
+// Extra profile drag per rad² of aileron deflection, [trailing edge down, up].
+const AILERON_DRAG = [0.08, 0.015];
 
 const _v = new Vector3();
 const _windCG = new Vector3();
@@ -375,7 +377,10 @@ export class Aircraft {
       // down (into the wing's pressure side) much more than one deflected up,
       // which is where most of a model's adverse yaw comes from.
       const aileron = s.wing && s.controls.length > 0 && s.controls.every((ct) => ct.input === 'roll');
-      let cd = co.cd + (aileron ? (defl > 0 ? 0.08 : 0.015) : 0.04) * defl * defl;
+      // s.aileronDrag: [down, up] for a model with differential ailerons
+      // (less down-going travel: less adverse yaw).
+      const ad = s.aileronDrag ?? AILERON_DRAG;
+      let cd = co.cd + (aileron ? (defl > 0 ? ad[0] : ad[1]) : 0.04) * defl * defl;
       if (s.wing && s.ge < 0.999) {
         const ar = s.foil.ar;
         cl *= liftSlope(ar / s.ge) / liftSlope(ar);

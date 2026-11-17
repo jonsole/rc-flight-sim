@@ -79,7 +79,8 @@ function layout(o) {
     prop: { x: -0.175, y: 0.068, radius: o.prop.diameterIn * 0.0254 / 2, blades: o.prop.blades, pitchIn: o.prop.pitchIn, tip: o.prop.tip || 'square' },
     // Tailplane on top of the boom, fin above it.
     tail: { leX: -0.462, chord: 0.12, hingeFrac: 0.62, tipChord: 0.09, span: 0.4, y: -0.01, incidence: o.tailIncidence },
-    fin: { leX: -0.44, rootChord: 0.15, tipChord: 0.085, height: 0.14, hingeX: -0.53, y: -0.008 },
+    // finScale: the fin and rudder's size relative to the drawn 140 mm one.
+    fin: { leX: -0.44, rootChord: 0.15 * (o.finScale ?? 1), tipChord: 0.085 * (o.finScale ?? 1), height: 0.14 * (o.finScale ?? 1), hingeX: -0.44 - 0.09 * (o.finScale ?? 1), y: -0.008 },
     // Tricycle gear: wire main legs just behind the CG, steerable nose leg.
     mainWheel: { x: -0.035, y: -0.105, z: 0.115, radius: 0.033 },
     noseWheel: { x: 0.215, y: -0.107, radius: 0.03 },
@@ -94,7 +95,7 @@ export function buildAeroScout(o) {
     span: 1.095,
     cgFromLe: 0.075,
     dihedral: 4 * deg,
-    aeroDihedral: 6 * deg,
+    aeroDihedral: 3.25 * deg,
     mass: 0.85,
     tailIncidence: 2 * deg,
     throws: { aileron: 20 * deg, elevator: 18 * deg, rudder: 30 * deg },
@@ -144,6 +145,8 @@ export function buildAeroScout(o) {
         wing: true,
         chordLen: chord,
         controls: zMid > L.ailFrom ? [{ input: 'roll', gain: -side, max: o.throws.aileron, tau: 0.45 }] : [],
+        // Differential ailerons (less down than up): less adverse yaw.
+        ...(zMid > L.ailFrom && o.aileronDrag ? { aileronDrag: o.aileronDrag } : {}),
         // Pusher: no slipstream over the wing.
       });
     }
@@ -187,7 +190,7 @@ export function buildAeroScout(o) {
       pos: [0.02, 0, 0],
       chord: [1, 0, 0],
       span: [0, -1, 0],
-      area: 0.06,
+      area: o.sideArea ?? 0.06,
       foil: { cla: liftSlope(0.3), alpha0: 0, alphaStall: 25 * deg, cd0: 0.025, ar: 0.3, e: 0.5 },
       controls: [],
     },
