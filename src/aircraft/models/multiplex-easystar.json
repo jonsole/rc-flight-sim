@@ -1,0 +1,38 @@
+{
+  "builder": "easystar",
+  "id": "multiplex-easystar",
+  "name": "Multiplex EasyStar",
+  "summary": "Elapor foam powered glider, 1.37 m: high wing with curved-up tips, pusher Permax 400, rudder and elevator only (the roll stick works the rudder). Hand-launched, belly-landed. ~680 g.",
+  "notes": {
+    "units": "Units: metres, kilograms, newtons, seconds; angles in degrees where the name ends in 'Deg'. 'tuning' holds built-in changes in the Tuning tab's terms (paste an Export's \"tuning\" here).",
+    "about": "The original EasyStar (2003). Published: span 1370 mm, length 868 mm, wing area 24 dm\u00b2, flying weight ~680 g, Permax 400 6V on 7-cell NiMH, 5x4 pusher prop, CG 78 mm behind the leading edge at the root. The wing, tail and prop positions are measured off the model file. Estimated: thrust, rpm, current, inertia, airfoil and drag.",
+    "controls": "Rudder and elevator only. rollToRudder: the roll stick works the rudder too (false: it does nothing). The curved-up wing tips give it the dihedral effect that turns rudder into roll.",
+    "battery": "7-cell NiMH charges to 8.4 V, the same as a 2S LiPo, which is how it is modelled.",
+    "defaultAssist": "Off: the real one has no gyro. G cycles off / AS3X / SAFE, which work through the rudder.",
+    "model": "multiplex-easystar.glb, made in Blender (textured). The flight model's wing, tail and prop positions are measured off it (origin at the CG): if they move in Blender, update easystar.js."
+  },
+  "mass": 0.68,
+  "wingIncidenceDeg": 3,
+  "tailIncidenceDeg": 2.5,
+  "downThrustDeg": -3,
+  "throwsDeg": {
+    "elevator": 15,
+    "rudder": 25
+  },
+  "prop": {
+    "diameterIn": 5,
+    "pitchIn": 4,
+    "blades": 2,
+    "rpm": 14000,
+    "staticThrust": 4.0,
+    "current": 12
+  },
+  "battery": {
+    "cells": 2,
+    "capacity": 1500
+  },
+  "rollToRudder": true,
+  "defaultAssist": "off",
+  "model": "multiplex-easystar.glb",
+  "tuning": {}
+}

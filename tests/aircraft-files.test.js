@@ -13,7 +13,7 @@ describe('aircraft JSON files', () => {
     expect(files.length).toBe(AIRCRAFT.length);
     for (const f of files) {
       const j = JSON.parse(readFileSync(new URL(f, dir), 'utf8'));
-      expect(['se5a', 'buschtrottel', 'f22', 'aeroscout']).toContain(j.builder);
+      expect(['se5a', 'buschtrottel', 'f22', 'aeroscout', 'easystar']).toContain(j.builder);
       expect(f).toBe(`${j.id}.json`);
       expect(AIRCRAFT.some((a) => a.id === j.id)).toBe(true);
     }

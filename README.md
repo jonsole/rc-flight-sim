@@ -11,6 +11,7 @@ A browser-based radio-control aeroplane simulator with **line-of-sight** and
 | **Buschtrottel Agro** | Low wing with V-struts to the upper fuselage, full-span ailerons, black canopy block, low tailplane; orange and white; 8x4.5 three-blade prop. |
 | **Flite Test Mighty Mini F-22** | Foam-board pusher jet, 508 mm: the prop spins in a slot in the middle of the diamond wing; elevons, canted fins, no rudder or wheels. Hand-launched. |
 | **HobbyZone AeroScout S 2 1.1m** | Foam beginner trainer for club training: high wing with dihedral, pusher prop behind the cabin, tricycle gear with the nose wheel on the rudder. Starts in SAFE. |
+| **Multiplex EasyStar** | Elapor foam powered glider, 1.37 m: long high wing with curved-up tips, pusher Permax 400 behind the wing, rudder and elevator only (the roll stick works the rudder). Hand-launched, belly-landed. |
 
 The Buschtrottels are set up as built here: AT2308 1450Kv,
 3S 1350 mAh with an 8x6 prop (Agro: 8x4.5 three-blade), ~450 g, KFm2 wing,
@@ -32,6 +33,16 @@ There is no landing gear: with *Start position: On the runway* the pilot holds
 it at the flight line (your pilot position) and throws it once the throttle
 passes 60%. Land it on its belly (the belly pan and side plates under the
 wing) with the motor off, since the prop hangs below the wing.
+
+The EasyStar (`src/aircraft/easystar.js`) is the original Multiplex one:
+1370 mm span, 24 dm² wing, ~680 g, Permax 400 on 7-cell NiMH (8.4 V, modelled
+as a 2S pack) with a 5x4 pusher prop. Its wing, tail and prop positions are
+measured off the Blender model (`multiplex-easystar.glb`, origin at the CG).
+It has no ailerons: the roll stick and the rudder stick both work the rudder,
+and the curved-up wing tips turn yaw into bank. No gyro on the real one, so it
+starts with assist off. Thrust, rpm, drag and inertia are estimates, set so it
+trims at about 8 m/s at half throttle, climbs at about 1.7 m/s at full power,
+and glides at about 9:1.
 
 The AeroScout (`src/aircraft/aeroscout.js`) is set up for club beginners. It
 starts with SAFE on (bank and pitch limited, wings level themselves when
@@ -279,9 +290,10 @@ can be read and edited on GitHub:
 | `buschtrottel-agro.json` | Buschtrottel Agro |
 | `ft-mini-f22.json` | Flite Test Mighty Mini F-22 |
 | `hobbyzone-aeroscout.json` | HobbyZone AeroScout S 2 1.1m |
+| `multiplex-easystar.json` | Multiplex EasyStar |
 
 Each has `builder` (the code that turns the settings into a flight model and
-3D model: `se5a`, `buschtrottel`, `f22` or `aeroscout`), `id`, `name`, `summary`, `notes`
+3D model: `se5a`, `buschtrottel`, `f22`, `aeroscout` or `easystar`), `id`, `name`, `summary`, `notes`
 (explanations, ignored by the code), the builder's settings, `model` (its 3D
 model file, below) and `tuning`.
 Units are metres, kilograms, newtons and seconds; angles are in degrees
