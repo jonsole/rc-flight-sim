@@ -50,7 +50,11 @@ export function buildAircraft(json) {
   // Built-in tuning: becomes the model's defaults (a changed prop is drawn too).
   if (tuning && Object.keys(tuning).length) entry = { ...entry, def: tunedDef(entry.def, tuning) };
   // Its sound (src/audio/engine.js), if it has its own.
-  if (sound) entry = { ...entry, def: { ...entry.def, sound: fromJson(sound) } };
+  // (Measured tones are for the prop it came with: forProp, to tell.)
+  if (sound) {
+    const P = entry.def.motor.prop || {};
+    entry = { ...entry, def: { ...entry.def, sound: { ...fromJson(sound), forProp: `${P.blades || entry.def.motor.blades || 2}${P.tip}` } } };
+  }
   // The 3D model: its file (loadModelFiles), with the propeller drawn in code
   // at the file's prop marker, so a prop changed in Tuning shows.
   const withFile = {
