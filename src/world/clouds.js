@@ -9,6 +9,7 @@ const SIZE = 14000;
 /** Shared by the cloud layer and every material that shows cloud shadows. */
 export const cloudUniforms = {
   cloudOffset: { value: new Vector2() }, // drift (m)
+  cloudEvolve: { value: new Vector2() }, // the small detail's own slow change (noise units)
   cloudCover: { value: 0.35 }, // 0 clear .. 1 overcast
   cloudSunDir: { value: new Vector3(0, 1, 0) },
   cloudShadowStrength: { value: 0.6 },
@@ -30,7 +31,9 @@ float cFbm(vec2 p) {
 float cloudDensity(vec2 xz) {
   vec2 p = (xz + cloudOffset) / 700.0;
   // Large lumps with crisp, cauliflower edges.
-  float n = cFbm(p) * 0.8 + cFbm(p * 3.7 + 4.0) * 0.2;
+  // (The small detail changes slowly on its own as it drifts: clouds
+  // building at one edge and thinning at another.)
+  float n = cFbm(p + cloudEvolve * 0.15) * 0.8 + cFbm(p * 3.7 + 4.0 + cloudEvolve) * 0.2;
   float t = mix(0.66, 0.30, cloudCover);
   return smoothstep(t, t + 0.09, n);
 }
@@ -55,6 +58,7 @@ export const planeShadowUniforms = {
 
 const UNIFORM_DECLS = /* glsl */ `
 uniform vec2 cloudOffset;
+uniform vec2 cloudEvolve;
 uniform float cloudCover;
 uniform vec3 cloudSunDir;
 uniform float cloudShadowStrength;
@@ -123,11 +127,22 @@ export class CloudLayer {
     this.mesh.frustumCulled = false;
   }
 
-  /** Drift with the wind (world velocity m/s; stronger aloft). */
+  /**
+   * Drift with the wind up at the clouds, and change shape slowly as they go.
+   * @param {{ speed: number, directionDeg: number }} wind  the wind at the field (m/s, from)
+   */
   update(dt, wind) {
+    // Aloft the wind is stronger than at the ground and veered (turned
+    // clockwise) by friction's absence; clouds still drift on a calm day.
+    const speed = Math.max(4, 2.5 * (wind.speed || 0));
+    const from = (((wind.speed > 0.3 ? wind.directionDeg : 250) + 20) * Math.PI) / 180;
     const o = cloudUniforms.cloudOffset.value;
-    o.x -= wind.x * 1.8 * dt;
-    o.y -= wind.z * 1.8 * dt;
+    o.x -= -Math.sin(from) * speed * dt;
+    o.y -= Math.cos(from) * speed * dt;
+    // About one small lump's size every couple of minutes.
+    const e = cloudUniforms.cloudEvolve.value;
+    e.x += 0.006 * dt;
+    e.y -= 0.0045 * dt;
   }
 
   /** Colours for the light of the moment (called with the time of day). */
