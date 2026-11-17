@@ -1,4 +1,5 @@
 // Settings / setup panel (plain DOM).
+import { CLOUD_TYPES } from '../world/clouds.js';
 import { CHANNELS, rawInput } from '../input/input.js';
 import { CAMERA_LABELS } from '../view/cameras.js';
 import { AIRCRAFT, getAircraft } from '../aircraft/index.js';
@@ -356,17 +357,43 @@ export class Panel {
       const names = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
       return `${v}° (${names[Math.round(v / 45) % 8]})`;
     };
+    // Collapsible groups (which are open: remembered in this browser).
+    let open = {};
+    try {
+      open = JSON.parse(localStorage.getItem('rcsim.weatherOpen')) ?? { Wind: true, Time: true };
+    } catch {
+      /* none */
+    }
+    const group = (name, ...rows) => {
+      const det = el('details', { class: 'tune-group weather-group', open: !!open[name] }, el('summary', {}, name), ...rows);
+      det.addEventListener('toggle', () => {
+        open[name] = det.open;
+        try {
+          localStorage.setItem('rcsim.weatherOpen', JSON.stringify(open));
+        } catch {
+          /* storage blocked */
+        }
+      });
+      return det;
+    };
     return [
-      this.#range('Wind speed', 'windSpeed', 0, 12, 0.5, (v) => `${v} m/s (${Math.round(v * 3.6)} km/h)`),
-      this.#range('Wind from', 'windDir', 0, 359, 5, compass),
-      this.#range('Turbulence', 'turbulence', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
-      this.#range('Time of day', 'timeOfDay', 0, 24, 0.25, formatHours),
-      this.#range('Time of year', 'dayOfYear', 1, 365, 1, formatDay),
-      this.#check('Use my clock (time and date)', 'useClock'),
-      this.#range('Cloud cover', 'cloudCover', 0, 1, 0.05, (v) => (v < 0.05 ? 'Clear' : v > 0.85 ? 'Overcast' : `${Math.round(v * 100)}%`)),
-      this.#select('Mist and fog', 'mist', { seasonal: 'Seasonal (spring and autumn mornings)', off: 'Off', light: 'Light mist', thick: 'Thick fog' }),
-      this.#select('Low cloud', 'lowCloud', { seasonal: 'Seasonal (spring and autumn)', off: 'Off', broken: 'Broken', overcast: 'Overcast' }),
-      this.#select('Snow', 'snow', { seasonal: 'Seasonal (some winter days)', off: 'Off', dusting: 'A dusting on the ground', lying: 'Lying snow', light: 'Light snowfall', heavy: 'Heavy snowfall' }),
+      group('Wind',
+        this.#range('Wind speed', 'windSpeed', 0, 12, 0.5, (v) => `${v} m/s (${Math.round(v * 3.6)} km/h)`),
+        this.#range('Wind from', 'windDir', 0, 359, 5, compass),
+        this.#range('Turbulence', 'turbulence', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`)),
+      group('Time',
+        this.#range('Time of day', 'timeOfDay', 0, 24, 0.25, formatHours),
+        this.#range('Time of year', 'dayOfYear', 1, 365, 1, formatDay),
+        this.#check('Use my clock (time and date)', 'useClock')),
+      group('Clouds',
+        this.#range('Cloud cover', 'cloudCover', 0, 1, 0.05, (v) => (v < 0.05 ? 'Clear' : v > 0.85 ? 'Overcast' : `${Math.round(v * 100)}%`)),
+        this.#select('Cloud type', 'cloudType', { auto: 'Changing (by season and day)', ...Object.fromEntries(Object.entries(CLOUD_TYPES).map(([k, t]) => [k, t.name])) }),
+        this.#check('Sunbeams through the clouds', 'godRays')),
+      group('Mist and fog',
+        this.#select('Mist and fog', 'mist', { seasonal: 'Seasonal (spring and autumn mornings)', off: 'Off', light: 'Light mist', thick: 'Thick fog' }),
+        this.#select('Low cloud', 'lowCloud', { seasonal: 'Seasonal (spring and autumn)', off: 'Off', broken: 'Broken', overcast: 'Overcast' })),
+      group('Snow',
+        this.#select('Snow', 'snow', { seasonal: 'Seasonal (some winter days)', off: 'Off', dusting: 'A dusting on the ground', lying: 'Lying snow', light: 'Light snowfall', heavy: 'Heavy snowfall' })),
       el('p', { class: 'hint' }, 'You stand at the flight line facing north; the runway runs east–west in front of you.'),
     ];
   }

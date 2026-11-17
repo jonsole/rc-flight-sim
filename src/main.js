@@ -19,6 +19,7 @@ import { Multiplayer } from './net/multiplayer.js';
 import { DEFAULT_MP_SERVER } from './net/config.js';
 import { Chat } from './ui/chat.js';
 import { clockHours, dayOfYear } from './world/sun.js';
+import { cloudTypeFor } from './world/clouds.js';
 import { OSD } from './ui/osd.js';
 import { Panel } from './ui/panel.js';
 import { loadSettings, saveSettings } from './ui/settings.js';
@@ -262,8 +263,9 @@ function applyTime() {
   const snow = snowFor(settings, day, hours);
   world.setSnow(snow);
   setSnowCover(snow.cover);
-  // Snowing: the sky is overcast.
+  // Snowing: the sky is overcast (grey stratocumulus).
   world.setClouds(Math.max(Number(settings.cloudCover), snow.falling > 0 ? 0.75 + 0.25 * snow.falling : 0));
+  world.setCloudType(snow.falling > 0 ? 'strato' : settings.cloudType && settings.cloudType !== 'auto' ? settings.cloudType : cloudTypeFor(day, hours));
   // Bare trees and bushes catch less (src/sim/obstacles.js).
   setLeafiness(1 - seasonFor(day).bare);
   renderer.toneMappingExposure = world.exposure;
@@ -278,6 +280,7 @@ function applySettings() {
   wind.directionDeg = settings.windDir;
   wind.turbulence = settings.turbulence;
   applyTime(); // (and the cloud cover)
+  world.setGodRays(settings.godRays === false ? 0 : 1);
   sound.volume = settings.volume;
   osd.showHud = settings.showHud;
   const showTouch = settings.touchControls === 'on' || (settings.touchControls === 'auto' && (TOUCH_DEVICE || touchSeen));

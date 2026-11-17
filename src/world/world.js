@@ -9,8 +9,8 @@ import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY, PILOT_PAD } from '../sim/terrain.js';
 import { buildingsMesh } from './buildings.js';
 import { clubAngle } from '../sim/location.js';
-import { sunPosition, moonPosition } from './sun.js';
-import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
+import { sunPosition, moonPosition, solarHours } from './sun.js';
+import { CloudLayer, cloudUniforms, addCloudShadows, CLOUD_GLSL } from './clouds.js';
 import { addGroundDetail, groundUniforms } from './ground.js';
 import { seasonFor } from './seasons.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
@@ -468,8 +468,17 @@ export class World {
     u.skyFogColor = { value: new Color() };
     // ... and mist and low cloud along each line of sight (volfog.js).
     Object.assign(u, { fogMistA: { value: fog4.a }, fogMistB: { value: fog4.b }, fogSun: { value: fog4.sun }, fogUnder: { value: fog4.under }, fogTop: { value: fog4.top } });
+    // Sunbeams (crepuscular rays) under the clouds, and how strong (0 off).
+    Object.assign(u, cloudUniforms, { godRays: { value: 1 } });
+    // The sun's disc: a little larger than life (it reads better on a
+    // screen), larger still and orange low down (setTime).
+    u.sunDiscCos = { value: Math.cos((0.8 * Math.PI) / 180 / 2) };
+    u.sunDiscTint = { value: new Color(1, 1, 1) };
     sky.material.fragmentShader = sky.material.fragmentShader
-      .replace('void main() {', `uniform float skyGain;\nuniform float skyFog;\nuniform vec3 skyFogColor;\n${FIELD_GLSL}\nvoid main() {`)
+      .replace(/const float sunAngularDiameterCos = [0-9.]+;/, 'uniform float sunDiscCos;\nuniform vec3 sunDiscTint;')
+      .replace('float sundisk = smoothstep( sunAngularDiameterCos, sunAngularDiameterCos + 0.00002, cosTheta );', 'float sundisk = smoothstep( sunDiscCos, sunDiscCos + ( 1.0 - sunDiscCos ) * 0.2, cosTheta );')
+      .replace('L0 += ( vSunE * 19000.0 * Fex ) * sundisk;', 'L0 += ( vSunE * 19000.0 * Fex ) * sunDiscTint * sundisk;')
+      .replace('void main() {', `uniform float skyGain;\nuniform float skyFog;\nuniform vec3 skyFogColor;\nuniform float godRays;\n${FIELD_GLSL}\n${CLOUD_GLSL}\nvoid main() {`)
       .replace('#include <tonemapping_fragment>', `{
         vec3 c = gl_FragColor.rgb * skyGain;
         float l = dot(c, vec3(0.3, 0.55, 0.15));
@@ -486,6 +495,28 @@ export class World {
         vec3 sd = normalize(vWorldPosition - cameraPosition);
         float toHaze = max(skyFog, 1.0 - smoothstep(-0.01, 0.16, sd.y));
         gl_FragColor.rgb = mix(gl_FragColor.rgb, skyFogColor, toHaze);
+        // Sunbeams: looking towards the sun, the hazy air under the clouds
+        // is lit where sunlight comes through the gaps and dark in the
+        // clouds' shadows - shafts fanning out from the sun. Along the line
+        // of sight (up to the cloud base), how much of it is in sunlight.
+        float toSun = dot(sd, cloudSunDir);
+        if (godRays > 0.0 && cloudCover > 0.01 && toSun > 0.0 && cloudSunDir.y > 0.02) {
+          float phase = toSun * toSun;
+          float base = cloudShape.x;
+          float tMax = sd.y > 0.02 ? min((base - cameraPosition.y) / sd.y, 5000.0) : 5000.0;
+          float sunUp = max(cloudSunDir.y, 0.08);
+          float lit = 0.0;
+          for (int i = 0; i < 8; i++) {
+            vec3 p = cameraPosition + sd * tMax * (float(i) + 0.5) / 8.0;
+            vec2 at = p.xz + cloudSunDir.xz / sunUp * (base - p.y);
+            float t = cloudThreshold();
+            lit += 1.0 - smoothstep(t, t + cloudShape.w, cloudNoise(at));
+          }
+          lit /= 8.0;
+          // Brighter shafts, darker streaks (about the average, so the sky
+          // doesn't change overall).
+          gl_FragColor.rgb *= 1.0 + godRays * cloudShadowStrength * phase * (lit - 0.55) * 1.8;
+        }
         // Mist and low cloud in the way (out to 3 km).
         if (fogMistA.x > 0.0 || fogMistA.z > 0.0) {
           vec4 f = vfAlong(cameraPosition, cameraPosition + sd * 3000.0, skyFogColor);
@@ -515,14 +546,24 @@ export class World {
 
   /**
    * Set the time of day: sun, moon, sky, light colours, haze and stars.
-   * @param {number} hours  local solar time (0-24)
+   * @param {number} hours  UK clock time (0-24: BST in summer)
    * @param {number} day    day of the year (1-366)
    */
   setTime(hours, day) {
-    const sun = sunPosition(hours, day);
-    const moon = moonPosition(hours, day);
+    const solar = solarHours(hours, day);
+    const sun = sunPosition(solar, day);
+    const moon = moonPosition(solar, day);
     this.hours = hours;
     this.sunElevation = sun.elevation;
+    {
+      // The sun's disc: 1° high in the sky (a bit bigger than its real
+      // 0.53°), swelling to ~2.2° and turning orange as it sets.
+      const low = 1 - smooth(0, 18, sun.elevation);
+      const diam = 1.0 + 1.3 * low * low;
+      const su = this.sky.material.uniforms;
+      su.sunDiscCos.value = Math.cos((diam * Math.PI) / 180 / 2);
+      su.sunDiscTint.value.setRGB(1, 1 - 0.4 * low, 1 - 0.75 * low);
+    }
     skyDir(sun.elevation, sun.azimuth, this.sunDir);
     skyDir(moon.elevation, moon.azimuth, this.moonDir);
     const el = sun.elevation;
@@ -699,8 +740,17 @@ export class World {
   }
 
   setClouds(cover) {
-    cloudUniforms.cloudCover.value = cover;
-    this.clouds.mesh.visible = cover > 0.01;
+    this.clouds.setCover(cover);
+  }
+
+  /** Sunbeams through the gaps in the clouds (0 off .. 1). */
+  setGodRays(k) {
+    this.sky.material.uniforms.godRays.value = k;
+  }
+
+  /** The kind of clouds (src/world/clouds.js CLOUD_TYPES). */
+  setCloudType(id) {
+    if (id !== this.clouds.type) this.clouds.setType(id);
   }
 
   /** Let the clouds drift with the wind (world velocity, m/s). */

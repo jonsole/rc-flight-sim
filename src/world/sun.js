@@ -13,6 +13,31 @@ export function dayOfYear(date) {
   return Math.round((now - start) / 86400000);
 }
 
+/** Day of the year of the last Sunday of a month (0-based), this year. */
+function lastSunday(month, year) {
+  const last = new Date(Date.UTC(year, month + 1, 0)); // the month's last day
+  last.setUTCDate(last.getUTCDate() - last.getUTCDay());
+  return dayOfYear(new Date(last.getUTCFullYear(), last.getUTCMonth(), last.getUTCDate()));
+}
+
+/** Is it British Summer Time on this day of the year (last Sunday of March to last Sunday of October)? */
+export function isBST(day, year = new Date().getFullYear()) {
+  return day >= lastSunday(2, year) && day < lastSunday(9, year);
+}
+
+/**
+ * Local solar time (12 = the sun due south) for a UK clock time on a day of
+ * the year: an hour back in British Summer Time, and the equation of time
+ * (the sun runs up to ~16 minutes ahead of or behind the clock through the
+ * year), at a field near Cambridge (0.1° E).
+ */
+export function solarHours(clock, day, longitude = 0.1) {
+  const B = ((2 * Math.PI) / 365) * (day - 81);
+  const eot = 9.87 * Math.sin(2 * B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B); // minutes
+  const h = clock - (isBST(day) ? 1 : 0) + longitude / 15 + eot / 60;
+  return ((h % 24) + 24) % 24;
+}
+
 /**
  * Sun elevation and azimuth (degrees; azimuth 0 = north, 90 = east) for a
  * local solar time in hours (12 = noon) on a day of the year.
