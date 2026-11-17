@@ -172,9 +172,12 @@ export class CloudLayer {
         ${NOISE}
         ${FIELD_GLSL}
         // A cloud's height above the base (0..1 of the layer's depth) where its
-        // big lumps are n: rounded tops, the densest parts tallest.
+        // pattern is n: straight sides up from the edge of its base (no thin,
+        // see-through fringe around it), then rounded tops, the densest parts
+        // tallest.
         float cloudH(float n) {
-          return pow(clamp((n - cloudThreshold()) / (cloudShape.w * 3.0 + 0.1), 0.0, 1.0), 0.6);
+          float k = (n - cloudThreshold()) / (cloudShape.w * 3.0 + 0.1);
+          return k <= 0.0 ? 0.0 : 0.18 + 0.82 * pow(min(k, 1.0), 0.6);
         }
         void main() {
           vec3 dir = normalize(vWorld - cameraPosition);
@@ -185,11 +188,16 @@ export class CloudLayer {
           // the gap to the side of a cloud beyond.) One pattern for outline,
           // height and shading, so they agree.
           float t0 = (base - cameraPosition.y) / dir.y;
-          float len = min(T / dir.y, 3000.0);
-          const int N = 7;
+          float len = min(T / dir.y, 2500.0);
+          const int N = 12;
           float hitT = -1.0;
           float n = cloudNoise((cameraPosition + dir * t0).xz);
+          // Sides and tops only show looking out towards the horizon; looking
+          // up, just the flat bases (sides fading in from ~15 degrees up to
+          // fully below ~5).
+          float sides = 1.0 - smoothstep(0.08, 0.26, dir.y);
           if (n > cloudThreshold()) hitT = t0;
+          else if (sides <= 0.0) discard;
           else {
             for (int i = 1; i <= N; i++) {
               float t = t0 + len * float(i) / float(N);
@@ -232,7 +240,8 @@ export class CloudLayer {
           float dist = length(q.xz - cameraPosition.xz);
           float haze = smoothstep(1500.0, 6500.0, dist);
           c = mix(c, hazeColor, haze * 0.85);
-          float a = min(1.0, d * 1.5) * (1.0 - smoothstep(5000.0, 6800.0, dist)) * mix(1.0, 0.8, night) * (1.0 - mistFade);
+          // (The base fades out at its edge; a side is solid.)
+          float a = (hitT == t0 ? min(1.0, d * 1.5) : sides) * (1.0 - smoothstep(5000.0, 6800.0, dist)) * mix(1.0, 0.8, night) * (1.0 - mistFade);
           // Mist and low cloud between here and it hide it (gradually).
           if (fogMistA.x > 0.0 || fogMistA.z > 0.0) a *= exp(-vfAlong(cameraPosition, q, hazeColor).x);
           if (a < 0.005) discard;
