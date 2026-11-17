@@ -801,7 +801,7 @@ function frame(now) {
   world.updateLod(rig.camera.position); // leafy crowns near the camera (src/world/lod.js)
   planeShadow.update(renderer, aircraft.position, world.lightDir, shadowDark);
   world.updateWindsock(wind.at(windsockPos, 0, windTmp), dt, now / 1000);
-  if (!paused) world.updateClouds(dt, windTmp);
+  if (!paused) world.updateClouds(dt, wind); // (the steady wind: drift aloft)
   world.updateWeather(rig.camera.position, paused ? 0 : dt, windTmp);
 
   const eye = rig.pilotEye();
