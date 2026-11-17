@@ -89,6 +89,13 @@ export class EngineSound {
     const m = aircraft.def.motor;
     // The prop as fitted or tuned (Menu → Tuning).
     const blades = m.prop?.blades || m.blades || 2;
+    // Square-tipped (bullnose) blades are much noisier than tapered ones: the
+    // wide, blunt tips shed strong tip vortices, a louder and harsher buzz.
+    // A pusher's blades chop through the wake of the wing and fuselage ahead
+    // of them every turn, which adds a rasping, tonal blade-pass note.
+    const square = m.prop?.tip === 'square';
+    const pusher = !!m.pusher;
+    const loud = (square ? 1.7 : 1) * (pusher ? 1.25 : 1);
     const dia = m.prop?.diameterIn ? m.prop.diameterIn * 0.0254 : 2 * Math.sqrt((m.discArea || 0.03) / Math.PI);
     const motorHz = 40 + (rpm / 60) * 7; // 14-pole motor electrical freq / 2
     const bladeHz = Math.max(1, (rpm / 60) * blades);
@@ -108,16 +115,23 @@ export class EngineSound {
     this.motorGain.gain.setTargetAtTime(on * (0.012 * Math.min(1, rpm / (m.maxRpm || 10000)) + 0.09 * load), t, 0.05);
     // Prop buzz: louder with tip speed and with how hard it's pushing.
     // A windmilling prop just whirrs softly.
-    const buzz = on * Math.min(0.4, whoosh * (0.08 + 0.13 * Math.min(1.5, load)) + 0.04 * Math.min(1, tip / 30));
+    const buzz = on * Math.min(0.4 * loud, loud * (whoosh * (0.08 + 0.13 * Math.min(1.5, load)) + 0.04 * Math.min(1, tip / 30)));
     this.noiseGain.gain.setTargetAtTime(buzz, t, 0.05);
-    this.amGain.gain.setTargetAtTime(buzz * 0.8, t, 0.05);
+    // Chopping through a wake modulates the buzz harder at the blade-pass rate.
+    this.amGain.gain.setTargetAtTime(buzz * (pusher ? 1 : 0.8), t, 0.05);
     // Big props sound deeper (a whoosh), small ones sharper (a buzz); the
     // buzz reaches up to the blade-pass frequency.
     const tone = (0.2032 / dia) ** 0.7; // 1 for an 8" prop
-    this.noiseFilter.frequency.setTargetAtTime(Math.max((350 + 1500 * Math.min(1, load + 0.15)) * tone, bladeHz * 1.6), t, 0.1);
-    // Two-blade props: the buzz alone; each extra blade adds whine.
+    const bright = square ? 1.6 : 1;
+    this.noiseFilter.frequency.setTargetAtTime(Math.max((350 + 1500 * Math.min(1, load + 0.15)) * tone * bright, bladeHz * 1.6), t, 0.1);
+    // Two-blade props: the buzz alone; each extra blade adds whine. Square
+    // tips and a pusher's wake add a blade-pass note of their own, rich in
+    // harmonics (a rasp rather than a hum).
+    const rasp = (square ? 0.02 : 0) + (pusher ? 0.03 : 0);
+    const bladeType = rasp ? 'sawtooth' : 'triangle';
+    if (this.blade.type !== bladeType) this.blade.type = bladeType;
     this.blade.frequency.setTargetAtTime(bladeHz, t, 0.05);
-    this.bladeGain.gain.setTargetAtTime(on * whoosh * 0.025 * Math.max(0, blades - 2) * (0.4 + 0.6 * Math.min(1, load)), t, 0.05);
+    this.bladeGain.gain.setTargetAtTime(on * whoosh * (0.025 * Math.max(0, blades - 2) + rasp) * (0.4 + 0.6 * Math.min(1, load)), t, 0.05);
     const ws = Math.min(1, aircraft.airspeed / 25);
     this.windGain.gain.setTargetAtTime(fpv ? ws * ws * 0.35 : ws * ws * 0.05, t, 0.1);
     this.windFilter.frequency.setTargetAtTime(300 + ws * 900, t, 0.1);

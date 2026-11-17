@@ -76,7 +76,7 @@ function layout(o) {
     ],
     // Motor pylon on top of the pod behind the wing; the prop turns just
     // behind it, its lower blade passing over the boom.
-    prop: { x: -0.175, y: 0.068, radius: o.prop.diameterIn * 0.0254 / 2, blades: o.prop.blades, pitchIn: o.prop.pitchIn },
+    prop: { x: -0.175, y: 0.068, radius: o.prop.diameterIn * 0.0254 / 2, blades: o.prop.blades, pitchIn: o.prop.pitchIn, tip: o.prop.tip || 'square' },
     // Tailplane on top of the boom, fin above it.
     tail: { leX: -0.462, chord: 0.12, hingeFrac: 0.62, tipChord: 0.09, span: 0.4, y: -0.01, incidence: o.tailIncidence },
     fin: { leX: -0.44, rootChord: 0.15, tipChord: 0.085, height: 0.14, hingeX: -0.53, y: -0.008 },
@@ -220,7 +220,9 @@ export function buildAeroScout(o) {
     downwashGain: 0.9,
     tricycle: true,
     motor: {
-      prop: { diameterIn: P.diameterIn, pitchIn: P.pitchIn, blades: P.blades },
+      // Square-tipped (bullnose) blades: noisy (src/audio/engine.js).
+      prop: { diameterIn: P.diameterIn, pitchIn: P.pitchIn, blades: P.blades, tip: P.tip || 'square' },
+      pusher: true, // runs in the wing's wake: a rasping buzz
       kv: 2250,
       noLoadCurrent: 1.0,
       staticThrust: P.staticThrust,

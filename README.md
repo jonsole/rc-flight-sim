@@ -42,7 +42,11 @@ the root. The planform (~20 dm²), the prop (6x4 assumed), thrust, weight
 (~850 g) and drag are estimates, set so it flies level at about 55% throttle
 (~11 m/s) and climbs gently at full power, as the manual describes, and stalls
 at about 7 m/s. It sits level on its wheels, steers on the ground with the
-rudder (nose wheel), and takes off hands-off at full power. The 3D model is
+rudder (nose wheel), and takes off hands-off at full power. Its prop has square
+(bullnose) tips, drawn that way, and like the real one it is loud: square tips
+buzz harder and harsher than tapered ones, and the pusher prop chops through
+the wing's wake for a rasping note (`"tip": "square"` on the prop and
+`pusher` in `src/aircraft/aeroscout.js`; the sound is made in `src/audio/engine.js`). The 3D model is
 drawn from the dimensions in plain club colours (white, red trim, blue):
 change `"colors"` in its JSON file and run `node scripts/export-models.mjs
 hobbyzone-aeroscout` to repaint it in your club's colours. The manual says

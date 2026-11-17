@@ -8,6 +8,7 @@ import { Obstacles } from '../src/sim/obstacles.js';
 import { crownOf } from '../src/sim/treeShapes.js';
 import { coefficients, liftSlope } from '../src/sim/aero.js';
 import { applyExpo } from '../src/input/input.js';
+import { tunedDef } from '../src/sim/tuning.js';
 
 const deg = Math.PI / 180;
 
@@ -503,6 +504,12 @@ describe('HobbyZone AeroScout (club trainer)', () => {
     expect(entry.geometry.wingLeX).toBeCloseTo(0.075, 3); // CG 75 mm behind the root LE
     expect(d.mass).toBeGreaterThan(0.75);
     expect(d.mass).toBeLessThan(0.95);
+  });
+
+  it('has a square-tipped pusher prop (the noisy one), kept when the prop is tuned', () => {
+    expect(d.motor.prop.tip).toBe('square');
+    expect(d.motor.pusher).toBe(true);
+    expect(tunedDef(d, { propPitch: 4.5 }).motor.prop.tip).toBe('square');
   });
 
   it('starts in SAFE for beginners', () => {
