@@ -115,7 +115,9 @@ export class EngineSound {
     this.motorGain.gain.setTargetAtTime(on * (0.012 * Math.min(1, rpm / (m.maxRpm || 10000)) + 0.09 * load), t, 0.05);
     // Prop buzz: louder with tip speed and with how hard it's pushing.
     // A windmilling prop just whirrs softly.
-    const buzz = on * Math.min(0.4 * loud, loud * (whoosh * (0.08 + 0.13 * Math.min(1.5, load)) + 0.04 * Math.min(1, tip / 30)));
+    // (Kept low: too much of it sounds like wind rather than a prop; the
+    // blade-pass note below carries the prop's sound.)
+    const buzz = 0.45 * on * Math.min(0.4 * loud, loud * (whoosh * (0.08 + 0.13 * Math.min(1.5, load)) + 0.04 * Math.min(1, tip / 30)));
     this.noiseGain.gain.setTargetAtTime(buzz, t, 0.05);
     // Chopping through a wake modulates the buzz harder at the blade-pass rate.
     this.amGain.gain.setTargetAtTime(buzz * (pusher ? 1 : 0.8), t, 0.05);
@@ -123,15 +125,15 @@ export class EngineSound {
     // buzz reaches up to the blade-pass frequency.
     const tone = (0.2032 / dia) ** 0.7; // 1 for an 8" prop
     const bright = square ? 1.6 : 1;
-    this.noiseFilter.frequency.setTargetAtTime(Math.max((350 + 1500 * Math.min(1, load + 0.15)) * tone * bright, bladeHz * 1.6), t, 0.1);
-    // Two-blade props: the buzz alone; each extra blade adds whine. Square
-    // tips and a pusher's wake add a blade-pass note of their own, rich in
-    // harmonics (a rasp rather than a hum).
+    this.noiseFilter.frequency.setTargetAtTime(Math.max((250 + 900 * Math.min(1, load + 0.15)) * tone * bright, bladeHz * 1.6), t, 0.1);
+    // Every prop hums at its blade-pass frequency (what a prop mostly sounds
+    // like); each extra blade adds whine. Square tips and a pusher's wake
+    // make it a rasp, rich in harmonics, rather than a hum.
     const rasp = (square ? 0.02 : 0) + (pusher ? 0.03 : 0);
     const bladeType = rasp ? 'sawtooth' : 'triangle';
     if (this.blade.type !== bladeType) this.blade.type = bladeType;
     this.blade.frequency.setTargetAtTime(bladeHz, t, 0.05);
-    this.bladeGain.gain.setTargetAtTime(on * whoosh * (0.025 * Math.max(0, blades - 2) + rasp) * (0.4 + 0.6 * Math.min(1, load)), t, 0.05);
+    this.bladeGain.gain.setTargetAtTime(on * whoosh * (0.03 + 0.025 * Math.max(0, blades - 2) + rasp) * (0.4 + 0.6 * Math.min(1, load)), t, 0.05);
     const ws = Math.min(1, aircraft.airspeed / 25);
     this.windGain.gain.setTargetAtTime(fpv ? ws * ws * 0.35 : ws * ws * 0.05, t, 0.1);
     this.windFilter.frequency.setTargetAtTime(300 + ws * 900, t, 0.1);
