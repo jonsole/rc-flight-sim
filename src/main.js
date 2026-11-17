@@ -103,7 +103,7 @@ const rig = new CameraRig(settings);
 // Scenery shadows (redrawn only when the sun moves; smaller map on phones),
 // and the aeroplane's own shadow, drawn every frame.
 world.attachShadows(new Shadows(world.sun, { mapSize: quality.shadowMap }));
-const planeShadow = new PlaneShadow(world.scene, ground);
+const planeShadow = new PlaneShadow(world.scene, ground, { project: true }); // (onto trees and buildings too)
 // Looking into the sun washes the picture out (src/view/glare.js).
 const glare = new SunGlare();
 

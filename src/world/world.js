@@ -1314,6 +1314,7 @@ export class World {
     const table = new Mesh(new BoxGeometry(2, 0.06, 0.8), new MeshStandardMaterial({ color: '#c8c8c8' }));
     table.position.set(tx, 0.75, tz);
     table.castShadow = true;
+    shadowy(table);
     this.club.add(table);
     for (const dx of [-0.9, 0.9]) {
       for (const dz of [-0.3, 0.3]) {

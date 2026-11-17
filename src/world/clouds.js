@@ -36,11 +36,39 @@ float cloudDensity(vec2 xz) {
 }
 `;
 
+/**
+ * The aeroplane's shadow, on whatever it falls on (src/view/planeShadow.js
+ * sets these each frame): its blurred silhouette seen from the sun, placed by
+ * that view's centre and axes, and how far towards the sun the aeroplane is
+ * (only what's beyond it, away from the sun, is shaded).
+ */
+export const planeShadowUniforms = {
+  psMask: { value: null },
+  psCam: { value: new Vector3() },
+  psRight: { value: new Vector3(1, 0, 0) },
+  psUp: { value: new Vector3(0, 1, 0) },
+  psHalf: { value: 1 },
+  psSun: { value: new Vector3(0, 1, 0) },
+  psDepth: { value: 0 },
+  psOn: { value: 0 },
+};
+
 const UNIFORM_DECLS = /* glsl */ `
 uniform vec2 cloudOffset;
 uniform float cloudCover;
 uniform vec3 cloudSunDir;
 uniform float cloudShadowStrength;
+`;
+
+const PLANE_DECLS = /* glsl */ `
+uniform sampler2D psMask;
+uniform vec3 psCam;
+uniform vec3 psRight;
+uniform vec3 psUp;
+uniform float psHalf;
+uniform vec3 psSun;
+uniform float psDepth;
+uniform float psOn;
 `;
 
 export class CloudLayer {
@@ -123,7 +151,7 @@ export function addCloudShadows(material) {
   const prev = material.onBeforeCompile;
   material.onBeforeCompile = (shader, renderer) => {
     prev?.(shader, renderer);
-    Object.assign(shader.uniforms, cloudUniforms);
+    Object.assign(shader.uniforms, cloudUniforms, planeShadowUniforms);
     // CLOUD_PER_VERTEX (leaf cards, the distant trees' pictures: small next
     // to a cloud's shadow): worked out once per vertex, not per pixel, as
     // their many overlapping layers would make it costly.
@@ -142,7 +170,7 @@ export function addCloudShadows(material) {
         }
         #endif`);
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${UNIFORM_DECLS}\nvarying vec3 vCloudWorld;\n#ifdef CLOUD_PER_VERTEX\nvarying float vCloudShade;\n#endif\n${NOISE}`)
+      .replace('#include <common>', `#include <common>\n${UNIFORM_DECLS}\n${PLANE_DECLS}\nvarying vec3 vCloudWorld;\n#ifdef CLOUD_PER_VERTEX\nvarying float vCloudShade;\n#endif\n${NOISE}`)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
         {
           #ifdef CLOUD_PER_VERTEX
@@ -153,6 +181,16 @@ export function addCloudShadows(material) {
           vec2 at = vCloudWorld.xz + cloudSunDir.xz / up * (${CLOUD_HEIGHT.toFixed(1)} - vCloudWorld.y);
           float shade = 1.0 - cloudShadowStrength * cloudDensity(at);
           #endif
+          // The aeroplane's shadow: no direct sun where its silhouette falls,
+          // beyond it from the sun.
+          if (psOn > 0.5) {
+            vec3 d = vCloudWorld - psCam;
+            vec2 uv = vec2(dot(d, psRight), dot(d, psUp)) / (2.0 * psHalf) + 0.5;
+            if (uv.x > 0.0 && uv.x < 1.0 && uv.y > 0.0 && uv.y < 1.0) {
+              float beyond = psDepth - dot(vCloudWorld, psSun);
+              shade *= 1.0 - texture2D(psMask, uv).r * smoothstep(-0.02, 0.03, beyond);
+            }
+          }
           reflectedLight.directDiffuse *= shade;
           reflectedLight.directSpecular *= shade;
         }`);

@@ -1,15 +1,19 @@
-// An aeroplane's shadow on the ground, drawn every frame.
+// An aeroplane's shadow, drawn every frame.
 //
 // The model's silhouette is rendered from the sun's direction into a small
 // texture, blurred by the aeroplane's height above the ground (a model on
 // the runway casts a crisp shadow; the higher it flies the softer and
-// fainter it gets, as the sun is a disc, not a point), and laid on the
-// ground where the shadow falls.
+// fainter it gets, as the sun is a disc, not a point). With `project` (the
+// player's own aeroplane) it falls on everything lit by the sun beyond it -
+// the ground, trees, bushes, buildings, cars (src/world/clouds.js
+// planeShadowUniforms, in every material with addCloudShadows); otherwise
+// (other players') it is laid on the ground as a decal.
 import {
   OrthographicCamera, WebGLRenderTarget, MeshBasicMaterial, ShaderMaterial, Mesh, PlaneGeometry, Vector2, Vector3,
   Scene, Color, LinearFilter,
 } from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
+import { planeShadowUniforms } from '../world/clouds.js';
 
 const RES = 256;
 const SUN_TAN = Math.tan((0.53 * Math.PI) / 180);
@@ -39,9 +43,11 @@ export class PlaneShadow {
   /**
    * @param {import('three').Scene} scene  the world (the silhouette is drawn from it)
    * @param {{ heightAt(x: number, z: number): number }} ground
+   * @param {{ project?: boolean }} [opts]  project: onto everything (only one may)
    */
-  constructor(scene, ground) {
+  constructor(scene, ground, { project = false } = {}) {
     this.scene = scene;
+    this.project = project;
     this.ground = ground;
     this.layer = nextLayer++;
     if (nextLayer > 31) nextLayer = 2;
@@ -89,7 +95,7 @@ export class PlaneShadow {
     this.decal = new Mesh(new PlaneGeometry(1, 1).rotateX(-Math.PI / 2), this.decalMat);
     this.decal.renderOrder = 2;
     this.decal.frustumCulled = false;
-    scene.add(this.decal);
+    if (!project) scene.add(this.decal);
     this.model = null;
   }
 
@@ -113,6 +119,7 @@ export class PlaneShadow {
    * @param {number} strength   0..1 how dark, matching the scenery's shadows (World.shadowDarkness)
    */
   update(renderer, position, towards, strength) {
+    if (this.project) planeShadowUniforms.psOn.value = 0;
     if (!this.model || !this.model.root.visible || strength < 0.02 || towards.y < 0.05) {
       this.decal.visible = false;
       return;
@@ -179,6 +186,20 @@ export class PlaneShadow {
     renderer.setClearColor(prevClear, prevAlpha);
     renderer.autoClear = prevAuto;
 
+    if (this.project) {
+      // 3. Onto everything beyond it from the sun (src/world/clouds.js).
+      const p = planeShadowUniforms;
+      p.psMask.value = this.rtA.texture;
+      p.psCam.value.copy(cam.position);
+      p.psRight.value.setFromMatrixColumn(cam.matrixWorld, 0);
+      p.psUp.value.setFromMatrixColumn(cam.matrixWorld, 1);
+      p.psHalf.value = half;
+      p.psSun.value.copy(towards);
+      // (Its own materials don't take this, so it doesn't shade itself.)
+      p.psDepth.value = position.dot(towards);
+      p.psOn.value = 1;
+      return;
+    }
     // 3. Lay it on the ground. The decal is a flat square big enough for the
     // shadow's footprint (stretched along the ground in low sun).
     const u = this.decalMat.uniforms;
@@ -195,6 +216,7 @@ export class PlaneShadow {
   }
 
   dispose() {
+    if (this.project) planeShadowUniforms.psOn.value = 0;
     this.scene.remove(this.decal);
     this.rtA.dispose();
     this.rtB.dispose();
