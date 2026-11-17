@@ -134,6 +134,7 @@ export function bakeImpostors(renderer, shapes, tile = 128) {
     mat.uniforms.uMode.value = mode;
     mat.uniforms.uLeafy.value = leafy;
     shapes.forEach((s, col) => {
+      if (!s) return; // (a shape this site doesn't have: left empty)
       // (Its own leaves: a row of the leaf atlas; broadleaf crowns, beech.)
       mat.uniforms.uLeafRow.value = s.leafRow ?? LEAF_ROWS.indexOf('beech');
       const R = s.stretch ?? 1; // its height for its width, typically

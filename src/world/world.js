@@ -1123,16 +1123,23 @@ export class World {
       this.scene.add(m);
     }
     // The wood: plain branches (with the leafy crowns), and close up the
-    // detailed branches and trunks. Branches show only out of leaf.
-    for (const m of lod.woodMeshes) {
+    // detailed branches and trunks, each kind made when first needed (so
+    // set up as it arrives). Branches show only out of leaf.
+    const addWood = (m) => {
       const role = m.userData.role;
       m.castShadow = role === 'twigs'; // (the plain ones cast the shadows)
       m.receiveShadow = true;
       m.userData.kind = kind;
       if (kind === 'tree') m.userData.trees = list;
       this.scene.add(m);
-      if (role !== 'closeTrunk' && !woodAlways) this.twigMeshes.push(m);
-    }
+      if (role !== 'closeTrunk' && !woodAlways) {
+        this.twigMeshes.push(m);
+        m.visible = this.twigsOn ?? true;
+      }
+      if (this.shadows && role === 'twigs') this.shadows.dirty = true;
+    };
+    for (const m of lod.woodMeshes) addWood(m);
+    if (lod.o.wood) lod.o.wood.added = addWood;
   }
 
   /** A species' wood (cached): plain or close-up branches for a crown shape, or a close-up trunk. */
@@ -1179,11 +1186,16 @@ export class World {
     const bushR = avg(ob.bushes, (b) => (b.h * 0.55) / b.w, 1);
     const coniferR = (sp) => avg(ob.trees.filter((t) => t.conifer && speciesOf(t).name === sp), (t) => crownOf(t).ch / crownOf(t).r, (1 - CONIFER[sp].base) / CONIFER[sp].crownW);
     // Columns: the broadleaf crowns, the bushes, then a conifer per species.
+    // Only the shapes this site has are drawn (no conifer pictures at a
+    // site without conifers): the rest are left empty.
+    const has = new Set(ob.trees.filter((t) => t.conifer).map((t) => speciesOf(t).name));
+    const anyBroad = broad.length > 0;
+    const anyBush = ob.bushes.length > 0;
     const shapes = [
       // (Drawn from the same cards as the leafy ones at this quality.)
-      ...CROWN_SEEDS.map((sd) => ({ leafy: fluffyCrown(sd, this.quality.leafy.detail), twigs: crownWood(sd), stretch: treeR(sd) })),
-      ...leafyBushShapes('blob').map((g, k) => ({ leafy: g, twigs: bushTwigShapes()[k], leafRow: LEAF_ROWS.indexOf('hawthorn'), stretch: bushR })),
-      ...CONIFER_NAMES.map((sp) => ({ leafy: fluffyConifer(CONIFER[sp], 11, this.quality.leafy.detail), twigs: coniferWood(CONIFER[sp], 11), leafRow: LEAF_ROWS.indexOf(leafName(sp)), stretch: coniferR(sp) })),
+      ...CROWN_SEEDS.map((sd) => (anyBroad ? { leafy: fluffyCrown(sd, this.quality.leafy.detail), twigs: crownWood(sd), stretch: treeR(sd) } : null)),
+      ...(anyBush ? leafyBushShapes('blob').map((g, k) => ({ leafy: g, twigs: bushTwigShapes()[k], leafRow: LEAF_ROWS.indexOf('hawthorn'), stretch: bushR })) : [null, null]),
+      ...CONIFER_NAMES.map((sp) => (has.has(sp) ? { leafy: fluffyConifer(CONIFER[sp], 11, this.quality.leafy.detail), twigs: coniferWood(CONIFER[sp], 11), leafRow: LEAF_ROWS.indexOf(leafName(sp)), stretch: coniferR(sp) } : null)),
     ];
     const atlas = bakeImpostors(this.renderer, shapes, this.quality.leafy.tile);
     this.impMat = addLodFade(makeImpostor(addLeafShading(addCloudShadows(new MeshLambertMaterial())), atlas), true);

@@ -7,7 +7,7 @@
 // collisions with this player's aeroplane.
 import { Vector3, Quaternion, Sprite, SpriteMaterial, CanvasTexture, SRGBColorSpace } from 'three';
 import { Aircraft } from '../sim/aircraft.js';
-import { getAircraft } from '../aircraft/index.js';
+import { getAircraft, loadModelFile } from '../aircraft/index.js';
 import { buildShape, sweptHit } from '../net/collide.js';
 import { addNavLights } from './navlights.js';
 
@@ -25,9 +25,12 @@ const shapes = new Map(); // aircraft id -> collision shape
 /** Collision shape for an aeroplane type (built once from a spare model). */
 export function shapeFor(id) {
   if (!shapes.has(id)) {
-    const m = getAircraft(id).createModel();
-    shapes.set(id, buildShape(m.root));
+    const a = getAircraft(id);
+    const m = a.createModel();
+    const shape = buildShape(m.root);
     dispose(m.root);
+    if (!a.fileScene) return shape; // (its model isn't loaded yet: not kept)
+    shapes.set(id, shape);
   }
   return shapes.get(id);
 }
@@ -91,6 +94,9 @@ export class Peers {
     // A flight model that is never stepped: it just carries the received
     // state in the shape the 3D model's update() expects.
     const proxy = new Aircraft(entry.def, { ground: this.ground });
+    // (Its model file loads if it hasn't: rebuilt then, see update.)
+    const loaded = !!entry.fileScene;
+    if (!loaded) loadModelFile(entry.id);
     const model = entry.createModel();
     model.setPilotVisible(true);
     const nav = addNavLights(model);
@@ -124,6 +130,7 @@ export class Peers {
       pose: { p: new Vector3(), q: new Quaternion(), state: null },
       sweep: {},
       shown: false,
+      loaded,
     };
   }
 
@@ -155,8 +162,8 @@ export class Peers {
     const myPose = me ? { p: me.aircraft.position, q: me.aircraft.orientation } : null;
     for (const peer of peers.values()) {
       let v = this.views.get(peer.id);
-      if (v && (v.aircraft !== peer.aircraft || v.name !== peer.name)) {
-        this.#remove(peer.id); // changed aeroplane or name: rebuild
+      if (v && (v.aircraft !== peer.aircraft || v.name !== peer.name || (!v.loaded && getAircraft(peer.aircraft).fileScene))) {
+        this.#remove(peer.id); // changed aeroplane or name, or its model has arrived: rebuild
         v = null;
       }
       if (!v) {

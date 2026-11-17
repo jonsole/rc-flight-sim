@@ -164,9 +164,10 @@ export class CrownLod {
       this.spName = items.map((_, i) => this.who?.[i]?.name ?? '');
       this.tm = w.trunkMatrix ? items.map((it) => w.trunkMatrix(it, new Matrix4())) : null;
       this.trunkKind = items.map((it) => w.trunkKind?.(it) ?? 0);
+      // (Its geometry is only made when a tree first needs it: woodMesh.)
       const make = (map, key, geo, mat, role) => {
         if (!map.has(key)) {
-          map.set(key, { geo: geo(), mat, role, n: 0 });
+          map.set(key, { geo, mat, role, n: 0 });
         }
         map.get(key).n++;
       };
@@ -192,23 +193,38 @@ export class CrownLod {
           make(trunks, kt, () => w.trunk(this.trunkKind[i], sp), w.trunkMat, 'closeTrunk');
         }
       });
-      const build = (map) => new Map([...map].map(([k, { geo, mat, role, n: cap }]) => {
-        const m = new InstancedMesh(geo, mat, cap);
-        m.count = 0;
-        m.userData.role = role;
-        // (Fades with its crown, for the plain branches.)
-        geo.setAttribute('aLod', new InstancedBufferAttribute(new Float32Array(cap), 1));
-        this.woodMeshes.push(m);
-        return [k, m];
-      }));
-      this.plainWood = build(plain);
-      this.closeWood = build(close);
-      this.closeTrunk = build(trunks);
+      this.plainWood = plain;
+      this.closeWood = close;
+      this.closeTrunk = trunks;
     }
     this.isLeafy = items.map(() => false);
     this.since = items.map(() => -1e4); // when it last changed (long ago: no fade)
     this.fadingUntil = 0;
     this.at = null;
+  }
+
+  /**
+   * The mesh drawing one kind of wood (a crown shape and species, plain or
+   * close up; or a trunk), made the first time a tree needs it: most kinds
+   * are never needed (close-up wood only for trees right by the camera).
+   * o.wood.added(mesh) puts a new one in the scene.
+   */
+  woodMesh(map, key) {
+    const e = map.get(key);
+    if (!e) return null;
+    if (!e.mesh) {
+      const geo = e.geo();
+      const m = new InstancedMesh(geo, e.mat, e.n);
+      m.count = 0;
+      m.userData.role = e.role;
+      // (Fades with its crown, for the plain branches.)
+      geo.setAttribute('aLod', new InstancedBufferAttribute(new Float32Array(e.n), 1));
+      m.boundingSphere = this.sphere;
+      e.mesh = m;
+      this.woodMeshes.push(m);
+      this.o.wood.added?.(m);
+    }
+    return e.mesh;
   }
 
   /** The time of year (day 1-366): each tree's colour and leaf fall, for its species. */
@@ -295,12 +311,12 @@ export class CrownLod {
       this.o.onDraw(this.items[i], mesh, slot);
       if (this.plainWood) {
         // Plain branches with the leafy crown (fading with it).
-        if (a) putWood(this.plainWood.get(this.plainKey[i]), this.m[i], i, leafy ? s : -s);
+        if (a) putWood(this.woodMesh(this.plainWood, this.plainKey[i]), this.m[i], i, leafy ? s : -s);
         // Close: detailed wood (sorted generously: the shader makes the
         // switch at exactly closeR from where the camera is now).
         if (d2 < closeSort2) {
-          if (this.closeKey[i]) putWood(this.closeWood.get(this.closeKey[i]), this.m[i], i);
-          if (this.tm && this.trunkKey[i]) putWood(this.closeTrunk.get(this.trunkKey[i]), this.tm[i], i);
+          if (this.closeKey[i]) putWood(this.woodMesh(this.closeWood, this.closeKey[i]), this.m[i], i);
+          if (this.tm && this.trunkKey[i]) putWood(this.woodMesh(this.closeTrunk, this.trunkKey[i]), this.tm[i], i);
         }
       }
     }
