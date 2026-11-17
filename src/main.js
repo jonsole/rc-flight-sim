@@ -281,6 +281,7 @@ function applySettings() {
   wind.turbulence = settings.turbulence;
   applyTime(); // (and the cloud cover)
   world.setGodRays(settings.godRays === false ? 0 : 1);
+  world.setVolumetricClouds(settings.clouds3d !== false);
   sound.volume = settings.volume;
   osd.showHud = settings.showHud;
   const showTouch = settings.touchControls === 'on' || (settings.touchControls === 'auto' && (TOUCH_DEVICE || touchSeen));
@@ -830,6 +831,7 @@ function frame(now) {
     }
   }
   glare.update(rig.camera, world, obstacles, dt, settings.sunGlare !== false && !editor?.active);
+  world.renderClouds(renderer, rig.camera); // (3D clouds, High graphics)
   renderer.render(world.scene, rig.camera);
   if (editor.active) osd.clear();
   else osd.draw(rig.mode, aircraft, {

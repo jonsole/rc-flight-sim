@@ -315,6 +315,12 @@ export class CloudLayer {
     this.#show();
   }
 
+  /** Show the low layer in 3D instead (src/world/volclouds.js), or flat. */
+  setVolumetric(on) {
+    this.volumetric = on;
+    this.#show();
+  }
+
   /** Cover (0..1): how much of the sky the low layer covers (cirrus shows whatever it is). */
   setCover(cover) {
     this.cover = cover;
@@ -327,7 +333,8 @@ export class CloudLayer {
     // clouds are left out by cover 0.)
     cloudUniforms.cloudCover.value = this.lowOn ? cover : 0;
     const cirrus = this.cirrusUniforms.cirrusAmount.value > 0;
-    this.mesh.material.visible = this.lowOn && cover > 0.01;
+    // (The flat layer hidden while the 3D clouds show: src/world/volclouds.js.)
+    this.mesh.material.visible = this.lowOn && cover > 0.01 && !this.volumetric;
     this.mesh.visible = (this.lowOn && cover > 0.01) || cirrus;
     this.cirrus.visible = cirrus;
   }
