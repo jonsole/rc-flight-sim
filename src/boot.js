@@ -41,7 +41,11 @@ load()
     if (status) status.textContent = 'Loading aircraft…';
     return models;
   })
-  .then(() => import('./main.js'))
+  .then(() => {
+    if (status) status.textContent = 'Building the scenery…';
+    // (A moment for the message to show before the build takes over.)
+    return new Promise((r) => setTimeout(r, 30)).then(() => import('./main.js'));
+  })
   .then(() => {
     if (status) status.textContent = 'Choose your aircraft';
     if (start) start.disabled = false;
