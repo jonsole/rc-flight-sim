@@ -423,6 +423,14 @@ export class Aircraft {
 
     // Small extra rotational damping for unmodelled structure.
     _m.addScaledVector(this.omega, -0.004);
+    // A model's own extra damping (def.rateDamping: [roll, yaw, pitch],
+    // N·m per rad/s), for one that should feel locked in.
+    const rd = def.rateDamping;
+    if (rd) {
+      _m.x -= rd[0] * this.omega.x;
+      _m.y -= rd[1] * this.omega.y;
+      _m.z -= rd[2] * this.omega.z;
+    }
 
     this.lastForces.aero.copy(_f);
     this.lastForces.moment.copy(_m);
