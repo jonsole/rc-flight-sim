@@ -169,17 +169,24 @@ export class VolumetricClouds {
           float t = cloudThreshold();
           float k = (n - t) / (cloudShape.w * 3.0 + 0.1);
           if (k <= 0.0) return 0.0;
-          float top = 0.25 + 0.75 * pow(min(k, 1.0), 0.6); // its top (fraction of the layer)
+          float kk = min(k, 1.0);
+          float top = 0.25 + 0.75 * pow(kk, 0.6); // its top (fraction of the layer)
           float h = (p.y - cloudShape.x) / cloudShape.y;
-          float shape = smoothstep(0.0, 0.06, h) * (1.0 - smoothstep(top * 0.55, top, h));
-          float d = smoothstep(0.0, 0.25, k) * shape;
-          if (d <= 0.0) return 0.0;
           // (Drifting with the clouds, rising a little.)
           vec3 q = vec3(p.x + cloudOffset.x, p.y - cloudEvolve.x * 300.0, p.z + cloudOffset.y) / 900.0;
+          // Its base: flattish, but higher under the thin edges (the
+          // underside curving up to them), and lumpy from cloud to cloud.
+          float lump = texture(detail, vec3(q.xz * 0.23, 0.37)).r;
+          float bottom = 0.16 * (1.0 - kk) * (1.0 - kk) + 0.07 * (lump - 0.5) + 0.03;
+          float shape = smoothstep(bottom, bottom + 0.1, h) * (1.0 - smoothstep(top * 0.55, top, h));
+          float d = smoothstep(0.0, 0.25, k) * shape;
+          if (d <= 0.0) return 0.0;
           float det = texture(detail, q).r;
           if (lod > 0.5) det = det * 0.7 + texture(detail, q * 3.1).r * 0.3;
-          // Thin parts eaten away more than the cores.
-          return clamp((d - (1.0 - det) * 0.55 * (1.1 - d)) * 1.6, 0.0, 1.0);
+          // Thin parts eaten away more than the cores, and the underside more
+          // (ragged, not ruled flat).
+          float under = 1.0 - smoothstep(bottom, bottom + 0.2, h);
+          return clamp((d - (1.0 - det) * (0.55 + 0.35 * under) * (1.1 - d)) * 1.6, 0.0, 1.0);
         }
         void main() {
           vec4 v = invProj * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
@@ -223,7 +230,7 @@ export class VolumetricClouds {
             float powder = 1.0 - exp(-d * 6.0);
             // Sky light: brighter higher in the cloud.
             float hh = clamp((p.y - base) / T, 0.0, 1.0);
-            vec3 amb = mix(shadeColor * 0.55, mix(shadeColor, lightColor, 0.5) * 0.85, hh);
+            vec3 amb = mix(shadeColor * 0.42, mix(shadeColor, lightColor, 0.5) * 0.85, hh);
             vec3 S = sunCol * sunT * phase * mix(1.0, powder, 0.5) * 2.2 + amb;
             float a = 1.0 - exp(-d * sigma * dt);
             light += trans * a * S;
