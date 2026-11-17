@@ -237,3 +237,6 @@ body.touch #splash .keys-only { display: none; }
 .tune-note { display: block; color: #8a93a0; margin-top: 4px; text-align: right; }
 .tune-group > .hint { padding-bottom: 10px; }
 .tune-files { margin-top: 10px; gap: 8px; }
+/* Start-up progress (src/ui/loading.js). */
+#splash .load-bar { height: 4px; background: rgba(255,255,255,0.12); border-radius: 2px; overflow: hidden; margin: -4px 0 10px; }
+#splash .load-bar > div { height: 100%; width: 0; background: #e0a030; transition: width 0.15s; }

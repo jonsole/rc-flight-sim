@@ -28,6 +28,7 @@ import { QUALITY, qualityPreset, viewDistance } from './world/quality.js';
 import { tunedDef, loadTuning } from './sim/tuning.js';
 import { GoogleTiles } from './world/googleTiles.js';
 import { cardUniforms } from './world/fluffy.js';
+import { setStage, nextFrame } from './ui/loading.js';
 import { SunGlare } from './view/glare.js';
 import { weatherFor } from './world/mist.js';
 import { loadEdits } from './sim/edits.js';
@@ -92,7 +93,9 @@ renderer.shadowMap.type = PCFSoftShadowMap;
 // Scenery edits for this field (src/sim/edits.js), before anything is built.
 loadEdits(LOCATION.id, LOCATION.layout.edits);
 const obstacles = new Obstacles();
-const world = new World(obstacles, { quality, viewDistance: viewDistance(settings), treeStyle: settings.treeStyle, renderer });
+const world = new World(obstacles, { quality, viewDistance: viewDistance(settings), treeStyle: settings.treeStyle, renderer, defer: true });
+// Built a step at a time, the start screen showing how far it's got.
+await world.build((f) => setStage('Building the scenery…', f), nextFrame);
 const wind = new Wind();
 wind.setTrees(obstacles.trees); // trees shelter the field and stir up the air behind them
 const input = new Input();

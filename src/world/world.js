@@ -14,7 +14,7 @@ import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail, groundUniforms } from './ground.js';
 import { seasonFor } from './seasons.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
-import { fluffyCrown, crownWood, fluffyConifer, coniferWood, makeFluffy, fluffyDepthMaterial, pickAsBall, setLeafDetail, setLeafSpecies, LEAF_ROWS } from './fluffy.js';
+import { fluffyCrown, crownWood, fluffyConifer, coniferWood, makeFluffy, fluffyDepthMaterial, pickAsBall, setLeafDetail, setLeafSpecies, leafTexture, LEAF_ROWS } from './fluffy.js';
 import { CrownLod, addLodFade, addCloseSwitch, closeUniforms } from './lod.js';
 import { LowCloud } from './mist.js';
 import { installVolumetricFog, fog4, FIELD_GLSL } from './volfog.js';
@@ -391,15 +391,42 @@ export class World {
     // drawn by the volumetric fog (volfog.js).
     this.lowCloud = new LowCloud();
     this.#lights();
-    this.#terrain();
-    // The club's own things (runway, pad, fence, pits) in the club frame.
-    this.club = new Group();
-    this.club.rotation.y = -clubAngle();
-    this.scene.add(this.club);
-    this.#runway();
-    this.#site();
-    this.#props();
-    this.setTime(14, 172);
+    // The rest, in steps (build): all now, or (opts.defer) by the caller,
+    // with the start screen showing how far it's got.
+    this.steps = [
+      // [what, rough share of the time, do it]
+      ['ground', 1, () => {
+        this.#terrain();
+        // The club's own things (runway, pad, fence, pits) in the club frame.
+        this.club = new Group();
+        this.club.rotation.y = -clubAngle();
+        this.scene.add(this.club);
+        this.#runway();
+      }],
+      ['leaves', 3, () => this.fluffy && leafTexture()],
+      ['distant trees', 1, () => this.fluffy && this.#impostorMat()],
+      ['trees and bushes', 4, () => this.#site()],
+      ['the rest', 1, () => {
+        this.#props();
+        this.setTime(14, 172);
+      }],
+    ];
+    if (!opts.defer) for (const [, , run] of this.steps) run();
+  }
+
+  /**
+   * Build the rest of the world (opts.defer), a step at a time, letting the
+   * screen update between them. onProgress(fraction 0-1).
+   */
+  async build(onProgress = () => {}, between = () => Promise.resolve()) {
+    const total = this.steps.reduce((a, [, w]) => a + w, 0);
+    let done = 0;
+    for (const [, w, run] of this.steps) {
+      run();
+      done += w;
+      onProgress(done / total);
+      await between();
+    }
   }
 
   #sky() {

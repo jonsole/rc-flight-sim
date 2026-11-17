@@ -6,7 +6,7 @@
 // - Walk a line: a vertex every few metres as you walk (fences, hedges, edges).
 // Everything is kept in IndexedDB until cleared, and exported as a zip of
 // survey.json and the photos.
-import { LOCATIONS } from '../sim/location.js';
+import { LOCATIONS, loadSiteData } from '../sim/location.js';
 import { wgs84ToOsgb, osgbToLocal, averageFixes, distance } from './geo.js';
 import { surveyZip } from './export.js';
 import { openStore } from './store.js';
@@ -156,7 +156,7 @@ async function askCompass() {
 // ---------- site ----------
 async function chooseSite(id) {
   savePrefs({ site: id });
-  const loc = LOCATIONS.find((l) => l.id === id && l.load);
+  const loc = LOCATIONS.find((l) => l.id === id && l.dataUrl);
   if (!loc) {
     state.site = null;
     setFollow(true);
@@ -165,7 +165,7 @@ async function chooseSite(id) {
   }
   $('map-info').textContent = `Loading ${loc.name} map…`;
   try {
-    const data = (await loc.load()).default;
+    const data = await loadSiteData(loc);
     const image = new Image();
     image.src = `data:image/png;base64,${data.ground.png}`;
     await image.decode();
@@ -670,9 +670,9 @@ async function init() {
   if (prefs.duration) $('dur').value = String(prefs.duration);
 
   const sel = $('site');
-  for (const l of LOCATIONS.filter((x) => x.load)) sel.add(new Option(l.name, l.id));
+  for (const l of LOCATIONS.filter((x) => x.dataUrl)) sel.add(new Option(l.name, l.id));
   sel.add(new Option('No site (GPS only)', ''));
-  sel.value = prefs.site ?? LOCATIONS.find((x) => x.load)?.id ?? '';
+  sel.value = prefs.site ?? LOCATIONS.find((x) => x.dataUrl)?.id ?? '';
   sel.addEventListener('change', () => chooseSite(sel.value));
 
   const chips = $('chips');

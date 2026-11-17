@@ -86,7 +86,7 @@ const loads = new Map(); // aircraft id -> promise of its model file
  * Load one aircraft's model file (once; later calls share it). Resolves
  * true once its model is ready, false if it has none or it failed.
  */
-export function loadModelFile(id) {
+export function loadModelFile(id, onProgress) {
   const a = getAircraft(id);
   if (!loads.has(a.id)) {
     loads.set(a.id, (async () => {
@@ -98,7 +98,7 @@ export function loadModelFile(id) {
       }
       try {
         gltf ||= import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) => new GLTFLoader());
-        a.fileScene = (await (await gltf).loadAsync(url)).scene;
+        a.fileScene = (await (await gltf).loadAsync(url, (e) => e.total && onProgress?.(e.loaded / e.total))).scene;
         for (const f of modelListeners) f(a.id);
         return true;
       } catch (e) {
