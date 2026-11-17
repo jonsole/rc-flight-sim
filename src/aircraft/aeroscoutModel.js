@@ -6,11 +6,11 @@
 // set by the JSON file's "colors".
 
 import {
-  Group, Mesh, MeshStandardMaterial, Vector3, Color, CylinderGeometry,
+  Group, Mesh, MeshStandardMaterial, Vector3, Color, CylinderGeometry, BufferGeometry,
   SphereGeometry, TorusGeometry, BoxGeometry, DoubleSide, Shape, ExtrudeGeometry,
   Quaternion,
 } from 'three';
-import { loft, mirrorZ, airfoilRing } from './geom.js';
+import { loft, mirrorZ, airfoilRing, naca } from './geom.js';
 import { createProp, shownRpm } from './prop.js';
 
 const paint = (color) => new MeshStandardMaterial({ color, roughness: 0.75, metalness: 0 });
@@ -29,6 +29,37 @@ function slab(pts, t) {
   const g = new ExtrudeGeometry(shape, { depth: t, bevelEnabled: false, curveSegments: 1 });
   g.translate(0, 0, -t / 2);
   return g;
+}
+
+/** Clip polygon `pts` to the convex polygon `win` ([[x, y]...], either winding). */
+function clipPoly(pts, win) {
+  let out = pts;
+  let area = 0;
+  for (let i = 0; i < win.length; i++) {
+    const [x0, y0] = win[i];
+    const [x1, y1] = win[(i + 1) % win.length];
+    area += x0 * y1 - x1 * y0;
+  }
+  const sgn = Math.sign(area) || 1;
+  for (let i = 0; i < win.length && out.length; i++) {
+    const a = win[i];
+    const b = win[(i + 1) % win.length];
+    const side = (p) => sgn * ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]));
+    const next = [];
+    for (let k = 0; k < out.length; k++) {
+      const p = out[k];
+      const q = out[(k + 1) % out.length];
+      const sp = side(p);
+      const sq = side(q);
+      if (sp >= 0) next.push(p);
+      if ((sp >= 0) !== (sq >= 0)) {
+        const t = sp / (sp - sq);
+        next.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]);
+      }
+    }
+    out = next;
+  }
+  return out;
 }
 
 /** Rounded-rectangle cross-section ring at station x. */
@@ -64,16 +95,26 @@ function fusAt(L, x) {
 }
 
 export function createAeroScoutModel(L, colors = {}) {
-  const C = { main: '#f4f4f0', trim: '#d8322a', second: '#1f3f8f', canopy: '#1d2a36', ...colors };
+  // main: foam; accent and dark: the stripes; canopy; hub; optional nose and
+  // tip colours (default: main).
+  const C = { main: '#eeeeec', accent: '#e2552b', dark: '#3a3e44', canopy: '#141618', hub: '#8c9198', panel: '#66788a', ...colors };
   const root = new Group();
   root.name = 'AeroScout';
   const mainMat = paint(C.main);
-  const trimMat = paint(C.trim);
-  const secondMat = paint(C.second);
   const vcMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.75 });
   const dark = new MeshStandardMaterial({ color: '#2a2a2a', roughness: 0.8 });
   const metal = new MeshStandardMaterial({ color: '#a4a6a8', roughness: 0.35, metalness: 0.7 });
-  const glass = new MeshStandardMaterial({ color: C.canopy, roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.85, side: DoubleSide });
+  // Painted-on canopy: opaque, glossy.
+  const glass = new MeshStandardMaterial({ color: C.canopy, roughness: 0.25, metalness: 0.2, side: DoubleSide });
+  // Stripes, laid just over the surface (see fileModel.js: "decal" materials).
+  const decal = (color, name) => {
+    const m = new MeshStandardMaterial({ color, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4, side: DoubleSide });
+    m.name = name;
+    return m;
+  };
+  const accentDecal = decal(C.accent, 'decal_accent');
+  const darkDecal = decal(C.dark, 'decal_dark');
+  const panelDecal = decal(C.panel, 'decal_panel');
   const parts = {};
   const tag = (o, part) => {
     o.userData.part = part;
@@ -84,7 +125,7 @@ export function createAeroScoutModel(L, colors = {}) {
   // --- Fuselage: rounded pod into a slim boom --------------------------------
   // Paint: main colour, with the trim colour on the nose.
   const cMain = new Color(C.main);
-  const cTrim = new Color(C.trim);
+  const cTrim = new Color(C.nose || C.main);
   const xs = [];
   const st = L.fuselage;
   for (let i = 0; i < st.length - 1; i++) {
@@ -110,24 +151,97 @@ export function createAeroScoutModel(L, colors = {}) {
   );
   root.add(fus);
 
-  // Cabin windows: a windscreen sloping up to the wing and side windows.
-  {
-    const ws = [0.16, 0.13, 0.1, 0.085];
-    const scr = ws.map((x) => {
-      const [, hw, , yt] = fusAt(L, x);
-      const top = Math.min(L.wingY - 0.002, yt + 0.0015);
-      return [new Vector3(x, top - 0.012, hw * 0.75), new Vector3(x, top + 0.0015, hw * 0.55), new Vector3(x, top + 0.0015, -hw * 0.55), new Vector3(x, top - 0.012, -hw * 0.75)];
-    });
-    // Windscreen: a curved panel just over the top of the nose.
-    const screen = new Mesh(loft(scr.map((r) => r.map((p) => p.clone())), { caps: false }), glass);
-    root.add(screen);
-    for (const s of [-1, 1]) {
-      const [, hw] = fusAt(L, 0.02);
-      const g = slab([[0.105, 0.03], [0.075, 0.068], [-0.06, 0.068], [-0.075, 0.03]], 0.002);
-      const w = new Mesh(g, glass);
-      w.position.z = s * (hw + 0.0005);
-      root.add(w);
+  // Points on the fuselage surface, for paint laid over it.
+  /** z of the fuselage's side at station x and height y (rounded corners). */
+  const sideZ = (x, y) => {
+    const [, hw, yb, yt, rIn] = fusAt(L, x);
+    const r = Math.min(rIn, hw * 0.98, (yt - yb) * 0.49);
+    const dy = y > yt - r ? y - (yt - r) : y < yb + r ? yb + r - y : 0;
+    return hw - r + Math.sqrt(Math.max(0, r * r - dy * dy));
+  };
+  /** A stripe on both sides: centre height (fraction of the local depth) and half-width (m) along x. */
+  const stripe = (x0, x1, centre, halfW, mat, n = 40) => {
+    for (const side of [-1, 1]) {
+      const rs = [];
+      for (let i = 0; i <= n; i++) {
+        const x = x0 + ((x1 - x0) * i) / n;
+        const f = i / n;
+        const [, , yb, yt] = fusAt(L, x);
+        const yc = yb + (yt - yb) * centre(f);
+        const h = halfW(f);
+        const lo = new Vector3(x, yc - h, side * (sideZ(x, yc - h) + 0.0008));
+        const hi = new Vector3(x, yc + h, side * (sideZ(x, yc + h) + 0.0008));
+        rs.push([lo, hi]);
+      }
+      const pos = [];
+      for (let i = 0; i < n; i++) {
+        const [a, b] = rs[i];
+        const [c, d] = rs[i + 1];
+        pos.push(a, c, b, b, c, d);
+      }
+      const g = new BufferGeometry().setFromPoints(pos);
+      g.computeVertexNormals();
+      root.add(new Mesh(g, mat));
     }
+  };
+  // A long pinstripe from under the cabin back along the boom, and a pair of
+  // swept flashes on the cabin side, curving up towards the wing.
+  const ease = (f) => f * f * (3 - 2 * f);
+  stripe(0.2, -0.5, (f) => 0.26 + 0.2 * ease(Math.min(1, f * 1.6)), (f) => 0.0035 * (1 - 0.6 * f), accentDecal);
+  stripe(0.16, -0.085, (f) => 0.42 + 0.3 * f * f, (f) => 0.006 * Math.sin(Math.PI * Math.min(1, 0.1 + f * 0.9)) + 0.001, accentDecal);
+  stripe(0.11, -0.09, (f) => 0.6 + 0.22 * f * f, (f) => 0.0035 * Math.sin(Math.PI * Math.min(1, 0.1 + f * 0.9)) + 0.0008, darkDecal);
+
+  // A thin pinstripe along the belly, from under the nose back under the cabin.
+  {
+    const pos = [];
+    const n = 30;
+    const at = (x, dz) => {
+      const [, hw, yb, , rIn] = fusAt(L, x);
+      const r = Math.min(rIn, hw * 0.98);
+      // On the rounded bottom: the corner arc meets the flat bottom at |z| = hw - r.
+      const z = Math.max(-(hw - 0.001), Math.min(hw - 0.001, dz));
+      const flat = hw - r;
+      const y = Math.abs(z) <= flat ? yb : yb + r - Math.sqrt(Math.max(0, r * r - (Math.abs(z) - flat) ** 2));
+      return new Vector3(x, y - 0.0009, z);
+    };
+    for (let i = 0; i < n; i++) {
+      const x0 = 0.27 - (0.27 + 0.06) * (i / n);
+      const x1 = 0.27 - (0.27 + 0.06) * ((i + 1) / n);
+      pos.push(at(x0, -0.0015), at(x0, 0.0015), at(x1, -0.0015), at(x0, 0.0015), at(x1, 0.0015), at(x1, -0.0015));
+    }
+    const g = new BufferGeometry().setFromPoints(pos);
+    g.computeVertexNormals();
+    root.add(new Mesh(g, accentDecal));
+  }
+
+  // Canopy: painted over the top and upper sides of the cabin, from the nose
+  // back under the wing; its lower edge dips at the front of the cabin.
+  {
+    const xs = [];
+    for (let i = 0; i <= 24; i++) xs.push(0.245 - (0.245 + 0.03) * (i / 24));
+    const edge = (x) => {
+      const f = (0.245 - x) / 0.275; // 0 at the front, 1 at the back
+      return 0.62 - 0.22 * Math.sin(Math.PI * Math.min(1, f * 1.3)) + 0.25 * Math.max(0, f - 0.8) / 0.2;
+    };
+    const m = 14; // points around each half
+    const rings = xs.map((x) => {
+      const [, hw, yb, yt] = fusAt(L, x);
+      const yTop = Math.min(yt, L.wingY - 0.001);
+      const y0 = yb + (yt - yb) * Math.min(0.95, edge(x));
+      const pts = [];
+      // Right side up from the edge, over the top, down the left side.
+      for (let k = 0; k <= m; k++) {
+        const y = y0 + (yTop - y0) * (k / m);
+        pts.push(new Vector3(x, y + 0.0009, sideZ(x, y) + 0.0009));
+      }
+      for (let k = m; k >= 0; k--) {
+        const y = y0 + (yTop - y0) * (k / m);
+        pts.push(new Vector3(x, y + 0.0009, -(sideZ(x, y) + 0.0009)));
+      }
+      void hw;
+      return pts;
+    });
+    root.add(new Mesh(loft(rings, { caps: false }), glass));
   }
   // Pilot (hidden in the cockpit view).
   const pilot = new Group();
@@ -153,7 +267,7 @@ export function createAeroScoutModel(L, colors = {}) {
   };
   const section = (f0, f1) => airfoilRing(f0, f1, 10, tOverC, 0.04);
   const cWing = new Color(C.main);
-  const cTip = new Color(C.trim);
+  const cTip = new Color(C.tip || C.main);
   const wingPart = (z0, z1, f0, f1, n, tipFrom = Infinity) => {
     const sec = section(f0, f1);
     const rs = [];
@@ -217,9 +331,90 @@ export function createAeroScoutModel(L, colors = {}) {
     { pivot: ailL, axis: axisL },
   ];
 
+  // Wing bands: on each wing's top, an accent band along the front of the
+  // wing out to the tip that curves back near the root to the trailing
+  // edge, with a thinner dark band just behind and outboard of it.
+  {
+    const wingTop = (u, z) => {
+      const c = L.chordAt(z);
+      const f = Math.min(0.99, Math.max(0.01, u / c));
+      return wingPoint(f, naca(f, tOverC, 0.04).upper + 0.0012 / c, z);
+    };
+    /**
+     * Centreline in (u = metres aft of the leading edge, z): from the
+     * trailing edge at zTe, slanting outboard and forward to a rounded corner
+     * at (uSpan, zCorner), then spanwise at uSpan (as a fraction of the
+     * local chord) out to the tip.
+     */
+    const path = (zTe, zCorner, uSpan, radius) => {
+      const pts = [];
+      const uTe = L.chordAt(zTe) - 0.004;
+      const a = [uTe, zTe];
+      const b = [uSpan + radius, zCorner];
+      for (let i = 0; i <= 10; i++) pts.push([a[0] + (b[0] - a[0]) * (i / 10), a[1] + (b[1] - a[1]) * (i / 10)]);
+      // Rounded corner: a quadratic curve through the corner.
+      const p1 = [uSpan, zCorner];
+      const p2 = [uSpan, zCorner + radius];
+      for (let i = 1; i <= 10; i++) {
+        const t = i / 10;
+        pts.push([0, 1].map((k) => (1 - t) ** 2 * b[k] + 2 * (1 - t) * t * p1[k] + t * t * p2[k]));
+      }
+      const fSpan = uSpan / L.chordAt(zCorner + radius);
+      const zEnd = L.half - 0.004;
+      for (let i = 1; i <= 16; i++) {
+        const z = zCorner + radius + (zEnd - zCorner - radius) * (i / 16);
+        pts.push([fSpan * L.chordAt(z), z]);
+      }
+      return pts;
+    };
+    const band = (pts, width, mat) => {
+      const pos = [];
+      const edges = pts.map((p, i) => {
+        const a = pts[Math.max(0, i - 1)];
+        const b = pts[Math.min(pts.length - 1, i + 1)];
+        const du = b[0] - a[0];
+        const dz = b[1] - a[1];
+        const len = Math.hypot(du, dz) || 1;
+        const [nu, nz] = [-dz / len, du / len];
+        return [wingTop(p[0] + nu * width / 2, p[1] + nz * width / 2), wingTop(p[0] - nu * width / 2, p[1] - nz * width / 2)];
+      });
+      for (let i = 0; i < edges.length - 1; i++) {
+        const [a, b] = edges[i];
+        const [c, d] = edges[i + 1];
+        pos.push(a, c, b, b, c, d);
+      }
+      const g = new BufferGeometry().setFromPoints(pos);
+      g.computeVertexNormals();
+      wingR.add(new Mesh(g, mat));
+      wingL.add(new Mesh(mirrorZ(g), mat));
+    };
+    band(path(0.07, 0.1, 0.03, 0.06), 0.022, accentDecal);
+    band(path(0.105, 0.13, 0.058, 0.045), 0.011, darkDecal);
+
+    // Underneath: two grey-blue panels under each wing (servo bays).
+    const wingBottom = (f, z) => wingPoint(f, naca(f, tOverC, 0.04).lower - 0.0012 / L.chordAt(z), z);
+    for (const [zc, w] of [[0.23, 0.075], [0.42, 0.075]]) {
+      const rs = [];
+      for (let i = 0; i <= 6; i++) {
+        const f = 0.14 + 0.5 * (i / 6);
+        rs.push([wingBottom(f, zc - w / 2), wingBottom(f, zc + w / 2)]);
+      }
+      const pos = [];
+      for (let i = 0; i < 6; i++) {
+        const [a, b] = rs[i];
+        const [c, d] = rs[i + 1];
+        pos.push(a, b, c, b, d, c);
+      }
+      const g = new BufferGeometry().setFromPoints(pos);
+      g.computeVertexNormals();
+      wingR.add(new Mesh(g, panelDecal));
+      wingL.add(new Mesh(mirrorZ(g), panelDecal));
+    }
+  }
+
   // --- Motor pylon, motor and pusher prop ------------------------------------
   const P = L.prop;
-  const pylon = new Mesh(new BoxGeometry(0.05, P.y - 0.04, 0.03), secondMat);
+  const pylon = new Mesh(new BoxGeometry(0.05, P.y - 0.04, 0.03), mainMat);
   pylon.position.set(P.x + 0.04, (P.y + 0.04) / 2 + 0.005, 0);
   root.add(pylon);
   const motor = new Mesh(new CylinderGeometry(0.0145, 0.0145, 0.026, 18), metal);
@@ -271,11 +466,29 @@ export function createAeroScoutModel(L, colors = {}) {
   };
   const stab = new Mesh(layFlat(slab(clipX(stabOutline, hingeX, true), tailT)), mainMat);
   root.add(tag(stab, 'tail'));
+  // Stab bands: accent and dark along the front, curving back at the tips.
+  for (const [mat, xc, w, zc] of [[accentDecal, T.leX - 0.014, 0.012, hs - 0.02], [darkDecal, T.leX - 0.032, 0.007, hs - 0.04]]) {
+    const n = 24;
+    const centre = [];
+    for (let i = 0; i <= n; i++) {
+      const z = -hs + ((2 * hs) * i) / n;
+      const over = Math.max(0, Math.abs(z) - (zc - 0.05));
+      centre.push([xc - (over * over) / 0.012, z]);
+    }
+    const pts = [...centre.map(([x, z]) => [x + w / 2, z]), ...centre.reverse().map(([x, z]) => [x - w / 2, z])];
+    const piece = clipX(clipPoly(pts, stabOutline), hingeX, true);
+    if (piece.length >= 3) {
+      // On the top only: the underside of the tailplane is plain.
+      const g = layFlat(slab(piece, 0.0006));
+      g.translate(0, tailT / 2 + 0.0004, 0);
+      root.add(tag(new Mesh(g, mat), 'tail'));
+    }
+  }
   const elev = new Group();
   elev.position.set(hingeX, T.y, 0);
   const elevGeo = layFlat(slab(clipX(stabOutline, hingeX - 0.002, false), tailT));
   elevGeo.translate(-hingeX, -T.y, 0);
-  elev.add(new Mesh(elevGeo, trimMat));
+  elev.add(new Mesh(elevGeo, mainMat));
   root.add(tag(elev, 'tail'));
 
   const F = L.fin;
@@ -289,19 +502,37 @@ export function createAeroScoutModel(L, colors = {}) {
   rudder.position.set(F.hingeX, 0, 0);
   const rudGeo = slab(clipX(finOutline, F.hingeX - 0.002, false), tailT);
   rudGeo.translate(-F.hingeX, 0, 0);
-  rudder.add(new Mesh(rudGeo, trimMat));
+  rudder.add(new Mesh(rudGeo, mainMat));
   root.add(tag(rudder, 'tail'));
-  // A stripe of the second colour across the top of the fin.
-  {
-    const band = slab([[F.leX - 0.08, F.y + F.height * 0.62], [F.leX - 0.095, F.y + F.height * 0.8], [F.hingeX + 0.001, F.y + F.height * 0.8], [F.hingeX + 0.001, F.y + F.height * 0.62]], tailT + 0.0008);
-    const m = new Mesh(band, secondMat);
-    root.add(tag(m, 'tail'));
+  // Two curved bands across the upper fin and rudder: accent over dark,
+  // rising towards the back. Split at the hinge so the rudder's part moves.
+  for (const [mat, k0, k1] of [[accentDecal, 0.64, 0.76], [darkDecal, 0.52, 0.575]]) {
+    const n = 10;
+    const xa = F.leX + 0.01;
+    const xb = F.leX - F.rootChord - 0.03;
+    const yAt = (f, k) => F.y + F.height * (k + 0.14 * f * f);
+    const pts = [];
+    for (let i = 0; i <= n; i++) pts.push([xa + (xb - xa) * (i / n), yAt(i / n, k0)]);
+    for (let i = n; i >= 0; i--) pts.push([xa + (xb - xa) * (i / n), yAt(i / n, k1)]);
+    const band = clipPoly(pts, finOutline);
+    if (band.length < 3) continue;
+    for (const [part, keep] of [[null, true], [rudder, false]]) {
+      const piece = clipX(band, keep ? F.hingeX : F.hingeX - 0.002, keep);
+      if (piece.length < 3) continue;
+      const g = slab(piece, tailT + 0.0012);
+      if (part) {
+        g.translate(-F.hingeX, 0, 0);
+        part.add(new Mesh(g, mat));
+      } else {
+        root.add(tag(new Mesh(g, mat), 'tail'));
+      }
+    }
   }
 
   // --- Tricycle gear ---------------------------------------------------------------
   const MW = L.mainWheel;
   const tyreMat = new MeshStandardMaterial({ color: '#232323', roughness: 0.95 });
-  const hubMat = paint(C.second);
+  const hubMat = paint(C.hub);
   const makeWheel = (radius, width) => {
     const g = new Group();
     const tube = width / 2;

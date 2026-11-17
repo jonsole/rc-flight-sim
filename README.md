@@ -50,8 +50,9 @@ rudder (nose wheel), and takes off hands-off at full power. Its prop has square
 buzz harder and harsher than tapered ones, and the pusher prop chops through
 the wing's wake for a rasping note (*Blade tips* in the Tuning tab's
 Propeller group changes it on any model; the sound is made in `src/audio/engine.js`). The 3D model is
-drawn from the dimensions in plain club colours (white, red trim, blue):
-change `"colors"` in its JSON file and run `node scripts/export-models.mjs
+drawn from the dimensions in the real one's colours (white foam, orange and
+dark grey bands, black canopy; no maker's logos or lettering): change
+`"colors"` in its JSON file and run `node scripts/export-models.mjs
 hobbyzone-aeroscout` to repaint it in your club's colours. The manual says
 to use 70% low rates when learning: set the rates to 0.7 under
 *Menu → Transmitter → Expo & rates*.
