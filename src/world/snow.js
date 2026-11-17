@@ -109,12 +109,19 @@ export function addSnowCover(material, opts = {}) {
           float onTop = smoothstep(${flat}, ${flat} + 0.25, facing);
           vec2 sp = vSnowWorld.xz;
           // Drifts and bare patches (metres to tens of metres), and the
-          // grass poking through close up.
-          float n = 0.55 * snNoise(sp / 23.0) + 0.3 * snNoise(sp / 4.1 + 7.3) + 0.15 * snNoise(sp / 0.6 + 3.1);
-          // Darker ground (tracks, the runway's ruts) melts out first.
-          float lum = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
-          float t = 1.0 - uSnow * 1.25;
-          float s = smoothstep(t - 0.12, t + 0.08, n - 0.15 * (0.25 - lum)) * onTop;
+          // grass poking through close up. Each octave turned and the
+          // whole gently warped, so no square grid shows in the edges.
+          // (Not by the ground's colour: its texture's pixels showed.)
+          vec2 w = sp + 6.0 * vec2(snNoise(sp / 17.0 + 11.0), snNoise(sp / 17.0 + 29.0));
+          float n = 0.5 * snNoise(mat2(0.8, -0.6, 0.6, 0.8) * w / 23.0)
+                  + 0.27 * snNoise(mat2(0.28, -0.96, 0.96, 0.28) * w / 7.3 + 7.3)
+                  + 0.15 * snNoise(mat2(-0.5, -0.87, 0.87, -0.5) * w / 2.3 + 3.1)
+                  + 0.08 * snNoise(mat2(0.97, 0.26, -0.26, 0.97) * w / 0.7 + 5.7);
+          float t = 1.0 - uSnow * 1.2;
+          // The edge soft by how much the pattern changes across a pixel
+          // (no stair-steps far off), a little soft close up.
+          float e = max(0.05, 1.5 * fwidth(n));
+          float s = smoothstep(t - e, t + e, n) * onTop;
           // Snow: blue-white (brighter than a plain colour can be: snow
           // reflects nearly all the light), a faint grain, shaded hollows.
           vec3 snowCol = vec3(1.15, 1.18, 1.24) * (0.93 + 0.07 * snNoise(sp / 1.7)) * (0.96 + 0.04 * n);
