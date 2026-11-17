@@ -497,7 +497,7 @@ export class World {
             vec3 p = cameraPosition + sd * tMax * (float(i) + 0.5) / 8.0;
             vec2 at = p.xz + cloudSunDir.xz / sunUp * (base - p.y);
             float t = cloudThreshold();
-            lit += 1.0 - smoothstep(t, t + cloudShape.w, cloudCoarse(at));
+            lit += 1.0 - smoothstep(t, t + cloudShape.w, cloudNoise(at));
           }
           lit /= 8.0;
           // Brighter shafts, darker streaks (about the average, so the sky

@@ -78,19 +78,24 @@ vec2 cloudP(vec2 xz) {
   return q / cloudShape.z;
 }
 float cloudThreshold() { return mix(0.66, 0.30, cloudCover) - max(cloudShape.w - 0.1, 0.0) * 0.6; }
-// The big lumps only (cheaper: for following a line of sight up through it).
-float cloudCoarse(vec2 xz) {
-  return cFbm(cloudP(xz) + cloudEvolve * 0.15) * 0.8 + 0.1;
+// The small detail's noise (3 octaves: cheaper, and enough at that size).
+float cFbm3(vec2 p) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 3; i++) { s += a * cNoise(p); p = p * 2.03 + vec2(17.1, 9.3); a *= 0.5; }
+  return s / 0.875;
 }
-// Cloud density (0..1) at a point on the cloud layer (world x, z in m).
-float cloudDensity(vec2 xz) {
+// The cloud pattern at a point on the layer (world x, z in m): above
+// cloudThreshold() is cloud. Large lumps with crisp, cauliflower edges.
+// (The small detail changes slowly on its own as it drifts: clouds building
+// at one edge and thinning at another.)
+float cloudNoise(vec2 xz) {
   vec2 p = cloudP(xz);
-  // Large lumps with crisp, cauliflower edges.
-  // (The small detail changes slowly on its own as it drifts: clouds
-  // building at one edge and thinning at another.)
-  float n = cFbm(p + cloudEvolve * 0.15) * 0.8 + cFbm(p * 3.7 + 4.0 + cloudEvolve) * 0.2;
+  return cFbm(p + cloudEvolve * 0.15) * 0.8 + cFbm3(p * 3.7 + 4.0 + cloudEvolve) * 0.2;
+}
+// Cloud density (0..1) at a point on the cloud layer.
+float cloudDensity(vec2 xz) {
   float t = cloudThreshold();
-  return smoothstep(t, t + cloudShape.w, n);
+  return smoothstep(t, t + cloudShape.w, cloudNoise(xz));
 }
 `;
 
@@ -176,48 +181,51 @@ export class CloudLayer {
           if (dir.y < 0.002) discard;
           float base = cloudShape.x, T = cloudShape.y;
           // Up through the layer from the base: where does it meet a cloud?
+          // (Its flat base, if there's cloud right there; else on up through
+          // the gap to the side of a cloud beyond.) One pattern for outline,
+          // height and shading, so they agree.
           float t0 = (base - cameraPosition.y) / dir.y;
           float len = min(T / dir.y, 3000.0);
-          // (Its base first, from the full pattern; then on up through any
-          // gap to the side of a cloud beyond, from the big lumps.)
-          const int N = 8;
+          const int N = 7;
           float hitT = -1.0;
-          float d = cloudDensity((cameraPosition + dir * t0).xz);
-          if (d > 0.02) hitT = t0;
+          float n = cloudNoise((cameraPosition + dir * t0).xz);
+          if (n > cloudThreshold()) hitT = t0;
           else {
             for (int i = 1; i <= N; i++) {
               float t = t0 + len * float(i) / float(N);
               vec3 p = cameraPosition + dir * t;
-              if (p.y - base <= T * cloudH(cloudCoarse(p.xz))) {
+              float np = cloudNoise(p.xz);
+              if (p.y - base <= T * cloudH(np)) {
                 // (Closer to its surface: halve the step back three times.)
                 float lo = t - len / float(N), hi = t;
+                n = np;
                 for (int k = 0; k < 3; k++) {
                   float m = 0.5 * (lo + hi);
                   vec3 pm = cameraPosition + dir * m;
-                  if (pm.y - base <= T * cloudH(cloudCoarse(pm.xz))) hi = m; else lo = m;
+                  float nm = cloudNoise(pm.xz);
+                  if (pm.y - base <= T * cloudH(nm)) { hi = m; n = nm; } else lo = m;
                 }
                 hitT = hi;
                 break;
               }
             }
             if (hitT < 0.0) discard;
-            d = 1.0;
           }
           vec3 q = cameraPosition + dir * hitT;
+          float d = smoothstep(cloudThreshold(), cloudThreshold() + cloudShape.w, n);
           float f = clamp((q.y - base) / T, 0.0, 1.0); // up the cloud
           // Its surface there: the slope of the height (towards the sun is lit).
-          float e = 25.0;
-          float hx = cloudH(cloudCoarse(q.xz + vec2(e, 0.0))) - cloudH(cloudCoarse(q.xz - vec2(e, 0.0)));
-          float hz = cloudH(cloudCoarse(q.xz + vec2(0.0, e))) - cloudH(cloudCoarse(q.xz - vec2(0.0, e)));
+          float e = 30.0;
+          float hx = cloudH(cloudNoise(q.xz + vec2(e, 0.0))) - cloudH(cloudNoise(q.xz - vec2(e, 0.0)));
+          float hz = cloudH(cloudNoise(q.xz + vec2(0.0, e))) - cloudH(cloudNoise(q.xz - vec2(0.0, e)));
           vec3 nrm = normalize(vec3(-hx * T / (2.0 * e), 0.35, -hz * T / (2.0 * e)));
           float sun = clamp(dot(nrm, cloudSunDir) * 0.5 + 0.5, 0.0, 1.0);
-          // Sides lit towards the sun, brighter up the cloud; the flat bases
-          // darker under deeper cloud, lighter at the thin edges.
-          float lit = mix(0.3, 1.1, sun) * mix(0.6, 1.0, f);
-          if (hitT == t0) {
-            float deep = cloudH(cloudCoarse(q.xz));
-            lit = mix(0.5, 0.0, deep) + 0.35 * (1.0 - d);
-          }
+          // Sides lit towards the sun, brighter up the cloud; the flat base
+          // darker under deeper cloud, lighter at the thin edges - blending
+          // into each other low on the sides.
+          float sideLit = mix(0.3, 1.1, sun) * mix(0.6, 1.0, f);
+          float baseLit = mix(0.45, 0.05, cloudH(n)) + 0.3 * (1.0 - d);
+          float lit = mix(baseLit, sideLit, smoothstep(0.0, 0.12, f));
           vec3 c = mix(shadeColor, lightColor, lit);
           c = mix(c, vec3(dot(c, vec3(0.3, 0.55, 0.15))) * 0.85, grey);
           // Fade into the horizon haze far away.
