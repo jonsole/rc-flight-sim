@@ -341,6 +341,19 @@ const TRUNK_SEEDS = [3, 41, 67];
 /** The bush shapes' seeds (src/world/props.js). */
 const BUSH_SEEDS = [101, 131];
 
+// Snow on trees and bushes (src/world/snow.js addSnowCover): the tops of
+// branches hold it; leaves and needles catch it in clumps, mostly on the
+// crown's upper side.
+// Branches are thin round tubes: snow along their whole upper side, so it
+// shows from the side too. Twigs (fine branches drawn plain further out)
+// and the distant trees' pictures (one normal for a mass of twigs and
+// leaves) go only part white: dark wood shows between.
+const SNOW_WOOD = { flatness: 0.12, amount: 0.9 };
+const SNOW_TWIGS = { flatness: 0.12, amount: 0.9, strength: 0.6 };
+const SNOW_LEAVES = { foliage: true, amount: 0.8 };
+const SNOW_NEEDLES = { foliage: true, amount: 1 };
+const SNOW_FAR_TREES = { foliage: true, amount: 0.8, strength: 0.8 };
+
 const _mistColour = new Color();
 const _cloudTop = new Color();
 const _cloudSun = new Color();
@@ -881,7 +894,7 @@ export class World {
         if (!m.isMesh) return;
         m.userData.kind = 'fence';
         if (m.material && !m.material.userData.clouds) {
-          addCloudShadows(m.material);
+          addSnowCover(addCloudShadows(m.material));
           m.material.userData.clouds = true;
         }
       });
@@ -963,17 +976,17 @@ export class World {
       if (d > this.viewDistance) continue;
       (d <= nearR ? near : far).push(t);
     }
-    const leafMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })));
+    const leafMat = addSnowCover(addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true }))), SNOW_LEAVES);
     this.leafMat = leafMat;
-    const cardMat = this.fluffy ? addLodFade(makeFluffy(addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true }))), { smooth: q.leafy.smooth, detail: q.leafy.detail, softDepth: q.leafy.softDepth }), false) : null;
+    const cardMat = this.fluffy ? addLodFade(makeFluffy(addSnowCover(addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true }))), SNOW_LEAVES), { smooth: q.leafy.smooth, detail: q.leafy.detail, softDepth: q.leafy.softDepth }), false) : null;
     this.cardMat = cardMat;
     // Bark: its colour per tree (instance colour, by species).
-    const barkMat = addCloudShadows(new MeshLambertMaterial({ vertexColors: true }));
+    const barkMat = addSnowCover(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })), SNOW_WOOD);
     this.barkMat = barkMat;
-    const broadTrunkMat = this.fluffy ? addCloseSwitch(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })), false) : barkMat;
+    const broadTrunkMat = this.fluffy ? addCloseSwitch(addSnowCover(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })), SNOW_WOOD), false) : barkMat;
     if (this.fluffy) closeUniforms.uCloseR.value = q.leafy.close ?? 0;
     // Conifers are open tiers of boughs: double-sided so their undersides show.
-    const needleMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true, side: DoubleSide })));
+    const needleMat = addSnowCover(addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true, side: DoubleSide }))), SNOW_NEEDLES);
     needleMat.defines = { CONIFER: '' };
     const conTrunk = coniferTrunk();
     const sets = [
@@ -1077,7 +1090,7 @@ export class World {
           trunk: (kind, sp) => this.#wood('trunk', TRUNK_SEEDS[kind], sp),
           plainMat: this.#plainWoodMat(),
           closeMat: this.#closeWoodMat(),
-          trunkMat: this.closeTrunkMat ||= addCloseSwitch(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })), true),
+          trunkMat: this.closeTrunkMat ||= addCloseSwitch(addSnowCover(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })), SNOW_WOOD), true),
           trunkMatrix: (t, out) => {
             treeMatrices(t, o, out, _crownM);
             return out;
@@ -1198,7 +1211,7 @@ export class World {
 
   /** The plain branches: bark coloured, fading with their crowns, away from the camera. */
   #plainWoodMat() {
-    return (this.twigMat ||= addCloseSwitch(addLodFade(addCloudShadows(new MeshLambertMaterial({ color: 0xaaaaaa, vertexColors: true })), false), false));
+    return (this.twigMat ||= addCloseSwitch(addLodFade(addSnowCover(addCloudShadows(new MeshLambertMaterial({ color: 0xaaaaaa, vertexColors: true })), SNOW_TWIGS), false), false));
   }
 
   #syncTwigs(lod) {
@@ -1210,7 +1223,7 @@ export class World {
 
   /** Close-up branches: bark coloured, only near the camera. */
   #closeWoodMat() {
-    return (this.closeWoodMat ||= addCloseSwitch(addCloudShadows(new MeshLambertMaterial({ color: 0xaaaaaa, vertexColors: true })), true));
+    return (this.closeWoodMat ||= addCloseSwitch(addSnowCover(addCloudShadows(new MeshLambertMaterial({ color: 0xaaaaaa, vertexColors: true })), SNOW_WOOD), true));
   }
 
   /** The distant trees' material: pictures of the leafy crowns, drawn once. */
@@ -1237,7 +1250,7 @@ export class World {
       ...CONIFER_NAMES.map((sp) => (has.has(sp) ? { leafy: fluffyConifer(CONIFER[sp], 11, this.quality.leafy.detail), twigs: coniferWood(CONIFER[sp], 11), leafRow: LEAF_ROWS.indexOf(leafName(sp)), stretch: coniferR(sp) } : null)),
     ];
     const atlas = bakeImpostors(this.renderer, shapes, this.quality.leafy.tile);
-    this.impMat = addLodFade(makeImpostor(addLeafShading(addCloudShadows(new MeshLambertMaterial())), atlas), true);
+    this.impMat = addLodFade(makeImpostor(addSnowCover(addLeafShading(addCloudShadows(new MeshLambertMaterial())), SNOW_FAR_TREES), atlas), true);
     return this.impMat;
   }
 
