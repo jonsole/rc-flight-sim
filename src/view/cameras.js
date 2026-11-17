@@ -18,6 +18,7 @@ function hToVFov(hDeg, aspect) {
 
 export class CameraRig {
   constructor(settings) {
+    this.walk = { x: 0, z: 0 }; // where the pilot has walked from their spot (m: hand launch)
     this.settings = settings;
     this.camera = new PerspectiveCamera(50, 1, 0.05, 20000);
     this.mode = 'los';
@@ -57,8 +58,9 @@ export class CameraRig {
   pilotEye() {
     const s = this.settings;
     const [px, pz] = pilotSpot();
-    const x = px + s.pilotX;
-    const z = pz + s.pilotZ;
+    // (Plus where you've walked to, with a hand-launch model: walk.)
+    const x = px + s.pilotX + this.walk.x;
+    const z = pz + s.pilotZ + this.walk.z;
     return new Vector3(x, heightAt(x, z) + 1.7, z);
   }
 

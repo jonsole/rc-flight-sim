@@ -30,6 +30,8 @@ import { flightLineMiddle } from './edits.js';
 //                       src/world/species.js); elsewhere a natural mix
 //   treeGrowth          real sites: areas whose trees have grown since the survey:
 //                       { x0, x1, z0, z1, grow, minH } (world frame)
+//   takeoff             where ground take-offs start, world { x, z, heading (degrees,
+//                       0 north, 90 east) }, instead of along the runway into wind
 //   flat                ground forced level to y = 0 here (rectangle), fading out over `fade` m
 //   hut, container      club buildings (null for none)
 //   gazebo, table, windsock, fence   (club frame; null for none)
@@ -142,6 +144,9 @@ const IMPINGTON = {
     // west into wind from just in front of you, on the grass.
     angle: 0,
     runway: { x: 0, z: -22, length: 80, width: 20, style: 'none' },
+    // Taking off from the ground: just in front of (south of) the big tree
+    // in the middle of the field, facing south down the long field.
+    takeoff: { x: -66, z: 6, heading: 180 },
     pilotPad: null,
     // The college's playing field, as mapped in OpenStreetMap.
     field: {

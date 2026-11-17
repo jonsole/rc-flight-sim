@@ -68,6 +68,8 @@ for (const entry of AIRCRAFT) {
   // Hand-launched models have no landing gear, and some have no rudder.
   const handLaunch = !!entry.def.handLaunch;
   const hasRudder = entry.def.surfaces.some((s) => s.controls.some((c) => c.input === 'yaw'));
+  // Ailerons or elevons: a roll control on anything but the rudder.
+  const hasAilerons = entry.def.surfaces.some((s) => s.controls.some((c) => c.input === 'roll') && !s.controls.some((c) => c.input === 'yaw'));
   describe(entry.name, () => {
     beforeEach(() => {
       def = entry.def;
@@ -119,8 +121,19 @@ for (const entry of AIRCRAFT) {
           }
           return peak;
         };
-        expect(rate({ roll: 1 }).x).toBeGreaterThan(0.5); // right roll
-        expect(rate({ roll: -1 }).x).toBeLessThan(-0.5);
+        if (hasAilerons) {
+          expect(rate({ roll: 1 }).x).toBeGreaterThan(0.5); // right roll
+          expect(rate({ roll: -1 }).x).toBeLessThan(-0.5);
+        } else {
+          // Rudder-only (roll stick mixed to rudder): yaws, then the dihedral banks it.
+          expect(rate({ roll: 1 }).y).toBeLessThan(-0.2); // nose right
+          for (const dir of [1, -1]) {
+            const ac = airborne();
+            ac.controls.roll = dir;
+            ac.update(1);
+            expect(dir * ac.attitude().roll).toBeGreaterThan(15 * deg);
+          }
+        }
         expect(rate({ pitch: 1 }).z).toBeGreaterThan(0.3); // nose up
         expect(rate({ pitch: -1 }).z).toBeLessThan(-0.3);
         if (hasRudder) expect(rate({ yaw: 1 }).y).toBeLessThan(-0.2); // nose right (−ω_y)
