@@ -288,9 +288,7 @@ for (const entry of AIRCRAFT) {
           ac.update(0.02);
           swing = Math.max(swing, Math.abs(ac.attitude().heading - h0));
         }
-        // (4.5°: the ShockCub's and Highlander's 1° of right-thrust, set from
-        // flying them, swings them ~4° right on a hands-off ground run.)
-        expect(swing).toBeLessThan(4.5 * deg);
+        expect(swing).toBeLessThan(3 * deg);
       });
 
       it.skipIf(handLaunch)('can be steered on the ground with rudder', () => {
@@ -912,7 +910,7 @@ describe('rudder and aileron coupling', () => {
       ac.update(1);
       // Was 41° (ShockCub), 46° (Agro), 72° (S.E.5a: a biplane rolls more).
       // The AeroScout's rudder throw is bigger: it yaws more than it rolls.
-      // ShockCub and Highlander ~31-34° with their tuned thrust line.
+      // ShockCub and Highlander ~32-34° with their tuned 2° down-thrust.
       const limit = id.includes('se5a') ? 40 : id.includes('aeroscout') ? 35 : 36;
       expect(Math.abs(ac.attitude().roll - r0)).toBeLessThan(limit * deg);
     });
@@ -927,7 +925,7 @@ describe('rudder and aileron coupling', () => {
         // here (as for the S.E.5a, which shows adverse yaw throughout).
         adverse = Math.max(adverse, ac.omega.y * Math.sign(ac.omega.x));
       }
-      expect(adverse).toBeGreaterThan(0.18); // (0.21-0.24 for the ShockCub and Highlander with their tuned thrust line)
+      expect(adverse).toBeGreaterThan(0.25);
     });
   }
 });

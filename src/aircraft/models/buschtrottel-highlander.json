@@ -36,6 +36,6 @@
   "model": "buschtrottel-highlander.glb",
   "tuning": {
     "downThrust": 2,
-    "rightThrust": 1
+    "rightThrust": 0.3
   }
 }

@@ -48,6 +48,6 @@
   "model": "buschtrottel-shockcub.glb",
   "tuning": {
     "downThrust": 2,
-    "rightThrust": 1
+    "rightThrust": 0.3
   }
 }
