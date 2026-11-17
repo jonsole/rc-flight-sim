@@ -69,12 +69,25 @@ export function snowVisibility(falling) {
 /**
  * Snow lying on a Lambert/Standard material: on surfaces facing up, by
  * how much snow there is (snowUniforms.uSnow), patchy where it's thin.
+ * Trees and bushes too: the tops of branches and twigs, and snow caught
+ * on the upper sides of the leafy and needle crowns.
  * @param {object} material
- * @param {{ flatness?: number }} [opts]  how flat a surface has to be (the
- *   cosine of its slope where snow starts to stay; default ~55°)
+ * @param {{ flatness?: number, amount?: number, strength?: number, foliage?: boolean }} [opts]
+ *   flatness  how flat a surface has to be (the cosine of its slope where
+ *             snow starts to stay; default ~55°)
+ *   amount    how much of the lying snow it holds (default 1; foliage less)
+ *   strength  how white it can go (default 1; less for things drawn as a
+ *             mass of fine twigs, where the dark wood shows between)
+ *   foliage   leaves and needles: their normals say little (they lean
+ *             only a little up or down, and a conifer's all lean the same:
+ *             src/world/fluffy.js), so snow is dappled through the crown
+ *             in clumps, more of it the more a card faces up
  */
 export function addSnowCover(material, opts = {}) {
   const flat = (opts.flatness ?? 0.55).toFixed(3);
+  const amount = (opts.amount ?? 1).toFixed(3);
+  const strength = (opts.strength ?? 1).toFixed(3);
+  const foliage = !!opts.foliage;
   const prev = material.onBeforeCompile;
   material.onBeforeCompile = (shader, renderer) => {
     prev?.(shader, renderer);
@@ -101,13 +114,30 @@ export function addSnowCover(material, opts = {}) {
           float a = snHash(i), b = snHash(i + vec2(1.0, 0.0)), c = snHash(i + vec2(0.0, 1.0)), d = snHash(i + vec2(1.0, 1.0));
           return a + (b - a) * u.x + (c - a) * u.y + (a - b - c + d) * u.x * u.y;
         }`)
-      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        // (After every change to the normal: the distant trees' pictures
+        // set theirs in normal_fragment_maps.)
         if (uSnow > 0.0) {
           vec3 upV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+          vec2 sp = vSnowWorld.xz;
+          #if ${foliage ? 1 : 0}
+          // Clumps of snow through the crown (by height too, so the sides
+          // aren't streaked), mostly on the upper side.
+          vec2 fp = sp + vec2(1.7, -1.3) * vSnowWorld.y;
+          float clump = 0.6 * snNoise(fp / 0.45) + 0.4 * snNoise(fp / 1.3 + 4.1);
+          // (Either face: cards turned to the camera often show their back,
+          // whose normal is flipped.)
+          float up = abs(dot(normal, upV));
+          // (Only a little by the normal: a tall narrow crown's normals,
+          // stretched with it, point almost sideways, and they hold clumps
+          // too.)
+          float v = clump + 0.4 * up;
+          float s = smoothstep(-0.05, 0.05, v - (1.0 - 0.55 * uSnow * ${amount})) * ${strength};
+          vec3 snowCol = vec3(1.1, 1.13, 1.19) * (0.9 + 0.1 * clump);
+          #else
           // (Either face of a double-sided surface.)
           float facing = abs(dot(normal, upV));
           float onTop = smoothstep(${flat}, ${flat} + 0.25, facing);
-          vec2 sp = vSnowWorld.xz;
           // Drifts and bare patches (metres to tens of metres), and the
           // grass poking through close up. Each octave turned and the
           // whole gently warped, so no square grid shows in the edges.
@@ -117,19 +147,20 @@ export function addSnowCover(material, opts = {}) {
                   + 0.27 * snNoise(mat2(0.28, -0.96, 0.96, 0.28) * w / 7.3 + 7.3)
                   + 0.15 * snNoise(mat2(-0.5, -0.87, 0.87, -0.5) * w / 2.3 + 3.1)
                   + 0.08 * snNoise(mat2(0.97, 0.26, -0.26, 0.97) * w / 0.7 + 5.7);
-          float t = 1.0 - uSnow * 1.2;
+          float t = 1.0 - uSnow * ${amount} * 1.2;
           // The edge soft by how much the pattern changes across a pixel
           // (no stair-steps far off), a little soft close up.
           float e = max(0.05, 1.5 * fwidth(n));
-          float s = smoothstep(t - e, t + e, n) * onTop;
+          float s = smoothstep(t - e, t + e, n) * onTop * ${strength};
           // Snow: blue-white (brighter than a plain colour can be: snow
           // reflects nearly all the light), a faint grain, shaded hollows.
           vec3 snowCol = vec3(1.15, 1.18, 1.24) * (0.93 + 0.07 * snNoise(sp / 1.7)) * (0.96 + 0.04 * n);
+          #endif
           diffuseColor.rgb = mix(diffuseColor.rgb, snowCol, s);
         }`);
   };
   const prevKey = material.customProgramCacheKey?.bind(material);
-  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|snow${flat}`;
+  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|snow${flat}|${amount}|${strength}|${foliage}`;
   material.needsUpdate = true;
   return material;
 }
