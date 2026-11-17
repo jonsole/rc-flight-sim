@@ -833,7 +833,7 @@ function frame(now) {
     vfov: rig.camera.fov,
     tilt: (settings.fpvTilt * Math.PI) / 180,
   });
-  sound.update(aircraft, dist, fpv);
+  sound.update(aircraft, dist, fpv, eye);
 }
 requestAnimationFrame(frame);
 

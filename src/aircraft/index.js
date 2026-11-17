@@ -43,12 +43,14 @@ export function fromJson(o) {
 
 /** An aircraft from its JSON file. */
 export function buildAircraft(json) {
-  const { builder, tuning, model: modelFile, ...opts } = json;
+  const { builder, tuning, model: modelFile, sound, ...opts } = json;
   const build = BUILDERS[builder];
   if (!build) throw new Error(`${json.id}: unknown builder "${builder}"`);
   let entry = build(fromJson(opts));
   // Built-in tuning: becomes the model's defaults (a changed prop is drawn too).
   if (tuning && Object.keys(tuning).length) entry = { ...entry, def: tunedDef(entry.def, tuning) };
+  // Its sound (src/audio/engine.js), if it has its own.
+  if (sound) entry = { ...entry, def: { ...entry.def, sound: fromJson(sound) } };
   // The 3D model: its file (loadModelFiles), with the propeller drawn in code
   // at the file's prop marker, so a prop changed in Tuning shows.
   const withFile = {
