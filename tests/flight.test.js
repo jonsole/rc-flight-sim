@@ -569,6 +569,34 @@ describe('HobbyZone AeroScout (club trainer)', () => {
     expect(glide).toBeLessThan(8);
   });
 
+  for (const [mode, pull] of [['off', 0.75], ['off', 1], ['as3x', 1]]) {
+    it(`loops from level flight at full power, ${pull === 1 ? 'full' : '3/4'} up, assist ${mode}, without rolling off`, () => {
+      const ac = new Aircraft(d, { ground });
+      ac.assistMode = mode;
+      ac.resetInAir(new Vector3(0, 200, 0), 0, 12);
+      ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 1 };
+      for (let t = 0; t < 4; t += 0.05) {
+        ac.controls.roll = Math.max(-1, Math.min(1, -2 * ac.attitude().roll));
+        ac.update(0.05);
+      }
+      ac.controls.roll = 0;
+      ac.controls.pitch = pull;
+      let worst = 0;
+      let turned = 0;
+      let prev = new Vector3(1, 0, 0).applyQuaternion(ac.orientation);
+      for (let i = 0; i < 80 && turned < 2 * Math.PI; i++) {
+        ac.update(0.05);
+        const w = new Vector3(0, 0, 1).applyQuaternion(ac.orientation);
+        worst = Math.max(worst, Math.acos(Math.min(1, Math.abs(w.z))));
+        const f = new Vector3(1, 0, 0).applyQuaternion(ac.orientation);
+        turned += Math.acos(Math.min(1, f.dot(prev)));
+        prev = f;
+      }
+      expect(turned).toBeGreaterThan(2 * Math.PI); // all the way round
+      expect(worst).toBeLessThan(20 * deg); // was 89° (stalled over the top, dropped a wing)
+    });
+  }
+
   it('SAFE keeps a beginner out of trouble with full stick held', () => {
     const ac = new Aircraft(d, { ground });
     ac.assistMode = 'safe';

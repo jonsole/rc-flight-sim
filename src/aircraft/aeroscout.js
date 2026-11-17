@@ -117,7 +117,7 @@ export function buildAeroScout(o) {
     alpha0: -3 * deg, // cambered, flat-bottomed trainer section
     alphaStall: 14 * deg,
     stallWidth: 0.03,
-    stallDrop: 1.2,
+    stallDrop: o.stallDrop ?? 1.2,
     cd0: o.cd0 ?? 0.028, // moulded foam, exposed hinges and servo arms
     ar: AR,
     e: 0.78,
@@ -138,7 +138,7 @@ export function buildAeroScout(o) {
         span: [0, side * Math.sin(o.aeroDihedral), Math.cos(o.aeroDihedral)],
         area: (z1 - z0) * chord,
         // The left tip stalls a touch first, so a held stall drops a wing gently.
-        foil: tip && side < 0 ? { ...foil, alphaStall: foil.alphaStall - 1.5 * deg } : foil,
+        foil: tip && side < 0 ? { ...foil, alphaStall: foil.alphaStall - (o.tipStallBias ?? 1.5 * deg) } : foil,
         wing: true,
         chordLen: chord,
         controls: zMid > L.ailFrom ? [{ input: 'roll', gain: -side, max: o.throws.aileron, tau: 0.45 }] : [],

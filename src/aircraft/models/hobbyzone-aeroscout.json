@@ -8,9 +8,10 @@
     "about": "For club beginners. Published: span about 1095 mm (retailers; the manual's spec table says 1033 mm), length about 870 mm, 2306 2250Kv motor, 3S 1300-2200 mAh, CG 60-75 mm behind the leading edge at the root (75 mm suggested), low rates 70% of high, flies level at 50-60% throttle. Estimated: planform and wing area (~0.2 m\u00b2), the prop (6x4), thrust, inertia, airfoil and drag, weight with a 2200 pack.",
     "look": "Drawn from the dimensions and the general layout, not traced from any drawing. Plain club colours, no maker's markings: change 'colors' to your club's.",
     "defaultAssist": "SAFE (Beginner mode: limited bank and pitch, self-levelling). G cycles off / AS3X / SAFE.",
-    "throws": "High rates; use the transmitter's 70% low rate for first flights.",
+    "throws": "High rates; use the transmitter's 70% low rate for first flights. Elevator 14\u00b0: at 18\u00b0 full up stalled it over the top of a loop and dropped a wing.",
     "trim": "tailIncidenceDeg and the thrust figures are set so it flies level at about 55% throttle (~11 m/s) and climbs gently at full power, as the manual describes.",
-    "prop": "6x4 assumed on the 2306 2250Kv / 3S: loaded rpm, static thrust (N) and full-throttle current (A) are estimates."
+    "prop": "6x4 assumed on the 2306 2250Kv / 3S: loaded rpm, static thrust (N, ~1.1:1 thrust to weight) and full-throttle current (A) are estimates. It loops from level flight at full power.",
+    "stall": "stallDrop and tipStallBiasDeg: a gentle stall (a trainer's), the left tip going a little first so a held stall drops a wing slowly rather than snapping."
   },
   "span": 1.095,
   "cgFromLe": 0.075,
@@ -21,16 +22,16 @@
   "downThrustDeg": -4,
   "throwsDeg": {
     "aileron": 20,
-    "elevator": 18,
+    "elevator": 14,
     "rudder": 22
   },
   "prop": {
     "diameterIn": 6,
     "pitchIn": 4,
     "blades": 2,
-    "rpm": 20500,
-    "staticThrust": 7.8,
-    "current": 22
+    "rpm": 21000,
+    "staticThrust": 9,
+    "current": 26
   },
   "battery": {
     "cells": 3,
@@ -46,5 +47,7 @@
   "cd0": 0.026,
   "parasiteX": 0.008,
   "model": "hobbyzone-aeroscout.glb",
-  "tuning": {}
+  "tuning": {},
+  "stallDrop": 0.8,
+  "tipStallBiasDeg": 1
 }
