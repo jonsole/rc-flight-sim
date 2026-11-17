@@ -62,6 +62,14 @@ export class EngineSound {
     this.bladeGain.gain.value = 0;
     this.blade.connect(this.bladeGain).connect(this.master);
 
+    // A prop's own pattern of tones (def.sound.shaftOrders, measured off a
+    // recording): one wave at the shaft rate with a level per multiple of it.
+    this.harm = ctx.createOscillator();
+    this.harmGain = ctx.createGain();
+    this.harmGain.gain.value = 0;
+    this.harm.connect(this.harmGain).connect(this.master);
+    this.harmOrders = null;
+
     // Wind rush
     this.wind = ctx.createBufferSource();
     this.wind.buffer = buf;
@@ -76,6 +84,7 @@ export class EngineSound {
 
     this.motor.start();
     this.motor2.start();
+    this.harm.start();
     this.noise.start();
     this.am.start();
     this.blade.start();
@@ -87,6 +96,16 @@ export class EngineSound {
     const t = this.ctx.currentTime;
     const rpm = aircraft.propBroken ? 0 : aircraft.rpm;
     const m = aircraft.def.motor;
+    const orders = aircraft.def.sound?.shaftOrders || null;
+    if (orders && orders !== this.harmOrders) {
+      const real = new Float32Array(orders.length + 1);
+      const imag = new Float32Array(orders.length + 1);
+      orders.forEach((a, i) => (imag[i + 1] = a));
+      this.harm.setPeriodicWave(this.ctx.createPeriodicWave(real, imag));
+    }
+    this.harmOrders = orders;
+    // (With its own tones, the generic buzz, whine and blade note are mostly left out.)
+    const own = orders ? aircraft.def.sound.level ?? 1 : 0;
     // The prop as fitted or tuned (Menu → Tuning).
     const blades = m.prop?.blades || m.blades || 2;
     // Square-tipped (bullnose) blades are much noisier than tapered ones: the
@@ -112,15 +131,17 @@ export class EngineSound {
     this.am.frequency.setTargetAtTime(bladeHz, t, 0.05);
     const on = rpm > 50 ? 1 : 0;
     // Motor whine with the power going in; a faint tick when freewheeling.
-    this.motorGain.gain.setTargetAtTime(on * (0.012 * Math.min(1, rpm / (m.maxRpm || 10000)) + 0.09 * load), t, 0.05);
+    this.motorGain.gain.setTargetAtTime((own ? 0.35 : 1) * on * (0.012 * Math.min(1, rpm / (m.maxRpm || 10000)) + 0.09 * load), t, 0.05);
     // Prop buzz: louder with tip speed and with how hard it's pushing.
     // A windmilling prop just whirrs softly.
     // (Kept low: too much of it sounds like wind rather than a prop; the
     // blade-pass note below carries the prop's sound.)
     const buzz = 0.45 * on * Math.min(0.4 * loud, loud * (whoosh * (0.08 + 0.13 * Math.min(1.5, load)) + 0.04 * Math.min(1, tip / 30)));
-    this.noiseGain.gain.setTargetAtTime(buzz, t, 0.05);
+    this.noiseGain.gain.setTargetAtTime(buzz * (own ? 0.5 : 1), t, 0.05);
+    this.harm.frequency.setTargetAtTime(Math.max(1, rpm / 60), t, 0.05);
+    this.harmGain.gain.setTargetAtTime(on * own * 0.25 * Math.min(1.4, whoosh + 0.15) * (0.5 + 0.5 * Math.min(1, load)), t, 0.05);
     // Chopping through a wake modulates the buzz harder at the blade-pass rate.
-    this.amGain.gain.setTargetAtTime(buzz * (pusher ? 1 : 0.8), t, 0.05);
+    this.amGain.gain.setTargetAtTime(buzz * (own ? 0.5 : 1) * (pusher ? 1 : 0.8), t, 0.05);
     // Big props sound deeper (a whoosh), small ones sharper (a buzz); the
     // buzz reaches up to the blade-pass frequency.
     const tone = (0.2032 / dia) ** 0.7; // 1 for an 8" prop
@@ -133,7 +154,7 @@ export class EngineSound {
     const bladeType = rasp ? 'sawtooth' : 'triangle';
     if (this.blade.type !== bladeType) this.blade.type = bladeType;
     this.blade.frequency.setTargetAtTime(bladeHz, t, 0.05);
-    this.bladeGain.gain.setTargetAtTime(on * whoosh * (0.03 + 0.025 * Math.max(0, blades - 2) + rasp) * (0.4 + 0.6 * Math.min(1, load)), t, 0.05);
+    this.bladeGain.gain.setTargetAtTime((own ? 0 : 1) * on * whoosh * (0.03 + 0.025 * Math.max(0, blades - 2) + rasp) * (0.4 + 0.6 * Math.min(1, load)), t, 0.05);
     const ws = Math.min(1, aircraft.airspeed / 25);
     this.windGain.gain.setTargetAtTime(fpv ? ws * ws * 0.35 : ws * ws * 0.05, t, 0.1);
     this.windFilter.frequency.setTargetAtTime(300 + ws * 900, t, 0.1);
