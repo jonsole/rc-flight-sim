@@ -551,6 +551,7 @@ export function createAeroScoutModel(L, colors = {}) {
   const MW = L.mainWheel;
   const tyreMat = new MeshStandardMaterial({ color: '#232323', roughness: 0.95 });
   const hubMat = paint(C.hub);
+  const strutMat = new MeshStandardMaterial({ color: '#1e1f21', roughness: 0.6 });
   const makeWheel = (radius, width) => {
     const g = new Group();
     const tube = width / 2;
@@ -563,9 +564,13 @@ export function createAeroScoutModel(L, colors = {}) {
   const mainWheels = [];
   for (const s of [-1, 1]) {
     const [, hw, yb] = fusAt(L, MW.x + 0.01);
-    const top = new Vector3(MW.x + 0.01, yb + 0.004, s * hw * 0.6);
+    // A flat black strut from the fuselage's underside out to the axle.
+    const top = new Vector3(MW.x + 0.01, yb + 0.004, s * hw * 0.5);
     const axle = new Vector3(MW.x, MW.y, s * (MW.z - 0.012));
-    const leg = cylinderBetween(top, axle, 0.0018, metal);
+    const dir = new Vector3().subVectors(axle, top);
+    const leg = new Mesh(new BoxGeometry(0.014, dir.length(), 0.004), strutMat);
+    leg.position.copy(top).addScaledVector(dir, 0.5);
+    leg.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), dir.clone().normalize());
     const stub = cylinderBetween(axle, new Vector3(MW.x, MW.y, s * MW.z), 0.0018, metal);
     const part = s > 0 ? 'wheelR' : 'wheelL';
     root.add(tag(leg, part), tag(stub, part));
