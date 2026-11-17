@@ -276,6 +276,40 @@ function applySettings() {
   if (rig.mode !== settings.cameraMode) rig.setMode(settings.cameraMode);
 }
 
+// Your own start positions, per site, kept in this browser (settings):
+// { [site]: { ground: { x, z, h }, hand: { x, z, h, wx, wz } } } (world
+// metres and heading; wx, wz: where you'd walked to from your spot).
+function savedStart(kind) {
+  return settings.startSpots?.[LOCATION.id]?.[kind] ?? null;
+}
+function saveStart(kind, spot) {
+  settings.startSpots ||= {};
+  settings.startSpots[LOCATION.id] = { ...settings.startSpots[LOCATION.id], [kind]: spot };
+  saveSettings(settings);
+}
+/** The world heading the aircraft faces (about the vertical). */
+function headingOf(q) {
+  const f = new Vector3(1, 0, 0).applyQuaternion(q);
+  return Math.atan2(-f.z, f.x);
+}
+/** Ground take-off: start where the aircraft is now, next time too (on the ground, nearly stopped). */
+function startHere() {
+  if (aircraft.held || !aircraft.onGround || aircraft.velocity.length() > 1) {
+    toast('Land and stop first: the start is saved where the model sits');
+    return;
+  }
+  saveStart('ground', { x: aircraft.position.x, z: aircraft.position.z, h: headingOf(aircraft.orientation) });
+  toast('Start position saved for this field');
+}
+function defaultStart() {
+  if (settings.startSpots?.[LOCATION.id]) {
+    delete settings.startSpots[LOCATION.id];
+    saveSettings(settings);
+  }
+  toast('Back to the field\'s own start position');
+  resetAircraft();
+}
+
 /**
  * The heading to hand-launch on from (x, z): the one, within 100 degrees
  * of `wanted` (into wind), with the longest climb-out clear of trees and
@@ -348,10 +382,23 @@ function resetAircraft() {
     const [px, pz] = pilotSpot();
     const ex = px + settings.pilotX + lane * 3;
     const ez = pz + settings.pilotZ;
-    const launch = clearHeading(ex, ez, heading);
-    const hx = ex + Math.cos(launch) * 0.5 + Math.sin(launch) * 0.3;
-    const hz = ez - Math.sin(launch) * 0.5 + Math.cos(launch) * 0.3;
-    aircraft.resetHandLaunch(hx, hz, launch);
+    const mine = !mp.connected && savedStart('hand');
+    if (mine) {
+      // Where you last walked to and threw from, here.
+      rig.walk.x = mine.wx;
+      rig.walk.z = mine.wz;
+      aircraft.resetHandLaunch(mine.x, mine.z, mine.h);
+    } else {
+      const launch = clearHeading(ex, ez, heading);
+      const hx = ex + Math.cos(launch) * 0.5 + Math.sin(launch) * 0.3;
+      const hz = ez - Math.sin(launch) * 0.5 + Math.cos(launch) * 0.3;
+      aircraft.resetHandLaunch(hx, hz, launch);
+    }
+    launchFrom = { x: aircraft.position.x, z: aircraft.position.z, h: headingOf(aircraft.orientation) };
+  } else if (!mp.connected && savedStart('ground')) {
+    // Your own start position here (Menu -> Flying -> Start here next time).
+    const g = savedStart('ground');
+    aircraft.resetOnGround(g.x, g.z, g.h);
   } else if (LOCATION.layout.takeoff) {
     // The site's own take-off spot and direction (side by side in multiplayer).
     const t = LOCATION.layout.takeoff;
@@ -380,6 +427,7 @@ function selectAircraft(id) {
 
 // --- Multiplayer -------------------------------------------------------------
 const mp = new Multiplayer();
+let launchFrom = null; // where this hand launch started (to see if you moved)
 let mpGraceUntil = 0; // no collisions just after a reset
 const peers = new Peers(world.scene, ground);
 peers.addShadow = (model, span) => {
@@ -504,6 +552,8 @@ const panel = new Panel(document.getElementById('panel'), {
   },
   onReset: resetAircraft,
   onEditScenery: () => openEditor(),
+  onStartHere: () => startHere(),
+  onDefaultStart: () => defaultStart(),
   aircraftEntry: () => entry,
   onRetune: () => retune(),
   onClose: () => setMenu(false),
@@ -681,7 +731,14 @@ function frame(now) {
       }
     }
     wind.update(dt);
+    const wasHeld = aircraft.held;
     aircraft.update(dt);
+    // Thrown: if you'd walked or turned first, start from there next time.
+    if (wasHeld && !aircraft.held && launchFrom && !mp.connected) {
+      const moved = Math.hypot(wasHeld.pos.x - launchFrom.x, wasHeld.pos.z - launchFrom.z) > 0.3
+        || Math.abs(Math.atan2(Math.sin(headingOf(wasHeld.q) - launchFrom.h), Math.cos(headingOf(wasHeld.q) - launchFrom.h))) > 0.05;
+      if (moved) saveStart('hand', { x: wasHeld.pos.x, z: wasHeld.pos.z, h: headingOf(wasHeld.q), wx: rig.walk.x, wz: rig.walk.z });
+    }
     // Parts that broke off in a crash fly away as debris.
     while (aircraft.breakEvents.length) {
       const ev = aircraft.breakEvents.shift();
