@@ -289,7 +289,10 @@ export class VolumetricClouds {
           c = mix(c, hazeColor, smoothstep(1000.0, 5500.0, far) * 0.9);
           alpha *= (1.0 - smoothstep(4000.0, 7000.0, far)) * mix(1.0, 0.8, night) * (1.0 - mistFade);
           if (fogMistA.x > 0.0 || fogMistA.z > 0.0) alpha *= exp(-vfAlong(camPos, at, hazeColor).x);
-          gl_FragColor = vec4(c, alpha);
+          // (Colour times opacity: where the picture is enlarged and blurred,
+          // the clear pixels around a cloud add nothing - stored plain, their
+          // black would rim its edges with a dark fringe.)
+          gl_FragColor = vec4(c * alpha, alpha);
         }`,
       depthTest: false,
       depthWrite: false,
@@ -312,7 +315,7 @@ export class VolumetricClouds {
           vec4 c = 0.25 * (texture2D(tex, vUv + texel * vec2(0.5, 0.5)) + texture2D(tex, vUv + texel * vec2(-0.5, 0.5))
             + texture2D(tex, vUv + texel * vec2(0.5, -0.5)) + texture2D(tex, vUv + texel * vec2(-0.5, -0.5)));
           if (c.a < 0.003) discard;
-          gl_FragColor = c;
+          gl_FragColor = vec4(c.rgb / c.a, c.a);
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
         }`,
