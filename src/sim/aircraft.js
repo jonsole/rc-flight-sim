@@ -28,6 +28,7 @@ const REATTACH_CHORDS = 10;
 const AILERON_DRAG = [0.08, 0.015];
 
 const _v = new Vector3();
+const _yAxis = new Vector3(0, 1, 0);
 const _windCG = new Vector3();
 const _sp = new Vector3();
 const _sw = new Vector3();
@@ -177,6 +178,24 @@ export class Aircraft {
     this.orientation.copy(qYaw).multiply(qPitch);
     this.position.set(x, this.env.ground.heightAt(x, z) + h.height, z);
     this.held = { pos: this.position.clone(), q: this.orientation.clone() };
+  }
+
+  /**
+   * Before a hand launch: turn (radians, about the vertical) and step
+   * (metres along the ground) with the model in your hand, to aim it
+   * clear of trees. The ground's height is followed.
+   */
+  moveHeld(turn, dx, dz) {
+    if (!this.held) return;
+    _q.setFromAxisAngle(_yAxis, turn);
+    this.held.q.premultiply(_q);
+    const p = this.held.pos;
+    const above = p.y - this.env.ground.heightAt(p.x, p.z);
+    p.x += dx;
+    p.z += dz;
+    p.y = this.env.ground.heightAt(p.x, p.z) + above;
+    this.position.copy(p);
+    this.orientation.copy(this.held.q);
   }
 
   /** Start in the air, wings level, flying at `speed` m/s. */

@@ -56,7 +56,7 @@ export class OSD {
       const y = this.h / 2 - 60 * s;
       if (ac.crashed) this.#message(`CRASH: ${ac.crashReason.toUpperCase()}`, y, fs);
       else if (ac.inFoliage) this.#message('IN THE TREES', y, fs);
-      else if (ac.held) this.#message('THROTTLE UP TO LAUNCH', y, fs);
+      else if (ac.held) this.#message('STICKS TO AIM, THROTTLE UP TO LAUNCH', y, fs);
       else if (info.paused) this.#message('PAUSED', y, fs);
       return;
     }
@@ -64,7 +64,7 @@ export class OSD {
     const fs = info.touch ? 18 : 22;
     if (ac.crashed) this.#message(`Crashed: ${ac.crashReason} - ${reset}`, y, fs);
     else if (ac.inFoliage) this.#message(`Caught in a tree - ${reset}`, y, fs);
-    else if (ac.held) this.#message('Hand launch: throttle up to throw it', y, fs);
+    else if (ac.held) this.#message('Hand launch: sticks turn and walk you, throttle up to throw it', y, fs);
     else if (info.paused) this.#message('PAUSED', y, 22);
   }
 
