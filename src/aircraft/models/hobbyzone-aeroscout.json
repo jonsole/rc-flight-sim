@@ -11,19 +11,20 @@
     "throws": "High rates; use the transmitter's 70% low rate for first flights. Elevator 14\u00b0: at 18\u00b0 full up stalled it over the top of a loop and dropped a wing.",
     "trim": "tailIncidenceDeg and the thrust figures are set so it flies level at about 55% throttle (~11 m/s) and climbs gently at full power, as the manual describes.",
     "prop": "6x4 assumed on the 2306 2250Kv / 3S: loaded rpm, static thrust (N, ~1.1:1 thrust to weight) and full-throttle current (A) are estimates. It loops from level flight at full power.",
-    "stall": "stallDrop and tipStallBiasDeg: a gentle stall (a trainer's), the left tip going a little first so a held stall drops a wing slowly rather than snapping."
+    "stall": "stallDrop and tipStallBiasDeg: a gentle stall (a trainer's), the left tip going a little first so a held stall drops a wing slowly rather than snapping.",
+    "rudder": "Rudder 30\u00b0 and 6\u00b0 of effective dihedral (the built 4\u00b0 plus the high wing): like a trainer, rudder alone turns it and rolls it into the turn (about 50\u00b0 of bank after a second of full rudder at cruise)."
   },
   "span": 1.095,
   "cgFromLe": 0.075,
   "mass": 0.85,
   "dihedralDeg": 4,
-  "aeroDihedralDeg": 4,
+  "aeroDihedralDeg": 6,
   "tailIncidenceDeg": 2,
   "downThrustDeg": -4,
   "throwsDeg": {
     "aileron": 20,
     "elevator": 14,
-    "rudder": 22
+    "rudder": 30
   },
   "prop": {
     "diameterIn": 6,

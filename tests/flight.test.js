@@ -877,7 +877,11 @@ describe('rudder and aileron coupling', () => {
       ac.controls.yaw = 1;
       ac.update(1);
       // Was 41° (ShockCub), 46° (Agro), 72° (S.E.5a: a biplane rolls more).
-      expect(Math.abs(ac.attitude().roll - r0)).toBeLessThan((id.includes('se5a') ? 40 : 30) * deg);
+      // The AeroScout is a trainer with plenty of dihedral: rudder alone
+      // turns it and rolls it into the turn, but not over.
+      const limit = id.includes('se5a') ? 40 : id.includes('aeroscout') ? 60 : 30;
+      expect(Math.abs(ac.attitude().roll - r0)).toBeLessThan(limit * deg);
+      if (id.includes('aeroscout')) expect(Math.abs(ac.attitude().roll - r0)).toBeGreaterThan(35 * deg);
     });
 
     it(`${id}: aileron gives adverse yaw at first (nose swings out of the roll)`, () => {
