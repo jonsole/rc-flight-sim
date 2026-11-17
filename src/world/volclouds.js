@@ -19,7 +19,7 @@
 // off and by any mist in between, like the flat clouds.
 import {
   Data3DTexture, RedFormat, UnsignedByteType, LinearFilter, RepeatWrapping, WebGLRenderTarget, ShaderMaterial,
-  Mesh, BufferGeometry, Float32BufferAttribute, Vector2, Vector3, Matrix4, HalfFloatType, Color,
+  Mesh, BufferGeometry, Float32BufferAttribute, Vector2, Vector3, Matrix4, HalfFloatType, Color, LinearMipmapLinearFilter,
 } from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { CLOUD_GLSL, cloudUniforms } from './clouds.js';
@@ -93,7 +93,8 @@ export class VolumetricClouds {
     this.frame = 0;
     // 1. The cloud pattern around the camera (clouds.js cloudNoise).
     this.mapCentre = new Vector2();
-    this.map = new WebGLRenderTarget(MAP, MAP, { minFilter: LinearFilter, magFilter: LinearFilter, depthBuffer: false });
+    // (With mipmaps: the 3D clouds read it smoothed, see pattern().)
+    this.map = new WebGLRenderTarget(MAP, MAP, { minFilter: LinearMipmapLinearFilter, magFilter: LinearFilter, depthBuffer: false, generateMipmaps: true });
     this.mapPass = new FullScreenQuad(new ShaderMaterial({
       uniforms: { ...cloudUniforms, centre: { value: this.mapCentre } },
       vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
@@ -159,7 +160,10 @@ export class VolumetricClouds {
         float pattern(vec2 xz) {
           vec2 uv = (xz - centre) / ${SPAN.toFixed(1)} + 0.5;
           if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
-          return texture2D(cloudMap, uv).r;
+          // Smoothed (its fine detail would run straight up a cloud's sides
+          // as streaks; the 3D detail gives the small lumps instead) - the
+          // more, the taller the clouds.
+          return textureLod(cloudMap, uv, cloudShape.y > 1000.0 ? 2.5 : 1.2).r;
         }
         // Cloud density (0..1) at a point: the pattern says where and how
         // tall (flat bases, rounded tops, the densest parts tallest), the 3D
@@ -190,14 +194,16 @@ export class VolumetricClouds {
           // underside curving up to them), and lumpy from cloud to cloud.
           float lump = texture(detail, vec3(q.xz * 0.23, 0.37)).r;
           float k1 = min(kk, 1.0);
-          float bottom = 0.16 * (1.0 - k1) * (1.0 - k1) + 0.07 * (lump - 0.5) + 0.03;
-          float d = smoothstep(0.0, 0.18, body) * smoothstep(bottom, bottom + 0.1, h);
+          // (In metres, whatever the cloud's depth: tens of metres between
+          // clouds' bases, or tall clouds' come out in tiers.)
+          float bottom = (60.0 * (1.0 - k1) * (1.0 - k1) + 30.0 * (lump - 0.5) + 12.0) / cloudShape.y;
+          float d = smoothstep(0.0, 0.18, body) * smoothstep(bottom, bottom + 40.0 / cloudShape.y, h);
           if (d <= 0.0) return 0.0;
           float det = texture(detail, q).r;
           if (lod > 0.75) det = det * 0.7 + texture(detail, q * 3.1).r * 0.3;
           // Thin parts eaten away more than the cores, and the underside more
           // (ragged, not ruled flat).
-          float under = 1.0 - smoothstep(bottom, bottom + 0.2, h);
+          float under = 1.0 - smoothstep(bottom, bottom + 80.0 / cloudShape.y, h);
           return clamp((d - (1.0 - det) * (0.55 + 0.35 * under) * (1.1 - d)) * 1.2, 0.0, 1.0);
         }
         void main() {
@@ -212,7 +218,7 @@ export class VolumetricClouds {
           t1 = min(t1, t0 + 7000.0); // (far off it's haze anyway)
           // Big steps through clear air; on meeting cloud, back a step and
           // through it in small ones (so tall clouds don't show as slices).
-          float coarse = (t1 - t0) / 24.0;
+          float coarse = clamp((t1 - t0) / 24.0, 20.0, 150.0); // (thin parts aren't stepped over)
           float trans = 1.0;
           vec3 light = vec3(0.0);
           float distW = 0.0;
@@ -230,7 +236,7 @@ export class VolumetricClouds {
           float t = t0 + coarse * 0.5;
           bool fine = false;
           int empty = 0;
-          for (int i = 0; i < 60; i++) {
+          for (int i = 0; i < 100; i++) {
             if (trans < 0.03 || t > t1) break;
             // (Smaller close up, larger far off.)
             float fineDt = min(coarse, 30.0 + t * 0.008);
