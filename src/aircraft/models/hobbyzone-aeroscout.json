@@ -12,14 +12,14 @@
     "trim": "tailIncidenceDeg and the thrust figures are set so it flies level at about 55% throttle (~11 m/s) and climbs gently at full power, as the manual describes.",
     "prop": "6x4 assumed on the 2306 2250Kv / 3S: loaded rpm, static thrust (N, ~1.1:1 thrust to weight) and full-throttle current (A) are estimates. It loops from level flight at full power.",
     "stall": "stallDrop and tipStallBiasDeg: a gentle stall (a trainer's), the left tip going a little first so a held stall drops a wing slowly rather than snapping.",
-    "rudder": "Rudder 30\u00b0. The rudder turns it mostly flat: a deep cabin pod (sideArea, m\u00b2) and a 10% larger fin (finScale) make side force, and the effective dihedral is only 3.25\u00b0, the least that still rolls it back towards level hands-off. Less than that and it rolls less on rudder but stops levelling itself; some roll from rudder can't be avoided (the outside wing speeds up).",
+    "rudder": "Rudder 30\u00b0. It doesn't level itself: like the real one with SAFE off, a bank stays where you leave it (effective dihedral 2\u00b0: a 30\u00b0 bank is still ~30\u00b0 after 20 s hands off). So rudder turns it mostly flat (a second of full rudder: ~46\u00b0 of turn, ~21\u00b0 of roll); the deep cabin pod (sideArea, m\u00b2) and a 10% larger fin (finScale) give it the side force for that.",
     "aileronDrag": "Differential ailerons ([down, up] drag per rad\u00b2; default 0.08, 0.015): less adverse yaw, so the nose follows a bank round rather than swinging out first."
   },
   "span": 1.095,
   "cgFromLe": 0.075,
   "mass": 0.85,
   "dihedralDeg": 4,
-  "aeroDihedralDeg": 3.25,
+  "aeroDihedralDeg": 2,
   "tailIncidenceDeg": 2,
   "downThrustDeg": -4,
   "throwsDeg": {

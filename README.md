@@ -42,7 +42,9 @@ the root. The planform (~20 dm²), the prop (6x4 assumed), thrust, weight
 (~850 g) and drag are estimates, set so it flies level at about 55% throttle
 (~11 m/s) and climbs at full power (about 1.1:1 thrust to weight), as the
 manual describes, stalls gently at about 7 m/s, and loops from level flight
-at full power (with SAFE off or on AS3X: SAFE's pitch limit stops a loop). It sits level on its wheels, steers on the ground with the
+at full power (with SAFE off or on AS3X: SAFE's pitch limit stops a loop). With SAFE off it
+doesn't level itself: a bank stays where you leave it, and the rudder turns
+it mostly flat. It sits level on its wheels, steers on the ground with the
 rudder (nose wheel), and takes off hands-off at full power. Its prop has square
 (bullnose) tips, drawn that way, and like the real one it is loud: square tips
 buzz harder and harsher than tapered ones, and the pusher prop chops through

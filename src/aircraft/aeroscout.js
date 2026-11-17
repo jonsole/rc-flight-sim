@@ -95,7 +95,7 @@ export function buildAeroScout(o) {
     span: 1.095,
     cgFromLe: 0.075,
     dihedral: 4 * deg,
-    aeroDihedral: 3.25 * deg,
+    aeroDihedral: 2 * deg,
     mass: 0.85,
     tailIncidence: 2 * deg,
     throws: { aileron: 20 * deg, elevator: 18 * deg, rudder: 30 * deg },
@@ -224,6 +224,8 @@ export function buildAeroScout(o) {
     wingSpan: L.span,
     downwashGain: 0.9,
     tricycle: true,
+    // Spirally neutral: a bank stays put hands-off (SAFE's Beginner mode levels it).
+    holdsBank: true,
     motor: {
       // Square-tipped (bullnose) blades: noisy (src/audio/engine.js).
       prop: { diameterIn: P.diameterIn, pitchIn: P.pitchIn, blades: P.blades, tip: P.tip || 'square' },

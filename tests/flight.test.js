@@ -226,7 +226,8 @@ for (const entry of AIRCRAFT) {
         const clBeta = ac.lastForces.moment.x / (q * def.wingArea * ac.wingSpan) / beta;
         // Rolls left, raising the right wing. Modest: the models are tuned
         // close to spirally neutral, so rudder doesn't roll them hard.
-        expect(clBeta).toBeLessThan(-0.05);
+        // A model that holds a bank (def.holdsBank) has just a little.
+        expect(clBeta).toBeLessThan(def.holdsBank ? -0.03 : -0.05);
       });
 
       it('rolls back towards level when a bank is released (hands off)', () => {
@@ -234,8 +235,10 @@ for (const entry of AIRCRAFT) {
         ac.update(3);
         ac.orientation.multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), 30 * deg));
         ac.update(10);
-        // Slowly: close to spirally neutral, but never spirally unstable.
-        expect(Math.abs(ac.attitude().roll)).toBeLessThan(25 * deg);
+        // Slowly: close to spirally neutral, but never spirally unstable. A
+        // model that holds a bank (def.holdsBank) stays about where it was.
+        expect(Math.abs(ac.attitude().roll)).toBeLessThan((def.holdsBank ? 38 : 25) * deg);
+        if (def.holdsBank) expect(Math.abs(ac.attitude().roll)).toBeGreaterThan(22 * deg);
       });
 
       it('gets ground effect: more lift and less drag just above the ground', () => {
@@ -634,7 +637,7 @@ describe('HobbyZone AeroScout (club trainer)', () => {
     const turned = a1.heading - a0.heading;
     const rolled = Math.abs(a1.roll - a0.roll);
     expect(turned).toBeGreaterThan(40 * deg); // was 29° on 22° of rudder
-    expect(rolled).toBeLessThan(0.75 * turned); // was 51° of roll for 39° of turn
+    expect(rolled).toBeLessThan(0.55 * turned); // was 51° of roll for 39° of turn
   });
 
   it('SAFE keeps a beginner out of trouble with full stick held', () => {
