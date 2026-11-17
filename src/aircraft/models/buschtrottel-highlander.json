@@ -34,5 +34,8 @@
     "tail": "#c62828"
   },
   "model": "buschtrottel-highlander.glb",
-  "tuning": {}
+  "tuning": {
+    "downThrust": 2,
+    "rightThrust": 1
+  }
 }
