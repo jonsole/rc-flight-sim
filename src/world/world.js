@@ -11,6 +11,7 @@ import { buildingsMesh } from './buildings.js';
 import { clubAngle } from '../sim/location.js';
 import { sunPosition, moonPosition, solarHours } from './sun.js';
 import { CloudLayer, cloudUniforms, addCloudShadows, CLOUD_GLSL } from './clouds.js';
+import { VolumetricClouds } from './volclouds.js';
 import { addGroundDetail, groundUniforms } from './ground.js';
 import { seasonFor } from './seasons.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
@@ -402,6 +403,12 @@ export class World {
     this.#sky();
     this.clouds = new CloudLayer();
     this.scene.add(this.clouds.mesh);
+    // High graphics: the low clouds in 3D (src/world/volclouds.js).
+    if (this.quality.volumetricClouds && opts.renderer?.capabilities?.isWebGL2) {
+      this.volClouds = new VolumetricClouds(this.clouds);
+      this.scene.add(this.volClouds.mesh);
+      this.clouds.setVolumetric(true);
+    }
     // Low cloud you can fly through: its pattern and drift (src/world/mist.js),
     // drawn by the volumetric fog (volfog.js).
     this.lowCloud = new LowCloud();
@@ -741,6 +748,18 @@ export class World {
 
   setClouds(cover) {
     this.clouds.setCover(cover);
+  }
+
+  /** Draw the 3D clouds for this frame, if they're on (before the scene). */
+  renderClouds(renderer, camera) {
+    this.volClouds?.render(renderer, camera);
+  }
+
+  /** 3D clouds (High graphics only) on or off. */
+  setVolumetricClouds(on) {
+    if (!this.volClouds) return;
+    this.volClouds.enabled = on;
+    this.clouds.setVolumetric(on);
   }
 
   /** Sunbeams through the gaps in the clouds (0 off .. 1). */

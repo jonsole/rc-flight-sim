@@ -38,7 +38,8 @@ export const DEFAULT_SETTINGS = {
   timeOfDay: 14,         // hours, local solar time
   dayOfYear: 172,        // time of year (21 Jun): the sun, and the trees and grass
   cloudCover: 0.35,      // 0 clear .. 1 overcast
-  godRays: true,         // sunbeams through gaps in the clouds
+  godRays: true,
+  clouds3d: true,         // 3D clouds on High graphics (src/world/volclouds.js)         // sunbeams through gaps in the clouds
   cloudType: 'auto',     // src/world/clouds.js CLOUD_TYPES, or 'auto' (changing with the season and day)
   useClock: false,       // follow the computer's clock (time and date) instead
   // Misc
