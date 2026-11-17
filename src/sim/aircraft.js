@@ -135,6 +135,15 @@ export class Aircraft {
     this.crashed = false;
     this.crashReason = '';
     this.propBroken = false;
+    /**
+     * Things hit, for their sounds (src/audio/engine.js takes them):
+     * { kind, speed (m/s) }, kind: 'ground' | 'wheel' | 'wood' | 'hard' |
+     * 'metal' | 'twigs' | 'crunch' (a part breaking) | 'prop' (a prop strike).
+     */
+    this.impacts = [];
+    this._impactAt = {};
+    /** How fast it's pushing through leaves and twigs (m/s), for the rustle. */
+    this.foliageSpeed = 0;
     /** In the pilot's hand before a hand launch: { pos, q } or null. */
     this.held = null;
 
@@ -216,10 +225,19 @@ export class Aircraft {
     this.propBroken = false;
     this.broken.clear();
     this.breakEvents.length = 0;
+    this.impacts.length = 0;
+    this._impactAt = {};
     this.battery.used = 0;
     this.time = 0;
     this.held = null;
     for (const s of this.surfaces) s.sep = null; // settles to the steady value on the first step
+  }
+
+  /** Something hit (for its sound): one of a kind every 0.12 s at most. */
+  #impact(kind, speed) {
+    if (this.impacts.length > 12 || this.time - (this._impactAt[kind] ?? -1) < 0.12) return;
+    this._impactAt[kind] = this.time;
+    this.impacts.push({ kind, speed });
   }
 
   crash(reason) {
@@ -241,6 +259,7 @@ export class Aircraft {
       this.broken.add(p);
       if (p === 'prop') this.propBroken = true;
       this.breakEvents.push({ part: p, speed: impactSpeed });
+      this.#impact(p === 'prop' ? 'prop' : 'crunch', impactSpeed);
     }
   }
 
@@ -557,6 +576,7 @@ export class Aircraft {
     // point-by-point test.
     const near = this.env.obstacles.near(this.position.x, this.position.z, this.reach, this._near);
     this.inFoliage = false;
+    this.foliageSpeed = 0;
     const P = this.position;
     let n = 0;
     for (const s of near) {
@@ -585,12 +605,19 @@ export class Aircraft {
           // gets through them before they bring it down.
           const sparse = hit.sparse ?? 0;
           this.inFoliage = true;
-          if (_vt.length() > 4 * (1 + 1.5 * sparse)) this.crash(`Flew into ${s.name}`);
+          this.foliageSpeed = Math.max(this.foliageSpeed, _vt.length());
+          if (_vt.length() > 4 * (1 + 1.5 * sparse)) {
+            if (!this.crashed) this.#impact('twigs', _vt.length());
+            this.crash(`Flew into ${s.name}`);
+          }
           _f.copy(_vt).multiplyScalar(-cFoliage * (1 - 0.6 * sparse));
         } else {
           _n.set(hit.nx, hit.ny, hit.nz);
           const vn = _vt.dot(_n);
+          // (Its sound: wood, metal or anything else hard.)
+          if (-vn > 0.6) this.#impact(/tree|trunk/.test(s.name) ? 'wood' : /fence|car|container|pole|gazebo|windsock/.test(s.name) ? 'metal' : 'hard', -vn);
           if (c.type === 'prop' && this.motorRpm > 500) {
+            if (!this.propBroken) this.#impact('prop', Math.max(3, -vn));
             this.propBroken = true;
             this.crash(`Prop hit ${s.name}`);
             this.breakAt(c, Math.max(-vn, 1));
@@ -630,6 +657,7 @@ export class Aircraft {
         ? ground.baseHeightAt(px, pz) + ground.bumpAt(px, pz, c.bumpScale)
         : ground.heightAt(px, pz);
       const depth = h - py;
+      const was = c.onGround;
       c.onGround = depth > 0;
       c.depth = Math.max(0, depth); // spring compression, for the 3D model
       if (!c.onGround) {
@@ -642,10 +670,13 @@ export class Aircraft {
       _w.copy(this.omega).applyQuaternion(q);
       _vt.crossVectors(_w, _r).add(this.velocity);
       const vn = _vt.dot(_n);
+      // Its sound, as it touches down (a tyre's bump, or the airframe's thud).
+      if (!was && -vn > 0.7 && c.type !== 'prop') this.#impact(c.type === 'wheel' ? 'wheel' : 'ground', -vn);
 
       // Crash detection on impact speed.
       if (c.type === 'prop') {
         if (this.throttleActual > 0.05 || this.motorRpm > 500) {
+          if (!this.propBroken) this.#impact('prop', Math.max(3, -vn));
           this.propBroken = true;
           if (this.velocity.length() > 2 || this.throttleActual > 0.3) {
             this.crash('Prop strike');

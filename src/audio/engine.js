@@ -1,5 +1,6 @@
 // Synthesised electric motor + propeller sound (no audio files needed).
 import { propOrders } from './propTones.js';
+import { playImpact } from './impacts.js';
 export class EngineSound {
   constructor() {
     this.ctx = null;
@@ -63,7 +64,9 @@ export class EngineSound {
     this.harm.connect(this.harmGain).connect(this.master);
     this.harmKey = null;
 
-    // Wind rush
+    // Air over the wings: a whoosh that grows steeply with airspeed (heard
+    // best gliding fast with the motor off), more at high angles of attack,
+    // and a low, shaking rumble when the wing stalls (buffet).
     this.wind = ctx.createBufferSource();
     this.wind.buffer = buf;
     this.wind.loop = true;
@@ -74,8 +77,34 @@ export class EngineSound {
     this.windGain = ctx.createGain();
     this.windGain.gain.value = 0;
     this.wind.connect(this.windFilter).connect(this.windGain).connect(this.master);
+    this.buffetFilter = ctx.createBiquadFilter();
+    this.buffetFilter.type = 'lowpass';
+    this.buffetFilter.frequency.value = 160;
+    this.buffetGain = ctx.createGain();
+    this.buffetGain.gain.value = 0;
+    // The shaking: the rumble's level wobbles a few times a second.
+    this.shake = ctx.createOscillator();
+    this.shake.frequency.value = 7;
+    this.shakeGain = ctx.createGain();
+    this.shakeGain.gain.value = 0;
+    this.shake.connect(this.shakeGain).connect(this.buffetGain.gain);
+    this.wind.connect(this.buffetFilter).connect(this.buffetGain).connect(this.master);
+
+    // Leaves and twigs brushing past while it's in a tree's foliage.
+    this.noiseBuf = buf;
+    this.rustle = ctx.createBufferSource();
+    this.rustle.buffer = buf;
+    this.rustle.loop = true;
+    this.rustleFilter = ctx.createBiquadFilter();
+    this.rustleFilter.type = 'highpass';
+    this.rustleFilter.frequency.value = 1800;
+    this.rustleGain = ctx.createGain();
+    this.rustleGain.gain.value = 0;
+    this.rustle.connect(this.rustleFilter).connect(this.rustleGain).connect(this.master);
 
     this.motor.start();
+    this.shake.start();
+    this.rustle.start(0, 1.3);
     this.motor2.start();
     this.harm.start();
     this.noise.start();
@@ -89,7 +118,10 @@ export class EngineSound {
    * @param [listener]  the listener's position (Vector3), for the Doppler shift
    */
   update(aircraft, listenerDistance, fpv, listener = null) {
+    // Things hit since last time (src/audio/impacts.js).
+    const hits = aircraft.impacts?.splice(0) ?? [];
     if (!this.ctx) return;
+    if (!this.muted) for (const h of hits) playImpact(this.ctx, this.master, this.noiseBuf, h);
     const t = this.ctx.currentTime;
     // Doppler: higher coming towards the listener, lower going away.
     let dop = 1;
@@ -160,9 +192,23 @@ export class EngineSound {
     const bright = square ? 1.6 : 1;
     this.noiseFilter.frequency.setTargetAtTime(Math.max((250 + 900 * Math.min(1, load + 0.15)) * tone * bright, bladeHz * 1.6) * dop, t, 0.1);
     this.noise.playbackRate.setTargetAtTime(dop, t, 0.05);
-    const ws = Math.min(1, aircraft.airspeed / 25);
-    this.windGain.gain.setTargetAtTime(fpv ? ws * ws * 0.35 : ws * ws * 0.05, t, 0.1);
-    this.windFilter.frequency.setTargetAtTime(300 + ws * 900, t, 0.1);
+    // Air over the wings. Airframe noise climbs steeply with speed (its power
+    // goes as speed^5 or so); higher pitched the faster it goes. Loudest on
+    // board (FPV), where it's right by the microphone.
+    const v = Math.max(0, aircraft.airspeed || 0);
+    const aero = Math.min(1.6, (v / 22) ** 2.5);
+    const aoa = Math.min(1, Math.max(0, (Math.abs(aircraft.alpha || 0) - 0.1) / 0.2)); // from ~6°, full by ~17°
+    const stall = Math.min(1, aircraft.wingStall || 0);
+    this.windGain.gain.setTargetAtTime((fpv ? 0.5 : 0.4) * aero * (1 + 1.2 * aoa), t, 0.1);
+    this.windFilter.frequency.setTargetAtTime((220 + 38 * Math.min(v, 45)) * dop, t, 0.1);
+    this.wind.playbackRate.setTargetAtTime(dop, t, 0.05);
+    const rumble = (fpv ? 1.2 : 0.8) * stall * Math.min(1, (v / 14) ** 2);
+    this.buffetGain.gain.setTargetAtTime(rumble, t, 0.08);
+    this.shakeGain.gain.setTargetAtTime(rumble * 0.8, t, 0.08);
+    // Pushing through leaves: a rustle, louder the faster (it flickers as
+    // they brush past).
+    const fol = Math.min(1, (aircraft.foliageSpeed || 0) / 8);
+    this.rustleGain.gain.setTargetAtTime((fpv ? 0.6 : 0.4) * fol * (0.6 + 0.4 * Math.random()), t, 0.03);
     // Distance attenuation (LOS) — inverse distance, gentle.
     const att = fpv ? 0.6 : Math.min(1, 6 / Math.max(6, listenerDistance)) ** 0.8;
     const vol = this.muted ? 0 : this.volume * att;
