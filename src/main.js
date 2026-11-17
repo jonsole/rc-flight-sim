@@ -6,6 +6,7 @@ import { seasonFor } from './world/seasons.js';
 import { Wind } from './sim/wind.js';
 import { World, RUNWAY } from './world/world.js';
 import { AIRCRAFT, getAircraft } from './aircraft/index.js';
+import { AircraftPreview } from './ui/preview.js';
 import { Input } from './input/input.js';
 import { TouchControls, isTouchDevice } from './input/touch.js';
 import { CameraRig, CAMERA_LABELS } from './view/cameras.js';
@@ -546,15 +547,22 @@ splashGraphics.addEventListener('change', (e) => {
   settings.graphics = e.target.value;
   reloadKeepingRoom();
 });
+// The selected aircraft turning slowly above its description.
+const preview = new AircraftPreview(document.getElementById('splash-preview'));
 function updateSplash() {
   if (!splashSelect.isConnected) return;
   splashSelect.value = entry.id;
   splashSummary.textContent = entry.summary;
+  if (preview.shown !== entry.id) {
+    preview.setAircraft(entry);
+    preview.shown = entry.id;
+  }
 }
 updateSplash();
 
 document.getElementById('start').addEventListener('click', () => {
   document.getElementById('splash').remove();
+  preview.dispose();
   sound.start();
   paused = false;
   if (inviteRoom) mpConnect();
