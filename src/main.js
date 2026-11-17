@@ -352,6 +352,11 @@ function resetAircraft() {
     const hx = ex + Math.cos(launch) * 0.5 + Math.sin(launch) * 0.3;
     const hz = ez - Math.sin(launch) * 0.5 + Math.cos(launch) * 0.3;
     aircraft.resetHandLaunch(hx, hz, launch);
+  } else if (LOCATION.layout.takeoff) {
+    // The site's own take-off spot and direction (side by side in multiplayer).
+    const t = LOCATION.layout.takeoff;
+    const h = Math.PI / 2 - (t.heading * Math.PI) / 180; // compass to the world's heading
+    aircraft.resetOnGround(t.x + Math.sin(h) * lane * 4, t.z + Math.cos(h) * lane * 4, h);
   } else {
     const [gx, gz] = clubToWorld(RUNWAY.x - dir * run, RUNWAY.z + lane * 4);
     aircraft.resetOnGround(gx, gz, heading);
