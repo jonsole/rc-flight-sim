@@ -186,7 +186,7 @@ export class VolumetricClouds {
           // Thin parts eaten away more than the cores, and the underside more
           // (ragged, not ruled flat).
           float under = 1.0 - smoothstep(bottom, bottom + 0.2, h);
-          return clamp((d - (1.0 - det) * (0.55 + 0.35 * under) * (1.1 - d)) * 1.6, 0.0, 1.0);
+          return clamp((d - (1.0 - det) * (0.55 + 0.35 * under) * (1.1 - d)) * 1.2, 0.0, 1.0);
         }
         void main() {
           vec4 v = invProj * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
@@ -198,8 +198,9 @@ export class VolumetricClouds {
           float t0 = max(min(ta, tb), 0.0), t1 = max(ta, tb);
           if (t1 <= 0.0) { gl_FragColor = vec4(0.0); return; }
           t1 = min(t1, t0 + 7000.0); // (far off it's haze anyway)
-          const int N = 28;
-          float dt = (t1 - t0) / float(N);
+          // Big steps through clear air; on meeting cloud, back a step and
+          // through it in small ones (so tall clouds don't show as slices).
+          float coarse = (t1 - t0) / 24.0;
           float trans = 1.0;
           vec3 light = vec3(0.0);
           float distW = 0.0;
@@ -211,17 +212,36 @@ export class VolumetricClouds {
           float hg2 = (1.0 - 0.09) / pow(1.0 + 0.09 + 0.6 * g, 1.5);
           float phase = mix(hg2, hg1, 0.7) * 0.6;
           vec3 sunCol = lightColor * (1.0 - 0.3 * grey);
-          for (int i = 0; i < N; i++) {
-            if (trans < 0.03) break;
-            float t = t0 + dt * (float(i) + 0.5);
+          float t = t0 + coarse * 0.5;
+          bool fine = false;
+          int empty = 0;
+          for (int i = 0; i < 60; i++) {
+            if (trans < 0.03 || t > t1) break;
+            // (Smaller close up, larger far off.)
+            float fineDt = min(coarse, 35.0 + t * 0.012);
             vec3 p = camPos + dir * t;
-            float d = density(p, 1.0);
-            if (d <= 0.001) continue;
+            float d = density(p, fine ? 1.0 : 0.0);
+            if (d <= 0.001) {
+              if (fine && ++empty >= 4) fine = false; // out the other side
+              t += fine ? fineDt : coarse;
+              continue;
+            }
+            if (!fine) {
+              fine = true;
+              empty = 0;
+              // (Each pixel's small steps start a little differently - a fixed
+              // pattern, smoothed away when the picture is enlarged - so the
+              // steps don't show as contour lines.)
+              float dither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+              t = max(t0, t - coarse + fineDt * dither);
+              continue;
+            }
+            empty = 0;
             // Light reaching here from the sun: a few samples towards it.
             float tau = 0.0;
-            for (int j = 1; j <= 5; j++) {
-              float s = float(j * j) * 18.0;
-              tau += density(p + cloudSunDir * s, 0.0) * (float(j) * 36.0);
+            for (int j = 1; j <= 4; j++) {
+              float s = float(j * j) * 28.0;
+              tau += density(p + cloudSunDir * s, 0.0) * (float(j) * 56.0);
             }
             // (Plus light that has bounced around inside: it gets deeper in.)
             float sunT = exp(-tau * sigma * 0.9) + 0.3 * exp(-tau * sigma * 0.18);
@@ -232,10 +252,11 @@ export class VolumetricClouds {
             float hh = clamp((p.y - base) / T, 0.0, 1.0);
             vec3 amb = mix(shadeColor * 0.42, mix(shadeColor, lightColor, 0.5) * 0.85, hh);
             vec3 S = sunCol * sunT * phase * mix(1.0, powder, 0.5) * 2.2 + amb;
-            float a = 1.0 - exp(-d * sigma * dt);
+            float a = 1.0 - exp(-d * sigma * fineDt);
             light += trans * a * S;
             distW += trans * a * t;
             trans *= 1.0 - a;
+            t += fineDt;
           }
           float alpha = 1.0 - trans;
           if (alpha < 0.003) { gl_FragColor = vec4(0.0); return; }
@@ -259,13 +280,17 @@ export class VolumetricClouds {
     geo.setAttribute('position', new Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
     geo.setAttribute('uv', new Float32BufferAttribute([0, 0, 2, 0, 0, 2], 2));
     this.mesh = new Mesh(geo, new ShaderMaterial({
-      uniforms: { tex: { value: this.rt.texture } },
+      uniforms: { tex: { value: this.rt.texture }, texel: { value: new Vector2(1, 1) } },
       vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 1.0, 1.0); }',
       fragmentShader: /* glsl */ `
         uniform sampler2D tex;
+        uniform vec2 texel;
         varying vec2 vUv;
         void main() {
-          vec4 c = texture2D(tex, vUv);
+          // Enlarged with a slight blur (four samples between texels): smooths
+          // the clouds' step pattern.
+          vec4 c = 0.25 * (texture2D(tex, vUv + texel * vec2(0.5, 0.5)) + texture2D(tex, vUv + texel * vec2(-0.5, 0.5))
+            + texture2D(tex, vUv + texel * vec2(0.5, -0.5)) + texture2D(tex, vUv + texel * vec2(-0.5, -0.5)));
           if (c.a < 0.003) discard;
           gl_FragColor = c;
           #include <tonemapping_fragment>
@@ -304,7 +329,10 @@ export class VolumetricClouds {
     const size = renderer.getSize(new Vector2());
     const w = Math.max(64, Math.round(size.x / 2));
     const h = Math.max(64, Math.round(size.y / 2));
-    if (this.rt.width !== w || this.rt.height !== h) this.rt.setSize(w, h);
+    if (this.rt.width !== w || this.rt.height !== h) {
+      this.rt.setSize(w, h);
+      this.mesh.material.uniforms.texel.value.set(1 / w, 1 / h);
+    }
     const u = this.uniforms;
     u.invProj.value.copy(camera.projectionMatrixInverse);
     u.camWorld.value.copy(camera.matrixWorld);
