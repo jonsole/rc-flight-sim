@@ -19,6 +19,7 @@ import { Multiplayer } from './net/multiplayer.js';
 import { DEFAULT_MP_SERVER } from './net/config.js';
 import { Chat } from './ui/chat.js';
 import { clockHours, dayOfYear } from './world/sun.js';
+import { cloudTypeFor } from './world/clouds.js';
 import { OSD } from './ui/osd.js';
 import { Panel } from './ui/panel.js';
 import { loadSettings, saveSettings } from './ui/settings.js';
@@ -256,6 +257,7 @@ function applyTime() {
   world.setSeason(day);
   // Mist and low cloud: as set, or spring and autumn mornings (src/world/mist.js).
   world.setWeather(weatherFor(settings, day, hours));
+  world.setCloudType(settings.cloudType && settings.cloudType !== 'auto' ? settings.cloudType : cloudTypeFor(day, hours));
   // Bare trees and bushes catch less (src/sim/obstacles.js).
   setLeafiness(1 - seasonFor(day).bare);
   renderer.toneMappingExposure = world.exposure;
@@ -271,6 +273,7 @@ function applySettings() {
   wind.turbulence = settings.turbulence;
   applyTime();
   world.setClouds(Number(settings.cloudCover));
+  world.setGodRays(settings.godRays === false ? 0 : 1);
   sound.volume = settings.volume;
   osd.showHud = settings.showHud;
   const showTouch = settings.touchControls === 'on' || (settings.touchControls === 'auto' && (TOUCH_DEVICE || touchSeen));
