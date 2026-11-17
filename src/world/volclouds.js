@@ -20,6 +20,7 @@
 import {
   Data3DTexture, RedFormat, UnsignedByteType, LinearFilter, RepeatWrapping, WebGLRenderTarget, ShaderMaterial,
   Mesh, BufferGeometry, Float32BufferAttribute, Vector2, Vector3, Matrix4, HalfFloatType, Color, LinearMipmapLinearFilter,
+  CustomBlending, OneFactor, OneMinusSrcAlphaFactor, ZeroFactor,
 } from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { CLOUD_GLSL, cloudUniforms } from './clouds.js';
@@ -84,59 +85,8 @@ function detailTexture() {
   return t;
 }
 
-export class VolumetricClouds {
-  /**
-   * @param {import('./clouds.js').CloudLayer} layer  the flat clouds (their colours; hidden while these show)
-   */
-  constructor(layer) {
-    this.layer = layer;
-    this.frame = 0;
-    // 1. The cloud pattern around the camera (clouds.js cloudNoise).
-    this.mapCentre = new Vector2();
-    // (With mipmaps: the 3D clouds read it smoothed, see pattern().)
-    this.map = new WebGLRenderTarget(MAP, MAP, { minFilter: LinearMipmapLinearFilter, magFilter: LinearFilter, depthBuffer: false, generateMipmaps: true });
-    this.mapPass = new FullScreenQuad(new ShaderMaterial({
-      uniforms: { ...cloudUniforms, centre: { value: this.mapCentre } },
-      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-      fragmentShader: /* glsl */ `
-        ${CLOUD_GLSL}
-        uniform vec2 centre;
-        varying vec2 vUv;
-        void main() {
-          vec2 xz = centre + (vUv - 0.5) * ${SPAN.toFixed(1)};
-          gl_FragColor = vec4(clamp(cloudNoise(xz), 0.0, 1.0), 0.0, 0.0, 1.0);
-        }`,
-      depthTest: false,
-      depthWrite: false,
-    }));
-
-    // 2. The clouds, at half the screen's size.
-    this.rt = new WebGLRenderTarget(2, 2, { minFilter: LinearFilter, magFilter: LinearFilter, depthBuffer: false, type: HalfFloatType });
-    const L = layer.uniforms;
-    this.uniforms = {
-      ...cloudUniforms,
-      cloudMap: { value: this.map.texture },
-      centre: { value: this.mapCentre },
-      detail: { value: detailTexture() },
-      invProj: { value: new Matrix4() },
-      camWorld: { value: new Matrix4() },
-      camPos: { value: new Vector3() },
-      lightColor: L.lightColor,
-      shadeColor: L.shadeColor,
-      hazeColor: L.hazeColor,
-      night: L.night,
-      mistFade: L.mistFade,
-      grey: L.grey,
-      fogMistA: { value: fog4.a },
-      fogMistB: { value: fog4.b },
-      fogSun: { value: fog4.sun },
-      fogUnder: { value: fog4.under },
-      fogTop: { value: fog4.top },
-    };
-    this.pass = new FullScreenQuad(new ShaderMaterial({
-      uniforms: this.uniforms,
-      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-      fragmentShader: /* glsl */ `
+/** Uniforms, the cloud pattern and density: shared by the clouds and their sunbeams. */
+const SHARED = /* glsl */ `
         precision highp sampler3D;
         uniform vec2 cloudOffset;
         uniform vec2 cloudEvolve;
@@ -206,6 +156,62 @@ export class VolumetricClouds {
           float under = 1.0 - smoothstep(bottom, bottom + 80.0 / cloudShape.y, h);
           return clamp((d - (1.0 - det) * (0.55 + 0.35 * under) * (1.1 - d)) * 1.2, 0.0, 1.0);
         }
+`;
+
+export class VolumetricClouds {
+  /**
+   * @param {import('./clouds.js').CloudLayer} layer  the flat clouds (their colours; hidden while these show)
+   */
+  constructor(layer) {
+    this.layer = layer;
+    this.frame = 0;
+    // 1. The cloud pattern around the camera (clouds.js cloudNoise).
+    this.mapCentre = new Vector2();
+    // (With mipmaps: the 3D clouds read it smoothed, see pattern().)
+    this.map = new WebGLRenderTarget(MAP, MAP, { minFilter: LinearMipmapLinearFilter, magFilter: LinearFilter, depthBuffer: false, generateMipmaps: true });
+    this.mapPass = new FullScreenQuad(new ShaderMaterial({
+      uniforms: { ...cloudUniforms, centre: { value: this.mapCentre } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: /* glsl */ `
+        ${CLOUD_GLSL}
+        uniform vec2 centre;
+        varying vec2 vUv;
+        void main() {
+          vec2 xz = centre + (vUv - 0.5) * ${SPAN.toFixed(1)};
+          gl_FragColor = vec4(clamp(cloudNoise(xz), 0.0, 1.0), 0.0, 0.0, 1.0);
+        }`,
+      depthTest: false,
+      depthWrite: false,
+    }));
+
+    // 2. The clouds, at half the screen's size.
+    this.rt = new WebGLRenderTarget(2, 2, { minFilter: LinearFilter, magFilter: LinearFilter, depthBuffer: false, type: HalfFloatType });
+    const L = layer.uniforms;
+    this.uniforms = {
+      ...cloudUniforms,
+      cloudMap: { value: this.map.texture },
+      centre: { value: this.mapCentre },
+      detail: { value: detailTexture() },
+      invProj: { value: new Matrix4() },
+      camWorld: { value: new Matrix4() },
+      camPos: { value: new Vector3() },
+      lightColor: L.lightColor,
+      shadeColor: L.shadeColor,
+      hazeColor: L.hazeColor,
+      night: L.night,
+      mistFade: L.mistFade,
+      grey: L.grey,
+      fogMistA: { value: fog4.a },
+      fogMistB: { value: fog4.b },
+      fogSun: { value: fog4.sun },
+      fogUnder: { value: fog4.under },
+      fogTop: { value: fog4.top },
+    };
+    this.pass = new FullScreenQuad(new ShaderMaterial({
+      uniforms: this.uniforms,
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: /* glsl */ `
+        ${SHARED}
         void main() {
           vec4 v = invProj * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
           vec3 dir = normalize((camWorld * vec4(v.xyz / v.w, 0.0)).xyz);
@@ -326,12 +332,90 @@ export class VolumetricClouds {
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = -0.5; // (after the sky and cirrus)
     this.enabled = true;
+
+    // 4. Sunbeams: looking towards the sun, the air below the clouds is
+    // lit where the sun shines between them and darker in their shadows -
+    // shafts fanning out from the clouds' own shapes. Along each line of
+    // sight (up to the cloud base), how much of it the sun reaches through
+    // the clouds. Soft, so at a quarter of the screen's width and height.
+    this.raysRt = new WebGLRenderTarget(2, 2, { minFilter: LinearFilter, magFilter: LinearFilter, depthBuffer: false, type: HalfFloatType });
+    this.raysUniforms = { ...this.uniforms, godRays: { value: 1 } };
+    this.raysPass = new FullScreenQuad(new ShaderMaterial({
+      uniforms: this.raysUniforms,
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: /* glsl */ `
+        ${SHARED}
+        uniform float godRays;
+        void main() {
+          vec4 v = invProj * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+          vec3 dir = normalize((camWorld * vec4(v.xyz / v.w, 0.0)).xyz);
+          float toSun = dot(dir, cloudSunDir);
+          // (Only within ~60 degrees of the sun, where they show.)
+          if (toSun < 0.5 || cloudSunDir.y < 0.03) { gl_FragColor = vec4(0.0); return; }
+          float phase = pow((toSun - 0.5) / 0.5, 1.5);
+          float base = cloudShape.x, T = cloudShape.y;
+          float tEnd = dir.y > 0.02 ? min((base - camPos.y) / dir.y, 6000.0) : 6000.0;
+          if (tEnd <= 0.0) { gl_FragColor = vec4(0.0); return; }
+          float dither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+          float sigma = 0.012 + 0.012 * cloudShape.w * 5.0;
+          float slab = min(T / cloudSunDir.y, 2500.0);
+          float vis = 0.0;
+          for (int i = 0; i < 10; i++) {
+            vec3 p = camPos + dir * tEnd * (float(i) + dither) / 10.0;
+            // Up the sun's ray through the cloud layer: how much cloud.
+            float s0 = max((base - p.y) / cloudSunDir.y, 0.0);
+            float od = 0.0;
+            for (int k = 0; k < 4; k++) {
+              od += density(p + cloudSunDir * (s0 + slab * (float(k) + dither) / 4.0), 0.0);
+            }
+            vis += exp(-od * slab / 4.0 * sigma * 0.35);
+          }
+          vis /= 10.0;
+          // Darker in the shadows, a touch brighter in the shafts (premultiplied:
+          // the sky behind is dimmed by .a, then .rgb added).
+          float k = godRays * cloudShadowStrength * phase * (1.0 - mistFade);
+          gl_FragColor = vec4(lightColor * k * vis * 0.12, k * (1.0 - vis) * 0.4);
+        }`,
+      depthTest: false,
+      depthWrite: false,
+    }));
+    const rgeo = new BufferGeometry();
+    rgeo.setAttribute('position', new Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
+    rgeo.setAttribute('uv', new Float32BufferAttribute([0, 0, 2, 0, 0, 2], 2));
+    this.raysMesh = new Mesh(rgeo, new ShaderMaterial({
+      uniforms: { tex: { value: this.raysRt.texture }, texel: { value: new Vector2(1, 1) } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 1.0, 1.0); }',
+      fragmentShader: /* glsl */ `
+        uniform sampler2D tex;
+        uniform vec2 texel;
+        varying vec2 vUv;
+        void main() {
+          // Blurred (3 x 3): smooths away the samples' pattern.
+          vec4 c = vec4(0.0);
+          for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) c += texture2D(tex, vUv + texel * vec2(float(x), float(y)));
+          c /= 9.0;
+          if (c.a < 0.002 && max(c.r, max(c.g, c.b)) < 0.002) discard;
+          gl_FragColor = c;
+        }`,
+      transparent: true,
+      depthWrite: false,
+      depthTest: true,
+      blending: CustomBlending,
+      blendSrc: OneFactor,
+      blendDst: OneMinusSrcAlphaFactor,
+      blendSrcAlpha: ZeroFactor,
+      blendDstAlpha: OneFactor,
+    }));
+    this.raysMesh.frustumCulled = false;
+    this.raysMesh.renderOrder = -0.6; // (over the sky, under the clouds)
+    this.rays = true;
   }
 
   /** Draw the clouds for this frame (before the scene). */
   render(renderer, camera) {
     const show = this.enabled && this.layer.lowOn && (this.layer.cover ?? 0) > 0.01;
     this.mesh.visible = show;
+    this.raysMesh.visible = show && this.rays;
     if (!show) return;
     const prev = renderer.getRenderTarget();
     const autoClear = renderer.autoClear;
@@ -363,6 +447,17 @@ export class VolumetricClouds {
     renderer.setClearColor(0x000000, 0);
     renderer.clear();
     this.pass.render(renderer);
+    if (this.rays) {
+      const rw = Math.max(32, Math.round(size.x / 4));
+      const rh = Math.max(32, Math.round(size.y / 4));
+      if (this.raysRt.width !== rw || this.raysRt.height !== rh) {
+        this.raysRt.setSize(rw, rh);
+        this.raysMesh.material.uniforms.texel.value.set(1 / rw, 1 / rh);
+      }
+      renderer.setRenderTarget(this.raysRt);
+      renderer.clear();
+      this.raysPass.render(renderer);
+    }
     renderer.setRenderTarget(prev);
     renderer.setClearColor(clearColor, clearAlpha);
     renderer.autoClear = autoClear;

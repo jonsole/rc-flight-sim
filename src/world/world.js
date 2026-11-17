@@ -406,7 +406,7 @@ export class World {
     // High graphics: the low clouds in 3D (src/world/volclouds.js).
     if (this.quality.volumetricClouds && opts.renderer?.capabilities?.isWebGL2) {
       this.volClouds = new VolumetricClouds(this.clouds);
-      this.scene.add(this.volClouds.mesh);
+      this.scene.add(this.volClouds.mesh, this.volClouds.raysMesh);
       this.clouds.setVolumetric(true);
     }
     // Low cloud you can fly through: its pattern and drift (src/world/mist.js),
@@ -765,11 +765,22 @@ export class World {
     if (!this.volClouds) return;
     this.volClouds.enabled = on;
     this.clouds.setVolumetric(on);
+    this.setGodRays(this.godRays ?? 1);
   }
 
-  /** Sunbeams through the gaps in the clouds (0 off .. 1). */
+  /**
+   * Sunbeams through the gaps in the clouds (0 off .. 1): from the 3D
+   * clouds' shapes when they're on (volclouds.js), else from the flat
+   * clouds' pattern (the sky's shader).
+   */
   setGodRays(k) {
-    this.sky.material.uniforms.godRays.value = k;
+    this.godRays = k;
+    const vol = !!this.volClouds?.enabled;
+    this.sky.material.uniforms.godRays.value = vol ? 0 : k;
+    if (this.volClouds) {
+      this.volClouds.rays = k > 0;
+      this.volClouds.raysUniforms.godRays.value = k;
+    }
   }
 
   /** The kind of clouds (src/world/clouds.js CLOUD_TYPES). */
