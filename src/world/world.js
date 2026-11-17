@@ -9,7 +9,7 @@ import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY, PILOT_PAD } from '../sim/terrain.js';
 import { buildingsMesh } from './buildings.js';
 import { clubAngle } from '../sim/location.js';
-import { sunPosition, moonPosition } from './sun.js';
+import { sunPosition, moonPosition, solarHours } from './sun.js';
 import { CloudLayer, cloudUniforms, addCloudShadows, CLOUD_GLSL } from './clouds.js';
 import { addGroundDetail, groundUniforms } from './ground.js';
 import { seasonFor } from './seasons.js';
@@ -533,12 +533,13 @@ export class World {
 
   /**
    * Set the time of day: sun, moon, sky, light colours, haze and stars.
-   * @param {number} hours  local solar time (0-24)
+   * @param {number} hours  UK clock time (0-24: BST in summer)
    * @param {number} day    day of the year (1-366)
    */
   setTime(hours, day) {
-    const sun = sunPosition(hours, day);
-    const moon = moonPosition(hours, day);
+    const solar = solarHours(hours, day);
+    const sun = sunPosition(solar, day);
+    const moon = moonPosition(solar, day);
     this.hours = hours;
     this.sunElevation = sun.elevation;
     {
