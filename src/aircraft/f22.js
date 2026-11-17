@@ -266,6 +266,7 @@ export function buildF22(style) {
     downwashGain: style.downwashGain,
     motor: {
       prop: { diameterIn: style.prop.diameterIn, pitchIn: style.prop.pitchIn, blades: style.prop.blades },
+      pusher: true, // in its slot behind the wing: chops through the wing's wake (sound only)
       kv: 2600, noLoadCurrent: 0.6, // 2204 2600Kv
       staticThrust: style.prop.staticThrust,
       pitchSpeed: style.prop.pitchSpeed,
