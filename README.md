@@ -210,6 +210,7 @@ bars, tick *Reverse* where needed, and run **Calibrate sticks**. Switches can
 be assigned to *reset* and *change camera*. Settings are saved in the browser.
 
 Keyboard fallback: arrows = aileron/elevator, A/D = rudder, W/S = throttle,
+Hand launch: before throttling up, aileron or rudder turns you round and elevator walks you forward or back, to aim clear of trees.
 R = reset, C = camera, G = flight assist, P = pause, H = HUD, M = mute, Esc = menu.
 
 ## Phones and tablets

@@ -290,6 +290,7 @@ function resetAircraft() {
   // inside someone else's aeroplane.
   const lane = mp.connected ? ((mp.myId - 1) % 4) - 1.5 : 0;
   mpGraceUntil = performance.now() / 1000 + 3;
+  rig.walk.x = rig.walk.z = 0; // back at your spot on the flight line
   if (settings.startMode === 'air') {
     const [ax, az] = clubToWorld(RUNWAY.x, RUNWAY.z - 10 + lane * 8);
     aircraft.resetInAir(new Vector3(ax, 30 + lane * 4, az), heading, 14);
@@ -603,6 +604,27 @@ function frame(now) {
 
   if (!paused) {
     Object.assign(aircraft.controls, ctl);
+    // In the hand before a hand launch: the sticks turn you round (roll or
+    // rudder) and walk you forward and back (elevator), to aim it clear of
+    // the trees. Throttle up throws it, as before.
+    if (aircraft.held) {
+      const turn = -(ctl.roll + ctl.yaw) * 1.2 * dt; // ~70 deg/s at full stick
+      const fwd = new Vector3(1, 0, 0).applyQuaternion(aircraft.held.q).setY(0).normalize();
+      const step = -ctl.pitch * 3 * dt; // walking pace
+      aircraft.moveHeld(turn, fwd.x * step, fwd.z * step);
+      rig.walk.x += fwd.x * step;
+      rig.walk.z += fwd.z * step;
+      // You turn with it: it stays in your right hand, half a metre ahead.
+      if (turn) {
+        const eye = rig.pilotEye();
+        const p = aircraft.held.pos;
+        const dx = p.x - eye.x;
+        const dz = p.z - eye.z;
+        const c = Math.cos(-turn);
+        const s = Math.sin(-turn);
+        aircraft.moveHeld(0, eye.x + dx * c - dz * s - p.x, eye.z + dx * s + dz * c - p.z);
+      }
+    }
     wind.update(dt);
     aircraft.update(dt);
     // Parts that broke off in a crash fly away as debris.
