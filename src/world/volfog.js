@@ -21,7 +21,7 @@ export const fog4 = {
   a: { x: 0, y: 0, z: 0, w: 0 }, // mist density (/m), mist top (m), cloud amount (0-1), cloud density (/m)
   b: { x: 60, y: 100, z: 0, w: 0 }, // cloud base, cloud top (m), drift x, z (m)
   sun: { x: 0, y: 1, z: 0, w: 0 }, // towards the sun (world), w: forward-scatter strength
-  under: { x: 0.6, y: 0.62, z: 0.66, w: 0 }, // cloud colour from below (screen colours)
+  under: { x: 0.6, y: 0.62, z: 0.66, w: 0 }, // cloud colour from below (screen colours); w: falling snow (/m, src/world/snow.js)
   top: { x: 1, y: 1, z: 1, w: 0 }, // ... sunlit, from above
 };
 
@@ -149,6 +149,8 @@ export function installVolumetricFog(hazeDensity) {
 	{
 		float hz = ${hazeDensity.toFixed(7)} * vFogDepth;
 		float od = hz * hz;
+		// Falling snow: the air thick with it, evenly.
+		od += fogUnder.w * vFogDepth;
 		vec3 col = fogColor;
 		if ( fogMistA.x > 0.0 || fogMistA.z > 0.0 ) {
 			vec4 f = vfAlong( cameraPosition, vFogWorld, fogColor );

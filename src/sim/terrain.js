@@ -178,12 +178,37 @@ const inRect = (r, x, z) => Math.abs(x - r.x) <= r.length / 2 && Math.abs(z - r.
 const CLUB_COS = Math.cos(clubAngle());
 const CLUB_SIN = Math.sin(clubAngle());
 
-export function surfaceAt(x, z) {
+function bareSurfaceAt(x, z) {
   const cx = x * CLUB_COS + z * CLUB_SIN;
   const cz = -x * CLUB_SIN + z * CLUB_COS;
   if (RUNWAY.style !== 'none' && inRect(RUNWAY, cx, cz)) return RUNWAY.style === 'cricket' ? SURFACES.pitch : SURFACES.runway;
   if (PILOT_PAD && inRect(PILOT_PAD, cx, cz)) return SURFACES.pad;
   return inMown(x, z) ? SURFACES.grass : SURFACES.rough;
+}
+
+// Snow lying (0-1, src/world/snow.js): wheels plough through it (much more
+// rolling resistance), a belly or skid slides further on it, and it
+// smooths the bumps over.
+let snowySurfaces = null;
+
+/** How much snow is lying (0 none .. 1 full cover). */
+export function setSnowCover(cover) {
+  if (!(cover > 0.01)) {
+    snowySurfaces = null;
+    return;
+  }
+  snowySurfaces = new Map(Object.values(SURFACES).map((s) => [s, {
+    name: `${s.name} under snow`,
+    roll: s.roll + 0.2 * cover,
+    stiction: s.stiction,
+    drag: s.drag * (1 - 0.45 * cover),
+    bump: s.bump * (1 - 0.5 * cover),
+  }]));
+}
+
+export function surfaceAt(x, z) {
+  const s = bareSurfaceAt(x, z);
+  return snowySurfaces ? snowySurfaces.get(s) : s;
 }
 
 // Small bumps (~0.7 m across) on top of the terrain. Too small to see on the

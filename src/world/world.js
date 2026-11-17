@@ -17,6 +17,8 @@ import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, a
 import { fluffyCrown, crownWood, fluffyConifer, coniferWood, makeFluffy, fluffyDepthMaterial, pickAsBall, setLeafDetail, LEAF_ROWS } from './fluffy.js';
 import { CrownLod, addLodFade, addCloseSwitch, closeUniforms } from './lod.js';
 import { LowCloud } from './mist.js';
+import { addSnowCover, snowUniforms, snowVisibility } from './snow.js';
+import { Snowfall } from './snowfall.js';
 import { installVolumetricFog, fog4, FIELD_GLSL } from './volfog.js';
 import { speciesOf, bushSpeciesAt, barkColor, trunkThickness, SPECIES, WOOD, CONIFER, leafName } from './species.js';
 import { bakeImpostors, impostorGeometry, makeImpostor } from './impostor.js';
@@ -384,6 +386,11 @@ export class World {
     // Low cloud you can fly through: its pattern and drift (src/world/mist.js),
     // drawn by the volumetric fog (volfog.js).
     this.lowCloud = new LowCloud();
+    // Snow lying (addSnowCover on the ground, roofs and so on) and falling
+    // (src/world/snow.js, snowfall.js).
+    this.snow = { cover: 0, falling: 0 };
+    this.snowfall = new Snowfall(this.quality === QUALITY.low ? 8000 : this.quality === QUALITY.medium ? 18000 : 30000);
+    this.scene.add(this.snowfall.mesh);
     this.#lights();
     this.#terrain();
     // The club's own things (runway, pad, fence, pits) in the club frame.
@@ -533,6 +540,19 @@ export class World {
   }
 
   /** Cloud cover, 0 (clear) to 1 (overcast). */
+  /**
+   * Snow ({ cover, falling }, 0-1 each: src/world/snow.js snowFor). Call
+   * after setTime (snow on the ground lights things from below).
+   */
+  setSnow(s) {
+    this.snow = s;
+    snowUniforms.uSnow.value = s.cover;
+    // Light reflected up off the snow: the sky light from below turns white.
+    const g = this.hemi.groundColor;
+    const lum = Math.max(g.r, g.g, g.b) * 2.2;
+    g.lerp(_mistColour.setRGB(lum * 0.95, lum, lum * 1.05), 0.8 * s.cover);
+  }
+
   /** Mist (0-1) and low cloud ({ amount, base, top }): src/world/mist.js weatherFor. */
   setWeather(w) {
     this.weather = w;
@@ -580,6 +600,12 @@ export class World {
     let far = Infinity;
     if (inMist > 0) far = 6 / (0.7 * mistD) / Math.max(inMist, 1e-3);
     if (inCloud > 0.3) far = Math.min(far, 350 / inCloud);
+    // Falling snow: the air thickens evenly (volfog.js); nothing is seen
+    // much past twice the visibility.
+    const falling = this.snow.falling;
+    const snowVis = snowVisibility(falling);
+    fog4.under.w = falling > 0 ? 3 / snowVis : 0;
+    far = Math.min(far, snowVis * 2.5);
     this.visibleFar = Math.max(250, far);
     const grey = Math.max(veil, inCloud);
     this.fogNow = grey;
@@ -590,7 +616,7 @@ export class World {
     // (No lighter than the haze itself: fogged trees shouldn't glow paler
     // than the sky behind them.)
     _mistColour.setRGB(lum, lum * 1.02, lum * 1.06).lerp(h, 0.35).multiplyScalar(0.92);
-    fog.color.copy(h).lerp(_mistColour, Math.min(1, mist * 1.2));
+    fog.color.copy(h).lerp(_mistColour, Math.min(1, Math.max(mist * 1.2, falling * 1.5)));
     // Low cloud: underneath, the same grey as the mist (a shade darker);
     // on top, brighter in the sun (screen colours, as the fog uses them).
     _mistColour.setRGB(lum, lum * 1.02, lum * 1.06).lerp(h, 0.35).multiplyScalar(0.88);
@@ -601,17 +627,30 @@ export class World {
     Object.assign(fog4.top, { x: _cloudTop.r, y: _cloudTop.g, z: _cloudTop.b });
     this.scene.background.copy(fog.color);
     const su = this.sky.material.uniforms;
-    su.skyFog.value = 0;
+    // (In falling snow the sky is lost in it too.)
+    su.skyFog.value = Math.min(1, falling * 1.4);
     su.skyFogColor.value.copy(fog.color).convertLinearToSRGB(); // (as the scene's fog uses it)
-    this.clouds.uniforms.mistFade.value = Math.min(1, grey * 1.3);
+    this.clouds.uniforms.mistFade.value = Math.min(1, Math.max(grey * 1.3, falling * 1.5));
     // Sunlight through the mist above you, and below the low cloud.
     const overcast = camPos.y < lc.base ? lc.amount * 0.6 : 0;
-    const dim = 1 - Math.max(veil * 0.75, overcast, inCloud * 0.8);
+    const dim = 1 - Math.max(veil * 0.75, overcast, inCloud * 0.8, Math.min(0.85, falling * 1.2));
     this.sun.intensity = (this.sunBase ?? this.sun.intensity) * dim;
     this.hemi.intensity = (this.hemiBase ?? this.hemi.intensity) * (1 + 0.15 * grey);
   }
 
 
+
+  /**
+   * Falling snow around the camera (every frame).
+   * @param {number} screenH  drawing buffer height (pixels)
+   */
+  updateSnowfall(dt, wind, camera, screenH) {
+    // Flakes take the colour of the light of the moment: the grey-white of
+    // the snowy air, a little brighter.
+    const c = this.scene.fog.color;
+    this.snowfall.setLight(_cloudSun.setRGB(Math.min(1, c.r * 1.7), Math.min(1, c.g * 1.7), Math.min(1, c.b * 1.7)));
+    this.snowfall.update(dt, wind, this.snow.falling, camera, screenH);
+  }
 
   setClouds(cover) {
     cloudUniforms.cloudCover.value = cover;
@@ -678,7 +717,7 @@ export class World {
     const tex = grassTexture();
     tex.repeat.set(size / 6, size / 6);
     // Matte (no plastic sheen).
-    const mat = addCloudShadows(addGroundDetail(new MeshLambertMaterial({ map: tex, vertexColors: true })));
+    const mat = addSnowCover(addCloudShadows(addGroundDetail(new MeshLambertMaterial({ map: tex, vertexColors: true }))));
     const ground = new Mesh(geo, mat);
     ground.receiveShadow = true;
     this.scene.add(ground);
@@ -693,7 +732,7 @@ export class World {
       const g = new PlaneGeometry(RUNWAY.length, RUNWAY.width);
       g.rotateX(-Math.PI / 2);
       const tex = RUNWAY.style === 'cricket' ? cricketPitchTexture(RUNWAY) : runwayTexture();
-      const rw = new Mesh(g, addCloudShadows(new MeshLambertMaterial({ map: tex, polygonOffset: true, polygonOffsetFactor: -2 })));
+      const rw = new Mesh(g, addSnowCover(addCloudShadows(new MeshLambertMaterial({ map: tex, polygonOffset: true, polygonOffsetFactor: -2 }))));
       // Just above the physics ground (y = 0); polygonOffset prevents z-fighting.
       rw.position.set(RUNWAY.x, 0.002, RUNWAY.z);
       rw.receiveShadow = true;
@@ -704,7 +743,7 @@ export class World {
 
     // Pilot box (gravel pad) and safety fence line, where the club has them.
     if (PILOT_PAD) {
-      const pad = new Mesh(new PlaneGeometry(PILOT_PAD.length, PILOT_PAD.width), addCloudShadows(new MeshLambertMaterial({ map: gravelTexture(), polygonOffset: true, polygonOffsetFactor: -2 })));
+      const pad = new Mesh(new PlaneGeometry(PILOT_PAD.length, PILOT_PAD.width), addSnowCover(addCloudShadows(new MeshLambertMaterial({ map: gravelTexture(), polygonOffset: true, polygonOffsetFactor: -2 }))));
       pad.rotation.x = -Math.PI / 2;
       pad.position.set(PILOT_PAD.x, 0.002, PILOT_PAD.z);
       pad.receiveShadow = true;
@@ -830,7 +869,7 @@ export class World {
     }
     if (ob.buildings.length) {
       const houses = buildingsMesh(ob.buildings);
-      addCloudShadows(houses.material);
+      addSnowCover(addCloudShadows(houses.material));
       houses.userData.kind = 'building';
       this.scene.add(houses);
     }
@@ -1253,7 +1292,7 @@ export class World {
       m.castShadow = true;
       m.receiveShadow = true;
       if (m.material && !m.material.userData.clouds) {
-        addCloudShadows(m.material);
+        addSnowCover(addCloudShadows(m.material));
         m.material.userData.clouds = true;
       }
     });

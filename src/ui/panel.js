@@ -366,6 +366,7 @@ export class Panel {
       this.#range('Cloud cover', 'cloudCover', 0, 1, 0.05, (v) => (v < 0.05 ? 'Clear' : v > 0.85 ? 'Overcast' : `${Math.round(v * 100)}%`)),
       this.#select('Mist and fog', 'mist', { seasonal: 'Seasonal (spring and autumn mornings)', off: 'Off', light: 'Light mist', thick: 'Thick fog' }),
       this.#select('Low cloud', 'lowCloud', { seasonal: 'Seasonal (spring and autumn)', off: 'Off', broken: 'Broken', overcast: 'Overcast' }),
+      this.#select('Snow', 'snow', { seasonal: 'Seasonal (some winter days)', off: 'Off', dusting: 'A dusting on the ground', lying: 'Lying snow', light: 'Light snowfall', heavy: 'Heavy snowfall' }),
       el('p', { class: 'hint' }, 'You stand at the flight line facing north; the runway runs east–west in front of you.'),
     ];
   }

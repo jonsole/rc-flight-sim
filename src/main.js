@@ -1,6 +1,6 @@
 import { WebGLRenderer, ACESFilmicToneMapping, PCFSoftShadowMap, SRGBColorSpace, Vector3 } from 'three';
 import { Aircraft } from './sim/aircraft.js';
-import { physicsGround as ground } from './sim/terrain.js';
+import { physicsGround as ground, setSnowCover } from './sim/terrain.js';
 import { Obstacles, setLeafiness } from './sim/obstacles.js';
 import { seasonFor } from './world/seasons.js';
 import { Wind } from './sim/wind.js';
@@ -30,6 +30,7 @@ import { GoogleTiles } from './world/googleTiles.js';
 import { cardUniforms } from './world/fluffy.js';
 import { SunGlare } from './view/glare.js';
 import { weatherFor } from './world/mist.js';
+import { snowFor } from './world/snow.js';
 import { loadEdits } from './sim/edits.js';
 import { Editor } from './editor/editor.js';
 
@@ -253,6 +254,13 @@ function applyTime() {
   world.setSeason(day);
   // Mist and low cloud: as set, or spring and autumn mornings (src/world/mist.js).
   world.setWeather(weatherFor(settings, day, hours));
+  // Snow: as set, or some winter days (src/world/snow.js). Lying snow slows
+  // the wheels (src/sim/terrain.js).
+  const snow = snowFor(settings, day, hours);
+  world.setSnow(snow);
+  setSnowCover(snow.cover);
+  // Snowing: the sky is overcast.
+  world.setClouds(Math.max(Number(settings.cloudCover), snow.falling > 0 ? 0.75 + 0.25 * snow.falling : 0));
   // Bare trees and bushes catch less (src/sim/obstacles.js).
   setLeafiness(1 - seasonFor(day).bare);
   renderer.toneMappingExposure = world.exposure;
@@ -266,8 +274,7 @@ function applySettings() {
   wind.speed = settings.windSpeed;
   wind.directionDeg = settings.windDir;
   wind.turbulence = settings.turbulence;
-  applyTime();
-  world.setClouds(Number(settings.cloudCover));
+  applyTime(); // (and the cloud cover)
   sound.volume = settings.volume;
   osd.showHud = settings.showHud;
   const showTouch = settings.touchControls === 'on' || (settings.touchControls === 'auto' && (TOUCH_DEVICE || touchSeen));
@@ -800,6 +807,7 @@ function frame(now) {
   world.updateWindsock(wind.at(windsockPos, 0, windTmp), dt, now / 1000);
   if (!paused) world.updateClouds(dt, windTmp);
   world.updateWeather(rig.camera.position, paused ? 0 : dt, windTmp);
+  world.updateSnowfall(paused ? 0 : dt, windTmp, rig.camera, renderer.domElement.height);
 
   const eye = rig.pilotEye();
   const dist = eye.distanceTo(aircraft.position);
