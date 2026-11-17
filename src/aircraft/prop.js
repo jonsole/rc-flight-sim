@@ -24,9 +24,11 @@ function propDiscTexture() {
  * @param {object} [opts]  spinner: radius of the spinner cone (0 for none)
  * @returns {{ group: Group, update(rpm:number, dt:number, broken:boolean): void }}
  */
-/** A prop as tuned ({ diameterIn, pitchIn, blades }) in the models' terms ({ radius m, pitchIn, blades }). */
+/** A prop as tuned ({ diameterIn, pitchIn, blades, tip }) in the models' terms ({ radius m, pitchIn, blades, tip }). */
 export function propGeometry(p) {
-  return { radius: (p.diameterIn * 0.0254) / 2, pitchIn: p.pitchIn, blades: p.blades };
+  const g = { radius: (p.diameterIn * 0.0254) / 2, pitchIn: p.pitchIn, blades: p.blades };
+  if (p.tip) g.tip = p.tip; // 'square' | 'tapered' (else the model's own)
+  return g;
 }
 
 /**

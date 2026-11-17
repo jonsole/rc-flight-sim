@@ -44,7 +44,7 @@ export function buildAircraft(json) {
     // Built-in tuning: becomes the model's defaults. A changed prop is drawn too.
     const def = tunedDef(entry.def, tuning);
     const create = entry.createModel;
-    const propChanged = ['propDiameter', 'propPitch', 'propBlades'].some((k) => tuning[k] != null);
+    const propChanged = ['propDiameter', 'propPitch', 'propBlades', 'propTips'].some((k) => tuning[k] != null);
     entry = { ...entry, def, createModel: (o = {}) => create(o.prop || !propChanged ? o : { ...o, prop: def.motor.prop }) };
   }
   // The 3D model: from its file once loaded (loadModelFiles), else drawn in code.

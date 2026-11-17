@@ -8,7 +8,7 @@ import { Obstacles } from '../src/sim/obstacles.js';
 import { crownOf } from '../src/sim/treeShapes.js';
 import { coefficients, liftSlope } from '../src/sim/aero.js';
 import { applyExpo } from '../src/input/input.js';
-import { tunedDef } from '../src/sim/tuning.js';
+import { tunedDef, tunablesFor } from '../src/sim/tuning.js';
 
 const deg = Math.PI / 180;
 
@@ -510,6 +510,17 @@ describe('HobbyZone AeroScout (club trainer)', () => {
     expect(d.motor.prop.tip).toBe('square');
     expect(d.motor.pusher).toBe(true);
     expect(tunedDef(d, { propPitch: 4.5 }).motor.prop.tip).toBe('square');
+  });
+
+  it('blade tips can be changed in the Tuning tab (look and sound only)', () => {
+    const t = tunedDef(d, { propTips: 0 });
+    expect(t.motor.prop.tip).toBe('tapered');
+    expect(t.motor.staticThrust).toBe(d.motor.staticThrust);
+    expect(tunedDef(d, { propTips: 0, propPitch: 4.5 }).motor.prop.tip).toBe('tapered');
+    // Others default to tapered and can be given square tips.
+    const shockcub = getAircraft('buschtrottel-shockcub').def;
+    expect(tunablesFor(shockcub).find((x) => x.key === 'propTips').dflt).toBe(0);
+    expect(tunedDef(shockcub, { propTips: 1 }).motor.prop.tip).toBe('square');
   });
 
   it('starts in SAFE for beginners', () => {

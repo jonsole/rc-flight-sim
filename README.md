@@ -45,8 +45,8 @@ at about 7 m/s. It sits level on its wheels, steers on the ground with the
 rudder (nose wheel), and takes off hands-off at full power. Its prop has square
 (bullnose) tips, drawn that way, and like the real one it is loud: square tips
 buzz harder and harsher than tapered ones, and the pusher prop chops through
-the wing's wake for a rasping note (`"tip": "square"` on the prop and
-`pusher` in `src/aircraft/aeroscout.js`; the sound is made in `src/audio/engine.js`). The 3D model is
+the wing's wake for a rasping note (*Blade tips* in the Tuning tab's
+Propeller group changes it on any model; the sound is made in `src/audio/engine.js`). The 3D model is
 drawn from the dimensions in plain club colours (white, red trim, blue):
 change `"colors"` in its JSON file and run `node scripts/export-models.mjs
 hobbyzone-aeroscout` to repaint it in your club's colours. The manual says
@@ -96,7 +96,8 @@ published leaves the live page on the older build.
 *Menu → Tuning* shows the flight settings of the model you're flying, with
 its defaults: all-up weight and CG position; static thrust, prop pitch
 speed (top speed), motor torque, down- and right-thrust; the propeller
-(diameter, pitch, blades: shown on the 3D model too), the electric motor
+(diameter, pitch, blades, tapered or square tips: shown on the 3D model too;
+square tips are much louder), the electric motor
 (Kv, winding resistance) and the battery (cells, capacity, internal
 resistance): the full-throttle rpm, current, thrust and top speed are
 worked out from them, a bigger pack weighs more, and thrust fades as the

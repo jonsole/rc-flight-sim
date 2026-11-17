@@ -189,7 +189,7 @@ function replaceModel() {
   }
   // Showing the prop as tuned (Menu → Tuning), if it's been changed.
   const tuning = loadTuning(entry.id);
-  const tunedProp = ['propDiameter', 'propPitch', 'propBlades'].some((k) => tuning[k] != null) ? tunedDef(entry.def, tuning).motor.prop : null;
+  const tunedProp = ['propDiameter', 'propPitch', 'propBlades', 'propTips'].some((k) => tuning[k] != null) ? tunedDef(entry.def, tuning).motor.prop : null;
   model = entry.createModel(tunedProp ? { prop: tunedProp } : {});
   navLights = addNavLights(model, { shine: true });
   planeShadow.setModel(model, entry.def.wingSpan);
