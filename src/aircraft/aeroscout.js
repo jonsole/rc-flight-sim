@@ -216,7 +216,7 @@ export function buildAeroScout(o) {
   const def = {
     name: o.name,
     mass: o.mass,
-    inertia: o.inertia ?? [0.035, 0.06, 0.035], // roll, yaw, pitch (estimated)
+    inertia: [0.035, 0.06, 0.035], // roll, yaw, pitch (estimated)
     parasite: { x: o.parasiteX ?? 0.012, y: 0.035, z: 0.05 }, // gear legs, wheels, motor pylon, servo arms
     surfaces: [...wing, ...tail, fin, ...body],
     wingAspectRatio: AR,
