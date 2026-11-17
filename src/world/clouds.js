@@ -9,7 +9,7 @@
 //
 // Types (setType): fair-weather cumulus, towering cumulus, stratocumulus,
 // cirrus only, or cumulus with cirrus above.
-import { Mesh, PlaneGeometry, ShaderMaterial, Color, Vector2, Vector3, Vector4, DoubleSide } from 'three';
+import { Mesh, PlaneGeometry, ShaderMaterial, Color, Vector2, Vector3, Vector4, DoubleSide, ShaderChunk } from 'three';
 import { fog4, FIELD_GLSL } from './volfog.js';
 
 const SIZE = 14000;
@@ -382,6 +382,17 @@ export class CloudLayer {
   }
 }
 
+// Cloud and aeroplane shadows dim only the sun's (or moon's) light, the
+// directional light - not lamps such as the aeroplane's navigation lights,
+// whose glow on the ground they would otherwise cut holes in. A material
+// with them sets sunShade (and SUN_SHADE) before the lights are added up.
+// (Patched into three.js's lighting code once, before anything compiles;
+// src/world/fluffy.js builds its own version of it from this one.)
+ShaderChunk.lights_fragment_begin = ShaderChunk.lights_fragment_begin.replace(
+  'getDirectionalLightInfo( directionalLight, directLight );',
+  'getDirectionalLightInfo( directionalLight, directLight );\n\t\t#ifdef SUN_SHADE\n\t\tdirectLight.color *= sunShade;\n\t\t#endif',
+);
+
 /**
  * Let a MeshStandardMaterial show cloud shadows: direct sunlight is dimmed
  * where a cloud lies between the point and the sun.
@@ -410,7 +421,9 @@ export function addCloudShadows(material) {
         #endif`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${UNIFORM_DECLS}\n${PLANE_DECLS}\nvarying vec3 vCloudWorld;\n#ifdef CLOUD_PER_VERTEX\nvarying float vCloudShade;\n#endif\n${NOISE}`)
-      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+      .replace('#include <lights_fragment_begin>', `
+        #define SUN_SHADE
+        float sunShade;
         {
           #ifdef CLOUD_PER_VERTEX
           float shade = vCloudShade;
@@ -430,9 +443,9 @@ export function addCloudShadows(material) {
               shade *= 1.0 - texture2D(psMask, uv).r * smoothstep(-0.02, 0.03, beyond);
             }
           }
-          reflectedLight.directDiffuse *= shade;
-          reflectedLight.directSpecular *= shade;
-        }`);
+          sunShade = shade;
+        }
+        #include <lights_fragment_begin>`);
   };
   const prevKey = material.customProgramCacheKey?.bind(material);
   material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|cloudShadows`;
