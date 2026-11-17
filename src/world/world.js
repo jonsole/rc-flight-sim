@@ -457,7 +457,14 @@ export class World {
     Object.assign(u, { fogMistA: { value: fog4.a }, fogMistB: { value: fog4.b }, fogSun: { value: fog4.sun }, fogUnder: { value: fog4.under }, fogTop: { value: fog4.top } });
     // Sunbeams (crepuscular rays) under the clouds, and how strong (0 off).
     Object.assign(u, cloudUniforms, { godRays: { value: 1 } });
+    // The sun's disc: a little larger than life (it reads better on a
+    // screen), larger still and orange low down (setTime).
+    u.sunDiscCos = { value: Math.cos((0.8 * Math.PI) / 180 / 2) };
+    u.sunDiscTint = { value: new Color(1, 1, 1) };
     sky.material.fragmentShader = sky.material.fragmentShader
+      .replace(/const float sunAngularDiameterCos = [0-9.]+;/, 'uniform float sunDiscCos;\nuniform vec3 sunDiscTint;')
+      .replace('float sundisk = smoothstep( sunAngularDiameterCos, sunAngularDiameterCos + 0.00002, cosTheta );', 'float sundisk = smoothstep( sunDiscCos, sunDiscCos + ( 1.0 - sunDiscCos ) * 0.2, cosTheta );')
+      .replace('L0 += ( vSunE * 19000.0 * Fex ) * sundisk;', 'L0 += ( vSunE * 19000.0 * Fex ) * sunDiscTint * sundisk;')
       .replace('void main() {', `uniform float skyGain;\nuniform float skyFog;\nuniform vec3 skyFogColor;\nuniform float godRays;\n${FIELD_GLSL}\n${CLOUD_GLSL}\nvoid main() {`)
       .replace('#include <tonemapping_fragment>', `{
         vec3 c = gl_FragColor.rgb * skyGain;
@@ -534,6 +541,15 @@ export class World {
     const moon = moonPosition(hours, day);
     this.hours = hours;
     this.sunElevation = sun.elevation;
+    {
+      // The sun's disc: 1° high in the sky (a bit bigger than its real
+      // 0.53°), swelling to ~2.2° and turning orange as it sets.
+      const low = 1 - smooth(0, 18, sun.elevation);
+      const diam = 1.0 + 1.3 * low * low;
+      const su = this.sky.material.uniforms;
+      su.sunDiscCos.value = Math.cos((diam * Math.PI) / 180 / 2);
+      su.sunDiscTint.value.setRGB(1, 1 - 0.4 * low, 1 - 0.75 * low);
+    }
     skyDir(sun.elevation, sun.azimuth, this.sunDir);
     skyDir(moon.elevation, moon.azimuth, this.moonDir);
     const el = sun.elevation;
