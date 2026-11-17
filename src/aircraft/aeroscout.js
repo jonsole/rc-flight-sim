@@ -16,8 +16,6 @@
 //   +x forward, +y up, +z right (right-handed).
 
 import { liftSlope } from '../sim/aero.js';
-import { propGeometry } from './prop.js';
-import { createAeroScoutModel } from './aeroscoutModel.js';
 
 const deg = Math.PI / 180;
 
@@ -302,10 +300,5 @@ export function buildAeroScout(o) {
       pod: [0.06, L.wingY + 0.05, 0], // a camera on the wing centre
       chase: { back: L.span * 1.8 + 0.3, up: L.span * 0.45 + 0.15 },
     },
-    // opts.prop: the prop as tuned (Menu → Tuning), shown instead of the standard one.
-    createModel: (opts = {}) => createAeroScoutModel(
-      opts.prop ? { ...L, prop: { ...L.prop, ...propGeometry(opts.prop) } } : L,
-      o.colors,
-    ),
   };
 }

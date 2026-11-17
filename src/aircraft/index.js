@@ -4,9 +4,8 @@
 // builder's options (units: metres, kilograms, newtons, seconds; angles in
 // degrees where the name ends in "Deg"). A "tuning" section holds built-in
 // changes in the Tuning tab's terms (src/sim/tuning.js), applied on top.
-// Adding a JSON file adds an aircraft. "model": "<file>.glb" names a 3D model
-// file in the same folder (glTF, e.g. from Blender: see src/aircraft/fileModel.js);
-// without one, or until it has loaded, the model drawn in code is used.
+// Adding a JSON file adds an aircraft. "model": "<file>.glb" names its 3D model
+// file in the same folder (glTF, made in Blender: see src/aircraft/fileModel.js).
 //
 // Each entry: { id, name, summary, defaultAssist, def, geometry, views, createModel(opts) }
 import { buildSE5a } from './se5a.js';
@@ -15,6 +14,13 @@ import { buildBuschtrottel } from './buschtrottel.js';
 import { buildAeroScout } from './aeroscout.js';
 import { tunedDef } from '../sim/tuning.js';
 import { createFileModel } from './fileModel.js';
+import { propModel } from './prop.js';
+import { Group } from 'three';
+
+/** Stands in until the model file has loaded (and in tests, which don't load them). */
+function emptyModel() {
+  return { root: new Group(), parts: {}, update() {}, setPilotVisible() {} };
+}
 
 const BUILDERS = { se5a: buildSE5a, buschtrottel: buildBuschtrottel, f22: buildF22, aeroscout: buildAeroScout };
 
@@ -40,24 +46,18 @@ export function buildAircraft(json) {
   const build = BUILDERS[builder];
   if (!build) throw new Error(`${json.id}: unknown builder "${builder}"`);
   let entry = build(fromJson(opts));
-  if (tuning && Object.keys(tuning).length) {
-    // Built-in tuning: becomes the model's defaults. A changed prop is drawn too.
-    const def = tunedDef(entry.def, tuning);
-    const create = entry.createModel;
-    const propChanged = ['propDiameter', 'propPitch', 'propBlades', 'propTips'].some((k) => tuning[k] != null);
-    entry = { ...entry, def, createModel: (o = {}) => create(o.prop || !propChanged ? o : { ...o, prop: def.motor.prop }) };
-  }
-  // The 3D model: from its file once loaded (loadModelFiles), else drawn in code.
-  const builtin = entry.createModel;
+  // Built-in tuning: becomes the model's defaults (a changed prop is drawn too).
+  if (tuning && Object.keys(tuning).length) entry = { ...entry, def: tunedDef(entry.def, tuning) };
+  // The 3D model: its file (loadModelFiles), with the propeller drawn in code
+  // at the file's prop marker, so a prop changed in Tuning shows.
   const withFile = {
     ...entry,
     modelFile: modelFile || null,
     fileScene: null,
-    createBuiltinModel: builtin,
+    /** opts.prop: the prop as tuned ({ diameterIn, pitchIn, blades, tip }); default the model's own. */
     createModel(o = {}) {
-      if (!withFile.fileScene) return builtin(o);
-      // The built-in model lends its propeller (as tuned) to the file's.
-      return createFileModel(withFile.fileScene, { propFrom: builtin(o) });
+      if (!withFile.fileScene) return emptyModel();
+      return createFileModel(withFile.fileScene, { propFrom: propModel(o.prop || withFile.def.motor.prop) });
     },
   };
   return withFile;

@@ -92,8 +92,8 @@ const isBroken = (o) => {
  * A playable model from a loaded file's scene.
  * @param {import('three').Object3D} scene  the file's scene (cloned here)
  * @param {object} [o]
- * @param {{ parts?: object, update?: Function }} [o.propFrom]  a built-in model
- *   whose propeller (sized as tuned) is drawn at the file's `prop` empty
+ * @param {{ parts?: object, update?: Function }} [o.propFrom]  the propeller
+ *   (src/aircraft/prop.js propModel, sized as tuned), drawn at the file's `prop` empty
  * @returns {{ root, parts, setPilotVisible(v), update(aircraft, dt) }}
  */
 export function createFileModel(scene, { propFrom = null } = {}) {
@@ -151,8 +151,8 @@ export function createFileModel(scene, { propFrom = null } = {}) {
     if (nodes.length) parts[id] = nodes;
   }
 
-  // The propeller: borrowed from the built-in model, so it is the prop set
-  // in the Tuning tab and spins as before.
+  // The propeller: drawn in code (prop.js), so it is the prop set in the
+  // Tuning tab, spinning about the prop empty's X axis.
   const propNode = findAll(model, 'prop')[0];
   const borrowed = propFrom?.parts?.prop?.[0];
   if (propNode && borrowed) {
@@ -199,7 +199,7 @@ export function createFileModel(scene, { propFrom = null } = {}) {
         _q.setFromAxisAngle(_v.set(1, 0, 0), t.sign * a);
         t.node.quaternion.copy(t.base).multiply(_q);
       }
-      // The built-in model spins its prop (and nothing else of it is shown).
+      // Spin the prop.
       propFrom?.update?.(aircraft, dt);
     },
   };

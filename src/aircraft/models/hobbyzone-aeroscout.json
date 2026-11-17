@@ -14,7 +14,7 @@
     "stall": "stallDrop and tipStallBiasDeg: a gentle stall (a trainer's), the left tip going a little first so a held stall drops a wing slowly rather than snapping.",
     "rudder": "Rudder 30\u00b0. It doesn't level itself: like the real one with SAFE off, a bank stays where you leave it (effective dihedral 2\u00b0: a 30\u00b0 bank is still ~30\u00b0 after 20 s hands off). So rudder turns it mostly flat (a second of full rudder: ~46\u00b0 of turn, ~21\u00b0 of roll); the deep cabin pod (sideArea, m\u00b2) and a 10% larger fin (finScale) give it the side force for that.",
     "aileronDrag": "Differential ailerons ([down, up] drag per rad\u00b2; default 0.08, 0.015): less adverse yaw, so the nose follows a bank round rather than swinging out first.",
-    "model": "hobbyzone-aeroscout.glb was edited by hand in Blender (textured): don't regenerate it with scripts/export-models.mjs, which would overwrite it. The built-in model in aeroscoutModel.js is only shown until the file has loaded."
+    "model": "hobbyzone-aeroscout.glb: made in Blender (textured). The propeller is drawn in code at its prop marker."
   },
   "span": 1.095,
   "cgFromLe": 0.075,

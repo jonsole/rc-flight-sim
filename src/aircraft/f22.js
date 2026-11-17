@@ -20,8 +20,6 @@
 //   +x forward, +y up, +z right (right-handed).
 
 import { liftSlope } from '../sim/aero.js';
-import { propGeometry } from './prop.js';
-import { createF22Model } from './f22Model.js';
 
 const deg = Math.PI / 180;
 
@@ -333,7 +331,6 @@ export function buildF22(style) {
       pod: [0.0, under + 0.012, 0],
       chase: { back: 1.4, up: 0.45 },
     },
-    createModel: (opts = {}) => createF22Model(opts.prop ? { ...geometry, prop: { ...geometry.prop, ...propGeometry(opts.prop) } } : geometry),
   };
 }
 

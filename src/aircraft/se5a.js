@@ -10,7 +10,6 @@
 //   +x forward, +y up, +z right (right-handed).
 
 import { liftSlope } from '../sim/aero.js';
-import { createSE5aModel } from './se5aModel.js';
 
 const deg = Math.PI / 180;
 const REF_SPAN = 1.62;
@@ -265,16 +264,6 @@ export function buildSE5a(o) {
       cockpit: [G.pilotEye.x, G.pilotEye.y, G.pilotEye.z],
       pod: [G.upperLeX - s(0.09), G.upperY + s(0.09), 0],
       chase: { back: SPAN * 2.0 + 0.3, up: SPAN * 0.5 + 0.15 },
-    },
-    // The 3D model can show a flatter dihedral than the aero value, which also
-    // stands in for the effect of wing height.
-    // opts.prop: the prop as tuned (Menu → Tuning), shown instead of the standard one.
-    createModel: (opts = {}) => {
-      const g = o.visualDihedral !== undefined ? { ...ref, dihedral: o.visualDihedral } : { ...ref };
-      if (opts.prop) {
-        g.prop = { ...ref.prop, radius: (opts.prop.diameterIn * 0.0254) / 2 / k, blades: opts.prop.blades, pitch: (opts.prop.pitchIn * 0.0254) / k };
-      }
-      return createSE5aModel(g, k);
     },
   };
 }

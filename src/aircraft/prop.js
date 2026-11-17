@@ -41,6 +41,22 @@ export function shownRpm(aircraft) {
   return motor > DISC_RPM ? aircraft.rpm : Math.min(aircraft.rpm, WINDMILL_SHOWN_RPM);
 }
 export const DISC_RPM = 1200;
+
+/**
+ * A propeller as a model part ({ parts: { prop }, update }), for a model file
+ * to show at its prop marker (src/aircraft/fileModel.js).
+ * @param {{ diameterIn:number, pitchIn:number, blades:number, tip?:string }} prop
+ */
+export function propModel(prop) {
+  const g = propGeometry(prop);
+  const propeller = createProp(g, { spinner: Math.max(0.006, g.radius * 0.11) });
+  return {
+    parts: { prop: [propeller.group] },
+    update(aircraft, dt) {
+      propeller.update(shownRpm(aircraft), dt, aircraft.propBroken);
+    },
+  };
+}
 const WINDMILL_SHOWN_RPM = 240;
 
 export function createProp(P, { spinner = 0.011 } = {}) {

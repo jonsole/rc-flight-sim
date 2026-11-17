@@ -52,9 +52,7 @@ the wing's wake for a rasping note (*Blade tips* in the Tuning tab's
 Propeller group changes it on any model; the sound is made in `src/audio/engine.js`). The 3D model,
 `src/aircraft/models/hobbyzone-aeroscout.glb`, was made in Blender: textured
 in the real one's printed scheme, with a removable black canopy (it comes off
-in a crash). Edit it in Blender as below; don't run `scripts/export-models.mjs`
-for it, which would overwrite it with the simpler model drawn in code
-(`src/aircraft/aeroscoutModel.js`, shown only until the file has loaded). The manual says
+in a crash). Edit it in Blender as below. The manual says
 to use 70% low rates when learning: set the rates to 0.7 under
 *Menu → Transmitter → Expo & rates*.
 
@@ -256,7 +254,7 @@ npm test           # flight-model checks: stability, trim, stall, controls, take
 
 ```
 src/sim/       physics (no rendering): aero.js, aircraft.js, obstacles.js, terrain.js, wind.js
-src/aircraft/  aircraft registry (index.js), settings and 3D model files (models/), builders + code-drawn 3D
+src/aircraft/  aircraft registry (index.js), settings and 3D model files (models/), flight-model builders, the propeller
 src/world/     sky, terrain, runway, trees, windsock
 src/view/      camera rig (LOS / FPV / chase)
 src/input/     transmitter (Gamepad API) + keyboard, expo & rates
@@ -295,8 +293,10 @@ colours, prop or mass) is a new aircraft in the list.
 
 Each aircraft's 3D model is a glTF file, `src/aircraft/models/<id>.glb`,
 named by `"model"` in its JSON file. It is only the look: how it flies comes
-from the JSON settings. Without a model file (or until it has loaded) the
-game draws the model built in code.
+from the JSON settings. The files load with the flying field at start-up,
+before *Fly* can be pressed. The propeller is the one thing drawn in code
+(`src/aircraft/prop.js`), at the file's `prop` marker, so the prop set in the
+Tuning tab (size, blades, tips) is the one you see.
 
 **Editing in Blender:** File → Import → glTF 2.0, open the `.glb`. The nose
 points along +X, the right wing along −Y, Z is up; units are metres. Edit
@@ -331,25 +331,22 @@ without flickering. The flat-shaded foam pieces come in as loose triangles:
 Mesh → Clean Up → Merge by Distance joins them, then Shade Flat keeps the
 faceted look.
 
-The files here were made from the models drawn in code by
-`node scripts/export-models.mjs [id ...]`, which overwrites the file: don't
-run it for a model you've edited.
-
 ## Adding an aircraft
 
 Each aircraft is a registry entry in `src/aircraft/index.js`, built from its
 JSON file:
 
 ```js
-{ id, name, summary, defaultAssist, def, geometry, views, createModel }
+{ id, name, summary, defaultAssist, def, geometry, views, modelFile, createModel }
 ```
 
 - `def`: the flight model (mass, inertia, lifting surfaces, contact points,
   motor, battery, trim, assist gains), as consumed by `src/sim/aircraft.js`.
 - `views`: camera mounts in body axes (`cockpit`, `pod`), `span` for LOS
   auto-zoom, and `chase` distances.
-- `createModel()`: returns `{ root, parts, update(aircraft, dt), setPilotVisible(bool) }`:
-  from the model file once `loadModelFiles()` has loaded it, else drawn in code.
+- `createModel({ prop })`: returns `{ root, parts, update(aircraft, dt), setPilotVisible(bool) }`
+  from the model file (`"model"` in the JSON file, loaded by `loadModelFiles()`),
+  with the propeller drawn in code; `prop` is the prop as tuned.
 - `def.handLaunch` (optional): `{ height, speed, pitch, throttle }` for a model
   with no wheels. It starts in the pilot's hand and is thrown along its nose
   once the throttle reaches `throttle`. The wheel tests are skipped for it.
@@ -357,7 +354,8 @@ JSON file:
   flies at, for an overpowered model that climbs at half throttle.
 
 Another size of S.E.5a, or another Buschtrottel, is just another JSON file.
-A different type needs its own builder (definition and 3D model module). The flight
+A different type needs its own builder (its flight model) and a model file
+made in Blender. The flight
 tests run automatically for every registered aircraft.
 
 ## Multiplayer

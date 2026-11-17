@@ -5,7 +5,7 @@ import { Obstacles, setLeafiness } from './sim/obstacles.js';
 import { seasonFor } from './world/seasons.js';
 import { Wind } from './sim/wind.js';
 import { World, RUNWAY } from './world/world.js';
-import { AIRCRAFT, getAircraft, loadModelFiles } from './aircraft/index.js';
+import { AIRCRAFT, getAircraft } from './aircraft/index.js';
 import { Input } from './input/input.js';
 import { TouchControls, isTouchDevice } from './input/touch.js';
 import { CameraRig, CAMERA_LABELS } from './view/cameras.js';
@@ -218,12 +218,9 @@ function retune() {
   // A different prop: show it.
   if (JSON.stringify(aircraft.def.motor.prop) !== oldProp) replaceModel();
 }
+// The 3D model files (src/aircraft/models/*.glb) were loaded before this
+// module (src/boot.js).
 loadAircraft(settings.aircraft);
-// 3D model files (src/aircraft/models/*.glb) replace the drawn-in-code models
-// once they've loaded.
-loadModelFiles().then((ids) => {
-  if (ids.includes(entry.id)) replaceModel();
-});
 const osd = new OSD(document.getElementById('osd'));
 const sound = new EngineSound();
 const analog = document.getElementById('analog');
