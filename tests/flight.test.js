@@ -8,6 +8,7 @@ import { Obstacles } from '../src/sim/obstacles.js';
 import { crownOf } from '../src/sim/treeShapes.js';
 import { coefficients, liftSlope } from '../src/sim/aero.js';
 import { applyExpo } from '../src/input/input.js';
+import { tunedDef, tunablesFor } from '../src/sim/tuning.js';
 
 const deg = Math.PI / 180;
 
@@ -151,7 +152,7 @@ for (const entry of AIRCRAFT) {
         expect(pullFromCruise(1).rollRate).toBeLessThan(2.6); // rad/s, ~150°/s (a biplane may snap a little)
       });
 
-      it.skipIf(handLaunch)('sits on its main wheels and tail skid / tail wheel', () => {
+      it.skipIf(handLaunch)(entry.def.tricycle ? 'sits level on its main wheels and nose wheel' : 'sits on its main wheels and tail skid / tail wheel', () => {
         const ac = new Aircraft(def, { ground });
         ac.resetOnGround(0, 0, 0);
         ac.update(3);
@@ -159,9 +160,17 @@ for (const entry of AIRCRAFT) {
         const total = ac.contacts.reduce((s, c) => s + c.load, 0);
         expect(total).toBeCloseTo(def.mass * 9.81, 0);
         const gear = ac.contacts.filter((c) => c.type === 'wheel' || c.type === 'skid');
-        const tail = gear.reduce((a, b) => (b.pos.x < a.pos.x ? b : a));
-        expect(tail.load).toBeGreaterThan(0.1 * def.mass * 9.81);
-        expect(ac.attitude().pitch).toBeGreaterThan(5 * deg); // tail-down
+        if (def.tricycle) {
+          // The nose wheel carries some of the weight, and it sits about level.
+          const nose = gear.reduce((a, b) => (b.pos.x > a.pos.x ? b : a));
+          expect(nose.load).toBeGreaterThan(0.08 * def.mass * 9.81);
+          expect(nose.load).toBeLessThan(0.4 * def.mass * 9.81);
+          expect(Math.abs(ac.attitude().pitch)).toBeLessThan(4 * deg);
+        } else {
+          const tail = gear.reduce((a, b) => (b.pos.x < a.pos.x ? b : a));
+          expect(tail.load).toBeGreaterThan(0.1 * def.mass * 9.81);
+          expect(ac.attitude().pitch).toBeGreaterThan(5 * deg); // tail-down
+        }
       });
 
       it.skipIf(handLaunch)('takes off under full power with a touch of up elevator', () => {
@@ -217,7 +226,8 @@ for (const entry of AIRCRAFT) {
         const clBeta = ac.lastForces.moment.x / (q * def.wingArea * ac.wingSpan) / beta;
         // Rolls left, raising the right wing. Modest: the models are tuned
         // close to spirally neutral, so rudder doesn't roll them hard.
-        expect(clBeta).toBeLessThan(-0.05);
+        // A model that holds a bank (def.holdsBank) has just a little.
+        expect(clBeta).toBeLessThan(def.holdsBank ? -0.03 : -0.05);
       });
 
       it('rolls back towards level when a bank is released (hands off)', () => {
@@ -225,8 +235,10 @@ for (const entry of AIRCRAFT) {
         ac.update(3);
         ac.orientation.multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), 30 * deg));
         ac.update(10);
-        // Slowly: close to spirally neutral, but never spirally unstable.
-        expect(Math.abs(ac.attitude().roll)).toBeLessThan(25 * deg);
+        // Slowly: close to spirally neutral, but never spirally unstable. A
+        // model that holds a bank (def.holdsBank) stays about where it was.
+        expect(Math.abs(ac.attitude().roll)).toBeLessThan((def.holdsBank ? 38 : 25) * deg);
+        if (def.holdsBank) expect(Math.abs(ac.attitude().roll)).toBeGreaterThan(22 * deg);
       });
 
       it('gets ground effect: more lift and less drag just above the ground', () => {
@@ -480,6 +492,169 @@ describe('FT Mighty Mini F-22 specification', () => {
   });
 });
 
+describe('HobbyZone AeroScout (club trainer)', () => {
+  const entry = getAircraft('hobbyzone-aeroscout');
+  const d = entry.def;
+  const onGround = () => {
+    const ac = new Aircraft(d, { ground });
+    ac.assistMode = 'off';
+    ac.resetOnGround(0, 0, 0);
+    return ac;
+  };
+
+  it('matches the published size and CG', () => {
+    expect(d.wingSpan).toBeCloseTo(1.095, 3);
+    expect(entry.geometry.wingLeX).toBeCloseTo(0.075, 3); // CG 75 mm behind the root LE
+    expect(d.mass).toBeGreaterThan(0.75);
+    expect(d.mass).toBeLessThan(0.95);
+  });
+
+  it('has a square-tipped pusher prop (the noisy one), kept when the prop is tuned', () => {
+    expect(d.motor.prop.tip).toBe('square');
+    expect(d.motor.pusher).toBe(true);
+    expect(tunedDef(d, { propPitch: 4.5 }).motor.prop.tip).toBe('square');
+  });
+
+  it('blade tips can be changed in the Tuning tab (look and sound only)', () => {
+    const t = tunedDef(d, { propTips: 0 });
+    expect(t.motor.prop.tip).toBe('tapered');
+    expect(t.motor.staticThrust).toBe(d.motor.staticThrust);
+    expect(tunedDef(d, { propTips: 0, propPitch: 4.5 }).motor.prop.tip).toBe('tapered');
+    // Others default to tapered and can be given square tips.
+    const shockcub = getAircraft('buschtrottel-shockcub').def;
+    expect(tunablesFor(shockcub).find((x) => x.key === 'propTips').dflt).toBe(0);
+    expect(tunedDef(shockcub, { propTips: 1 }).motor.prop.tip).toBe('square');
+  });
+
+  it('starts in SAFE for beginners', () => {
+    expect(entry.defaultAssist).toBe('safe');
+  });
+
+  it('flies level at about half throttle and climbs at full', () => {
+    const level = (throttle) => {
+      const ac = new Aircraft(d, { ground });
+      ac.assistMode = 'off';
+      ac.resetInAir(new Vector3(0, 150, 0), 0, 11);
+      ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle };
+      for (let t = 0; t < 20; t += 0.05) {
+        ac.controls.roll = Math.max(-1, Math.min(1, -2 * ac.attitude().roll));
+        ac.update(0.05);
+      }
+      return ac.velocity.y;
+    };
+    expect(Math.abs(level(0.55))).toBeLessThan(0.5);
+    expect(level(1)).toBeGreaterThan(1.5);
+  });
+
+  it('takes off hands-off at full power without nosing over or striking the prop', () => {
+    const ac = onGround();
+    ac.controls.throttle = 1;
+    for (let t = 0; t < 8; t += 0.02) {
+      ac.controls.roll = Math.max(-1, Math.min(1, -2 * ac.attitude().roll));
+      ac.update(0.02);
+    }
+    expect(ac.crashed).toBe(false);
+    expect(ac.propBroken).toBe(false);
+    expect(ac.position.y).toBeGreaterThan(3);
+  });
+
+  it('glides a little better than the draggy foamies (motor off, hands off)', () => {
+    const ac = new Aircraft(d, { ground });
+    ac.assistMode = 'off';
+    ac.resetInAir(new Vector3(0, 400, 0), 0, 11);
+    ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 0 };
+    ac.update(6);
+    const p0 = ac.position.clone();
+    ac.update(12);
+    const dp = ac.position.clone().sub(p0);
+    const glide = Math.hypot(dp.x, dp.z) / -dp.y;
+    expect(glide).toBeGreaterThan(5);
+    expect(glide).toBeLessThan(8);
+  });
+
+  for (const [mode, pull] of [['off', 0.75], ['off', 1], ['as3x', 1]]) {
+    it(`loops from level flight at full power, ${pull === 1 ? 'full' : '3/4'} up, assist ${mode}, without rolling off`, () => {
+      const ac = new Aircraft(d, { ground });
+      ac.assistMode = mode;
+      ac.resetInAir(new Vector3(0, 200, 0), 0, 12);
+      ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 1 };
+      for (let t = 0; t < 4; t += 0.05) {
+        ac.controls.roll = Math.max(-1, Math.min(1, -2 * ac.attitude().roll));
+        ac.update(0.05);
+      }
+      ac.controls.roll = 0;
+      ac.controls.pitch = pull;
+      let worst = 0;
+      let turned = 0;
+      let prev = new Vector3(1, 0, 0).applyQuaternion(ac.orientation);
+      for (let i = 0; i < 80 && turned < 2 * Math.PI; i++) {
+        ac.update(0.05);
+        const w = new Vector3(0, 0, 1).applyQuaternion(ac.orientation);
+        worst = Math.max(worst, Math.acos(Math.min(1, Math.abs(w.z))));
+        const f = new Vector3(1, 0, 0).applyQuaternion(ac.orientation);
+        turned += Math.acos(Math.min(1, f.dot(prev)));
+        prev = f;
+      }
+      expect(turned).toBeGreaterThan(2 * Math.PI); // all the way round
+      expect(worst).toBeLessThan(20 * deg); // was 89° (stalled over the top, dropped a wing)
+    });
+  }
+
+  it('stays stalled for a moment after the stick is let go (the nose has to drop first)', () => {
+    const unstallTime = (hysteresis) => {
+      const dd = { ...d, surfaces: d.surfaces.map((s) => (s.wing ? { ...s, foil: { ...s.foil, stallHysteresis: hysteresis } } : s)) };
+      const ac = new Aircraft(dd, { ground });
+      ac.assistMode = 'off';
+      ac.resetInAir(new Vector3(0, 200, 0), 0, 12);
+      ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 0.3 };
+      ac.update(2);
+      ac.controls.pitch = 1;
+      for (let t = 0; t < 6 && ac.wingStall < 0.6; t += 0.02) ac.update(0.02);
+      ac.update(0.3);
+      ac.controls.pitch = 0;
+      for (let t = 0; t < 3; t += 0.02) {
+        ac.update(0.02);
+        if (ac.wingStall < 0.1) return t;
+      }
+      return 3;
+    };
+    const withHysteresis = unstallTime(d.surfaces.find((s) => s.wing).foil.stallHysteresis);
+    expect(withHysteresis).toBeGreaterThan(0.35); // was 0.14 s: unstalled the moment the stick was let go
+    expect(withHysteresis).toBeGreaterThan(2 * unstallTime(0));
+    expect(withHysteresis).toBeLessThan(1.5); // but it does recover
+  });
+
+  it('rudder turns it mostly flat: it yaws more than it rolls', () => {
+    const ac = new Aircraft(d, { ground });
+    ac.assistMode = 'off';
+    ac.resetInAir(new Vector3(0, 120, 0), 0, 13);
+    ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 0.45 };
+    ac.update(3);
+    const a0 = ac.attitude();
+    ac.controls.yaw = 1;
+    ac.update(1);
+    const a1 = ac.attitude();
+    const turned = a1.heading - a0.heading;
+    const rolled = Math.abs(a1.roll - a0.roll);
+    expect(turned).toBeGreaterThan(40 * deg); // was 29° on 22° of rudder
+    expect(rolled).toBeLessThan(0.55 * turned); // was 51° of roll for 39° of turn
+  });
+
+  it('SAFE keeps a beginner out of trouble with full stick held', () => {
+    const ac = new Aircraft(d, { ground });
+    ac.assistMode = 'safe';
+    ac.resetInAir(new Vector3(0, 150, 0), 0, 12);
+    ac.controls = { roll: 1, pitch: 1, yaw: 0, throttle: 0.6 };
+    let maxBank = 0;
+    for (let t = 0; t < 6; t += 0.02) {
+      ac.update(0.02);
+      maxBank = Math.max(maxBank, Math.abs(ac.attitude().roll));
+    }
+    expect(maxBank).toBeLessThan(55 * deg);
+    expect(ac.crashed).toBe(false);
+  });
+});
+
 describe('aircraft registry', () => {
   it('has unique ids and complete entries', () => {
     const ids = AIRCRAFT.map((a) => a.id);
@@ -714,14 +889,16 @@ describe('rudder and aileron coupling', () => {
     ac.update(3);
     return ac;
   };
-  for (const id of ['buschtrottel-shockcub', 'buschtrottel-highlander', 'buschtrottel-agro', 'eflite-se5a-900']) {
+  for (const id of ['buschtrottel-shockcub', 'buschtrottel-highlander', 'buschtrottel-agro', 'eflite-se5a-900', 'hobbyzone-aeroscout']) {
     it(`${id}: full rudder for a second rolls it only moderately`, () => {
       const ac = trimmed(id);
       const r0 = ac.attitude().roll;
       ac.controls.yaw = 1;
       ac.update(1);
       // Was 41° (ShockCub), 46° (Agro), 72° (S.E.5a: a biplane rolls more).
-      expect(Math.abs(ac.attitude().roll - r0)).toBeLessThan((id.includes('se5a') ? 40 : 30) * deg);
+      // The AeroScout's rudder throw is bigger: it yaws more than it rolls.
+      const limit = id.includes('se5a') ? 40 : id.includes('aeroscout') ? 35 : 30;
+      expect(Math.abs(ac.attitude().roll - r0)).toBeLessThan(limit * deg);
     });
 
     it(`${id}: aileron gives adverse yaw at first (nose swings out of the roll)`, () => {

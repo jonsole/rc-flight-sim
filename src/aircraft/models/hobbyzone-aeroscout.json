@@ -1,0 +1,64 @@
+{
+  "builder": "aeroscout",
+  "id": "hobbyzone-aeroscout",
+  "name": "HobbyZone AeroScout S 2 1.1m",
+  "summary": "Foam beginner trainer, 1.1 m: high wing, pusher prop, tricycle gear with nose-wheel steering. 2306 2250Kv, 3S 2200 mAh, ~850 g. Starts in SAFE.",
+  "notes": {
+    "units": "Units: metres, kilograms, newtons, seconds; angles in degrees where the name ends in 'Deg'. 'tuning' holds built-in changes in the Tuning tab's terms (paste an Export's \"tuning\" here).",
+    "about": "For club beginners. Published: span about 1095 mm (retailers; the manual's spec table says 1033 mm), length about 870 mm, 2306 2250Kv motor, 3S 1300-2200 mAh, CG 60-75 mm behind the leading edge at the root (75 mm suggested), low rates 70% of high, flies level at 50-60% throttle. Estimated: planform and wing area (~0.2 m\u00b2), the prop (6x4), thrust, inertia, airfoil and drag, weight with a 2200 pack.",
+    "look": "Drawn from the dimensions and the general layout. Colours as on the real one (white foam, orange and dark grey bands, black canopy, black tyres on grey hubs, grey-blue panels under the wings, an orange pinstripe along the belly); the bands are simple shapes in about the same places, and there are no maker's logos or lettering.",
+    "defaultAssist": "SAFE (Beginner mode: limited bank and pitch, self-levelling). G cycles off / AS3X / SAFE.",
+    "throws": "High rates; use the transmitter's 70% low rate for first flights. Elevator 14\u00b0: at 18\u00b0 full up stalled it over the top of a loop and dropped a wing.",
+    "trim": "tailIncidenceDeg and the thrust figures are set so it flies level at about 55% throttle (~11 m/s) and climbs gently at full power, as the manual describes.",
+    "prop": "6x4 assumed on the 2306 2250Kv / 3S: loaded rpm, static thrust (N, ~1.1:1 thrust to weight) and full-throttle current (A) are estimates. It loops from level flight at full power.",
+    "stall": "stallDrop and tipStallBiasDeg: a gentle stall (a trainer's), the left tip going a little first so a held stall drops a wing slowly rather than snapping.",
+    "rudder": "Rudder 30\u00b0. It doesn't level itself: like the real one with SAFE off, a bank stays where you leave it (effective dihedral 2\u00b0: a 30\u00b0 bank is still ~30\u00b0 after 20 s hands off). So rudder turns it mostly flat (a second of full rudder: ~46\u00b0 of turn, ~21\u00b0 of roll); the deep cabin pod (sideArea, m\u00b2) and a 10% larger fin (finScale) give it the side force for that.",
+    "aileronDrag": "Differential ailerons ([down, up] drag per rad\u00b2; default 0.08, 0.015): less adverse yaw, so the nose follows a bank round rather than swinging out first.",
+    "model": "hobbyzone-aeroscout.glb: made in Blender (textured). The propeller is drawn in code at its prop marker."
+  },
+  "span": 1.095,
+  "cgFromLe": 0.075,
+  "mass": 0.85,
+  "dihedralDeg": 4,
+  "aeroDihedralDeg": 2,
+  "tailIncidenceDeg": 2,
+  "downThrustDeg": -4,
+  "throwsDeg": {
+    "aileron": 20,
+    "elevator": 14,
+    "rudder": 30
+  },
+  "prop": {
+    "diameterIn": 6,
+    "pitchIn": 4,
+    "blades": 2,
+    "rpm": 21000,
+    "staticThrust": 9,
+    "current": 26
+  },
+  "battery": {
+    "cells": 3,
+    "capacity": 2200
+  },
+  "defaultAssist": "safe",
+  "colors": {
+    "main": "#eeeeec",
+    "accent": "#e2552b",
+    "dark": "#3a3e44",
+    "canopy": "#141618",
+    "hub": "#8c9198",
+    "panel": "#66788a"
+  },
+  "cd0": 0.026,
+  "parasiteX": 0.008,
+  "model": "hobbyzone-aeroscout.glb",
+  "tuning": {},
+  "stallDrop": 0.8,
+  "tipStallBiasDeg": 1,
+  "finScale": 1.1,
+  "sideArea": 0.12,
+  "aileronDrag": [
+    0.03,
+    0.03
+  ]
+}

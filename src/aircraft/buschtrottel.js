@@ -16,9 +16,6 @@
 //   +x forward, +y up, +z right (right-handed).
 
 import { liftSlope } from '../sim/aero.js';
-import { Group } from 'three';
-import { propGeometry } from './prop.js';
-import { createBuschtrottelModel } from './buschtrottelModel.js';
 
 const deg = Math.PI / 180;
 
@@ -346,18 +343,6 @@ export function buildBuschtrottel(style) {
       // Wing-top pod (high wing) or a nose-top camera (low wing).
       pod: up(high ? [0.05, L.wingY + 0.04, 0] : [0.17, 0.065, 0]),
       chase: { back: SPAN * 2.0 + 0.3, up: SPAN * 0.5 + 0.15 },
-    },
-    // opts.prop: the prop as tuned (Menu → Tuning), shown instead of the standard one.
-    createModel: (opts = {}) => {
-      const m = createBuschtrottelModel(opts.prop ? { ...L, prop: { ...L.prop, ...propGeometry(opts.prop) } } : L);
-      if (cgDrop) {
-        const inner = m.root;
-        const outer = new Group();
-        inner.position.y = cgDrop;
-        outer.add(inner);
-        return { ...m, root: outer };
-      }
-      return m;
     },
   };
 }

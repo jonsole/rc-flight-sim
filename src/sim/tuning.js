@@ -199,6 +199,11 @@ export const TUNABLES = [
     get: (d) => calibrate(d)?.prop.pitchIn ?? null },
   { group: 'Propeller', key: 'propBlades', label: 'Blades', unit: '', min: 2, max: 6, step: 1, power: true,
     get: (d) => calibrate(d)?.prop.blades ?? null },
+  // Blade tips: only the look and the sound (square tips are much noisier).
+  { group: 'Propeller', key: 'propTips', label: 'Blade tips', unit: '', min: 0, max: 1, step: 1,
+    choices: { 0: 'Tapered', 1: 'Square (bullnose)' },
+    get: (d) => (d.motor.prop ? (d.motor.prop.tip === 'square' ? 1 : 0) : null),
+    set: (d, v) => (d.motor.prop = { ...d.motor.prop, tip: v ? 'square' : 'tapered' }) },
   { group: 'Electric motor', key: 'kv', label: 'Kv', unit: 'rpm/V', min: 0.5, max: 2, rel: true, step: 10, power: true,
     get: (d) => calibrate(d)?.kv ?? null },
   { group: 'Electric motor', key: 'motorResistance', label: 'Winding resistance', unit: 'mΩ', min: 0.3, max: 3, rel: true, step: 1, power: true,

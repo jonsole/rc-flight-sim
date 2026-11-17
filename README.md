@@ -10,6 +10,7 @@ A browser-based radio-control aeroplane simulator with **line-of-sight** and
 | **Buschtrottel Highlander** | Same airframe with an angular tail and square wing tips. |
 | **Buschtrottel Agro** | Low wing with V-struts to the upper fuselage, full-span ailerons, black canopy block, low tailplane; orange and white; 8x4.5 three-blade prop. |
 | **Flite Test Mighty Mini F-22** | Foam-board pusher jet, 508 mm: the prop spins in a slot in the middle of the diamond wing; elevons, canted fins, no rudder or wheels. Hand-launched. |
+| **HobbyZone AeroScout S 2 1.1m** | Foam beginner trainer for club training: high wing with dihedral, pusher prop behind the cabin, tricycle gear with the nose wheel on the rudder. Starts in SAFE. |
 
 The Buschtrottels are set up as built here: AT2308 1450Kv,
 3S 1350 mAh with an 8x6 prop (Agro: 8x4.5 three-blade), ~450 g, KFm2 wing,
@@ -32,8 +33,34 @@ it at the flight line (your pilot position) and throws it once the throttle
 passes 60%. Land it on its belly (the belly pan and side plates under the
 wing) with the motor off, since the prop hangs below the wing.
 
+The AeroScout (`src/aircraft/aeroscout.js`) is set up for club beginners. It
+starts with SAFE on (bank and pitch limited, wings level themselves when
+the sticks are let go); G switches to AS3X or off, like the real model's
+Beginner / Experienced modes. Published figures used: ~1095 mm span, ~870 mm
+long, 2306 2250Kv on 3S 2200 mAh, CG 75 mm behind the wing's leading edge at
+the root. The planform (~20 dm²), the prop (6x4 assumed), thrust, weight
+(~850 g) and drag are estimates, set so it flies level at about 55% throttle
+(~11 m/s) and climbs at full power (about 1.1:1 thrust to weight), as the
+manual describes, stalls gently at about 7 m/s, and loops from level flight
+at full power (with SAFE off or on AS3X: SAFE's pitch limit stops a loop). With SAFE off it
+doesn't level itself: a bank stays where you leave it, and the rudder turns
+it mostly flat. It sits level on its wheels, steers on the ground with the
+rudder (nose wheel), and takes off hands-off at full power. Its prop has square
+(bullnose) tips, drawn that way, and like the real one it is loud: square tips
+buzz harder and harsher than tapered ones, and the pusher prop chops through
+the wing's wake for a rasping note (*Blade tips* in the Tuning tab's
+Propeller group changes it on any model; the sound is made in `src/audio/engine.js`). The 3D model,
+`src/aircraft/models/hobbyzone-aeroscout.glb`, was made in Blender: textured
+in the real one's printed scheme, with a removable black canopy (it comes off
+in a crash). Edit it in Blender as below. The manual says
+to use 70% low rates when learning: set the rates to 0.7 under
+*Menu → Transmitter → Expo & rates*.
+
 It runs in any modern browser (Chrome or Edge recommended on Windows). There is
 nothing to install for flying: the build is a static website.
+
+On a desktop, the start screen shows the selected aircraft turning slowly
+(`src/ui/preview.js`); phones, tablets and small windows leave it out for room.
 
 **Play online:** https://jonsole.github.io/rc-flight-sim/
 
@@ -75,7 +102,8 @@ published leaves the live page on the older build.
 *Menu → Tuning* shows the flight settings of the model you're flying, with
 its defaults: all-up weight and CG position; static thrust, prop pitch
 speed (top speed), motor torque, down- and right-thrust; the propeller
-(diameter, pitch, blades: shown on the 3D model too), the electric motor
+(diameter, pitch, blades, tapered or square tips: shown on the 3D model too;
+square tips are much louder), the electric motor
 (Kv, winding resistance) and the battery (cells, capacity, internal
 resistance): the full-throttle rpm, current, thrust and top speed are
 worked out from them, a bigger pack weighs more, and thrust fades as the
@@ -195,7 +223,9 @@ transmitter or gamepad still takes priority.
 `src/sim/` is a rigid-body model built from individual lifting surfaces: each
 wing is split into spanwise panels, plus tailplane, fin and fuselage. Every
 panel sees its own local airflow (body rotation, prop wash and wing downwash),
-with lift and drag curves that stall and become flat-plate past the stall.
+with lift and drag curves that stall and become flat-plate past the stall
+(optionally with hysteresis: a stalled wing stays stalled until the nose has
+dropped a few degrees below the stall angle, as on the AeroScout).
 Stability, damping, adverse yaw, dihedral effect, wing drop at the stall and
 the tail-dragger ground handling come out of that rather than being scripted.
 Also modelled: ground surfaces (mown runway, field grass, rough ground and the
@@ -227,7 +257,7 @@ npm test           # flight-model checks: stability, trim, stall, controls, take
 
 ```
 src/sim/       physics (no rendering): aero.js, aircraft.js, obstacles.js, terrain.js, wind.js
-src/aircraft/  aircraft registry (index.js), settings and 3D model files (models/), builders + code-drawn 3D
+src/aircraft/  aircraft registry (index.js), settings and 3D model files (models/), flight-model builders, the propeller
 src/world/     sky, terrain, runway, trees, windsock
 src/view/      camera rig (LOS / FPV / chase)
 src/input/     transmitter (Gamepad API) + keyboard, expo & rates
@@ -248,9 +278,10 @@ can be read and edited on GitHub:
 | `buschtrottel-highlander.json` | Buschtrottel Highlander |
 | `buschtrottel-agro.json` | Buschtrottel Agro |
 | `ft-mini-f22.json` | Flite Test Mighty Mini F-22 |
+| `hobbyzone-aeroscout.json` | HobbyZone AeroScout S 2 1.1m |
 
 Each has `builder` (the code that turns the settings into a flight model and
-3D model: `se5a`, `buschtrottel` or `f22`), `id`, `name`, `summary`, `notes`
+3D model: `se5a`, `buschtrottel`, `f22` or `aeroscout`), `id`, `name`, `summary`, `notes`
 (explanations, ignored by the code), the builder's settings, `model` (its 3D
 model file, below) and `tuning`.
 Units are metres, kilograms, newtons and seconds; angles are in degrees
@@ -265,8 +296,10 @@ colours, prop or mass) is a new aircraft in the list.
 
 Each aircraft's 3D model is a glTF file, `src/aircraft/models/<id>.glb`,
 named by `"model"` in its JSON file. It is only the look: how it flies comes
-from the JSON settings. Without a model file (or until it has loaded) the
-game draws the model built in code.
+from the JSON settings. The files load with the flying field at start-up,
+before *Fly* can be pressed. The propeller is the one thing drawn in code
+(`src/aircraft/prop.js`), at the file's `prop` marker, so the prop set in the
+Tuning tab (size, blades, tips) is the one you see.
 
 **Editing in Blender:** File → Import → glTF 2.0, open the `.glb`. The nose
 points along +X, the right wing along −Y, Z is up; units are metres. Edit
@@ -284,7 +317,7 @@ endings are fine; children of a named object go with it):
 | `elevator`, `rudder` | Elevator and rudder |
 | `elevon_R`, `elevon_L` | Elevons (the F-22) |
 | `wheel_R`, `wheel_L` | Roll along the ground and ride up on the tyre |
-| `tailwheel` | Steers with the rudder |
+| `tailwheel` | Steers with the rudder (a nose wheel too: the AeroScout's is named this) |
 | `prop` | An empty on the prop shaft, its X axis along it: the prop set in the Tuning tab is drawn and spun there (don't model the prop) |
 | `pilot` | Hidden in the FPV (cockpit) view |
 | `wing_R`, `wing_L`, `tail`, `gear_R`, `gear_L`, `canopy` | Groups that break off in a crash |
@@ -301,25 +334,22 @@ without flickering. The flat-shaded foam pieces come in as loose triangles:
 Mesh → Clean Up → Merge by Distance joins them, then Shade Flat keeps the
 faceted look.
 
-The files here were made from the models drawn in code by
-`node scripts/export-models.mjs [id ...]`, which overwrites the file: don't
-run it for a model you've edited.
-
 ## Adding an aircraft
 
 Each aircraft is a registry entry in `src/aircraft/index.js`, built from its
 JSON file:
 
 ```js
-{ id, name, summary, defaultAssist, def, geometry, views, createModel }
+{ id, name, summary, defaultAssist, def, geometry, views, modelFile, createModel }
 ```
 
 - `def`: the flight model (mass, inertia, lifting surfaces, contact points,
   motor, battery, trim, assist gains), as consumed by `src/sim/aircraft.js`.
 - `views`: camera mounts in body axes (`cockpit`, `pod`), `span` for LOS
   auto-zoom, and `chase` distances.
-- `createModel()`: returns `{ root, parts, update(aircraft, dt), setPilotVisible(bool) }`:
-  from the model file once `loadModelFiles()` has loaded it, else drawn in code.
+- `createModel({ prop })`: returns `{ root, parts, update(aircraft, dt), setPilotVisible(bool) }`
+  from the model file (`"model"` in the JSON file, loaded by `loadModelFiles()`),
+  with the propeller drawn in code; `prop` is the prop as tuned.
 - `def.handLaunch` (optional): `{ height, speed, pitch, throttle }` for a model
   with no wheels. It starts in the pilot's hand and is thrown along its nose
   once the throttle reaches `throttle`. The wheel tests are skipped for it.
@@ -327,7 +357,8 @@ JSON file:
   flies at, for an overpowered model that climbs at half throttle.
 
 Another size of S.E.5a, or another Buschtrottel, is just another JSON file.
-A different type needs its own builder (definition and 3D model module). The flight
+A different type needs its own builder (its flight model) and a model file
+made in Blender. The flight
 tests run automatically for every registered aircraft.
 
 ## Multiplayer

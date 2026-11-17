@@ -5,7 +5,8 @@ import { Obstacles, setLeafiness } from './sim/obstacles.js';
 import { seasonFor } from './world/seasons.js';
 import { Wind } from './sim/wind.js';
 import { World, RUNWAY } from './world/world.js';
-import { AIRCRAFT, getAircraft, loadModelFiles } from './aircraft/index.js';
+import { AIRCRAFT, getAircraft } from './aircraft/index.js';
+import { AircraftPreview } from './ui/preview.js';
 import { Input } from './input/input.js';
 import { TouchControls, isTouchDevice } from './input/touch.js';
 import { CameraRig, CAMERA_LABELS } from './view/cameras.js';
@@ -189,7 +190,7 @@ function replaceModel() {
   }
   // Showing the prop as tuned (Menu → Tuning), if it's been changed.
   const tuning = loadTuning(entry.id);
-  const tunedProp = ['propDiameter', 'propPitch', 'propBlades'].some((k) => tuning[k] != null) ? tunedDef(entry.def, tuning).motor.prop : null;
+  const tunedProp = ['propDiameter', 'propPitch', 'propBlades', 'propTips'].some((k) => tuning[k] != null) ? tunedDef(entry.def, tuning).motor.prop : null;
   model = entry.createModel(tunedProp ? { prop: tunedProp } : {});
   navLights = addNavLights(model, { shine: true });
   planeShadow.setModel(model, entry.def.wingSpan);
@@ -218,12 +219,9 @@ function retune() {
   // A different prop: show it.
   if (JSON.stringify(aircraft.def.motor.prop) !== oldProp) replaceModel();
 }
+// The 3D model files (src/aircraft/models/*.glb) were loaded before this
+// module (src/boot.js).
 loadAircraft(settings.aircraft);
-// 3D model files (src/aircraft/models/*.glb) replace the drawn-in-code models
-// once they've loaded.
-loadModelFiles().then((ids) => {
-  if (ids.includes(entry.id)) replaceModel();
-});
 const osd = new OSD(document.getElementById('osd'));
 const sound = new EngineSound();
 const analog = document.getElementById('analog');
@@ -549,15 +547,22 @@ splashGraphics.addEventListener('change', (e) => {
   settings.graphics = e.target.value;
   reloadKeepingRoom();
 });
+// The selected aircraft turning slowly above its description.
+const preview = new AircraftPreview(document.getElementById('splash-preview'));
 function updateSplash() {
   if (!splashSelect.isConnected) return;
   splashSelect.value = entry.id;
   splashSummary.textContent = entry.summary;
+  if (preview.shown !== entry.id) {
+    preview.setAircraft(entry);
+    preview.shown = entry.id;
+  }
 }
 updateSplash();
 
 document.getElementById('start').addEventListener('click', () => {
   document.getElementById('splash').remove();
+  preview.dispose();
   sound.start();
   paused = false;
   if (inviteRoom) mpConnect();

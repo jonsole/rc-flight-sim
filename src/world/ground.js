@@ -10,14 +10,18 @@
 // At a real site the baked colour map (roads, paths, water, gardens, fields
 // from OpenStreetMap) replaces the made-up zones, with the grass texture's
 // detail on top; the made-up farmland only carries on beyond it.
-import { CanvasTexture, SRGBColorSpace, Vector2, Vector3 } from 'three';
+import { CanvasTexture, SRGBColorSpace, Vector2, Vector3, RepeatWrapping, NoColorSpace } from 'three';
 import { RUNWAY } from '../sim/terrain.js';
 import { LOCATION, clubAngle } from '../sim/location.js';
 
 const FIELD = { x: 0, z: -40, r: 260 };
 
 /** Grass colour for the season (src/world/seasons.js), shared by the ground's shader. */
-export const groundUniforms = { uGrassTint: { value: new Vector3(1, 1, 1) } };
+export const groundUniforms = {
+  uGrassTint: { value: new Vector3(1, 1, 1) },
+  uGrassDry: { value: 0 }, // late summer: long grass yellows more than mown
+  uGrassLen: { value: 0 }, // how long the grass is grown (0-1): coarser blades
+};
 
 /** GLSL polyFieldDist(p): distance outside a polygon field (0 inside). */
 function polyGlsl() {
@@ -82,6 +86,62 @@ function mownGlsl() {
         mown = max(cut, 1.0 - smoothstep(0.0, 1.5, dRunway));`;
 }
 
+/**
+ * Close-up grass: a metre of blades, drawn as brightness and tint (not
+ * colour: 0.5 is no change), dark gaps between them, lighter tips. Laid
+ * over the ground near the camera (addGroundDetail) at two scales, so close
+ * up you see blades, not a smooth green.
+ */
+let fineTex = null;
+const fineMean = { x: 0.5 };
+function grassFineTexture() {
+  if (fineTex) return fineTex;
+  const N = 512;
+  const c = document.createElement('canvas');
+  c.width = c.height = N;
+  const g = c.getContext('2d');
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  // The shade at the base of the sward.
+  g.fillStyle = 'rgb(92, 96, 88)';
+  g.fillRect(0, 0, N, N);
+  g.lineCap = 'round';
+  // Blades, shortest and darkest first, longer, lighter ones on top; drawn
+  // wrapping round the edges so the tile repeats seamlessly.
+  for (let i = 0; i < 14000; i++) {
+    const k = i / 14000;
+    const x = rnd() * N;
+    const y = rnd() * N;
+    const len = 6 + rnd() * 14 + k * 8;
+    const a = rnd() * Math.PI * 2; // seen from above: every way
+    const v = 104 + k * 50 + rnd() * 30;
+    const yel = rnd() * 14; // some yellower, some bluer
+    g.strokeStyle = `rgb(${Math.round(v + yel)}, ${Math.round(v + 4)}, ${Math.round(v - 10 - yel)})`;
+    g.lineWidth = 1.6 + rnd() * 1.8;
+    for (const ox of [-N, 0, N]) {
+      for (const oy of [-N, 0, N]) {
+        const x0 = x + ox;
+        const y0 = y + oy;
+        if (x0 < -40 || x0 > N + 40 || y0 < -40 || y0 > N + 40) continue;
+        g.beginPath();
+        g.moveTo(x0, y0);
+        g.quadraticCurveTo(x0 + Math.cos(a) * len * 0.6 + 2, y0 + Math.sin(a) * len * 0.6, x0 + Math.cos(a) * len, y0 + Math.sin(a) * len);
+        g.stroke();
+      }
+    }
+  }
+  // Its average brightness, to scale it to no change on average.
+  const px = g.getImageData(0, 0, N, N).data;
+  let sum = 0;
+  for (let i = 0; i < px.length; i += 4) sum += px[i] + px[i + 1] + px[i + 2];
+  fineMean.x = sum / (px.length / 4) / 3 / 255;
+  fineTex = new CanvasTexture(c);
+  fineTex.wrapS = fineTex.wrapT = RepeatWrapping;
+  fineTex.colorSpace = NoColorSpace;
+  fineTex.anisotropy = 8;
+  return fineTex;
+}
+
 function realGround() {
   const d = LOCATION.data;
   if (!d?.groundImage) return null;
@@ -133,6 +193,8 @@ export function addGroundDetail(material) {
   material.onBeforeCompile = (shader, renderer) => {
     prev?.(shader, renderer);
     Object.assign(shader.uniforms, groundUniforms);
+    shader.uniforms.grassFine = { value: grassFineTexture() };
+    shader.uniforms.grassFineMean = { value: fineMean.x };
     if (real) {
       shader.uniforms.groundMap = { value: real.tex };
       shader.uniforms.groundOrigin = { value: real.origin };
@@ -143,7 +205,7 @@ export function addGroundDetail(material) {
       .replace('#include <common>', '#include <common>\nvarying vec3 vGroundWorld;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGroundWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${GLSL}\n${polyGlsl()}\nuniform vec3 uGrassTint;\n#ifdef REAL_GROUND\nuniform sampler2D groundMap; uniform vec2 groundOrigin; uniform float groundSize;\n#endif`)
+      .replace('#include <common>', `#include <common>\n${GLSL}\n${polyGlsl()}\nuniform vec3 uGrassTint;\nuniform float uGrassDry;\nuniform float uGrassLen;\nuniform sampler2D grassFine;\nuniform float grassFineMean;\n#ifdef REAL_GROUND\nuniform sampler2D groundMap; uniform vec2 groundOrigin; uniform float groundSize;\n#endif`)
       .replace('#include <map_fragment>', /* glsl */ `
         vec2 p = vGroundWorld.xz;
         // Grass texture at two scales and angles, blended by a slow noise,
@@ -234,7 +296,43 @@ ${mownGlsl()}
 
         // The season: on green (grassy) ground only, not roads and paths.
         float grassy = smoothstep(0.0, 0.06, g.g - max(g.r, g.b));
+        // Close up: blades (grassFineTexture) at two scales and angles, and
+        // tufts, fading out with distance (where they'd only shimmer). Longer
+        // grass coarser and more uneven than the mown.
+        {
+          float camD = length(vGroundWorld - cameraPosition);
+          // How long it is here: rough grass long, mown short (longer in
+          // autumn, and the mown grass a little too).
+          float len = clamp((1.0 - mown) * (0.75 + 0.25 * uGrassLen) + mown * 0.35 * uGrassLen, 0.0, 1.0);
+          float near = 1.0 - smoothstep(10.0, 70.0 + 50.0 * len, camD);
+          if (near > 0.0 && grassy > 0.0) {
+            vec2 r1 = vec2(p.x * 0.94 - p.y * 0.34, p.x * 0.34 + p.y * 0.94);
+            vec3 b1 = texture2D(grassFine, r1 / 0.9).rgb;
+            vec3 b2 = texture2D(grassFine, vec2(p.y, -p.x) / 0.37 + 0.31).rgb;
+            vec3 blades = mix(b1, b2, 0.4) / grassFineMean; // (1 on average)
+            // Long grass: big coarse blades and deep tufts with shadowed
+            // hollows between them.
+            vec3 b3 = texture2D(grassFine, vec2(p.x * 0.6 + p.y * 0.8, -p.x * 0.8 + p.y * 0.6) / 2.6 + 0.17).rgb / grassFineMean;
+            blades = mix(blades, mix(blades, b3, 0.6), len);
+            vec3 contrast = mix(vec3(0.85), vec3(1.25), len);
+            blades = 1.0 + (blades - 1.0) * contrast;
+            float tuft = mix(0.92 + 0.16 * gNoise(p / 0.45), 0.72 + 0.56 * gNoise(p / 0.8) * gNoise(p / 2.3 + 5.0) * 1.6, len);
+            float k = near * grassy;
+            g *= mix(vec3(1.0), blades * tuft, k);
+          }
+        }
         g *= mix(vec3(1.0), uGrassTint, grassy);
+        // Long grass (off the mown areas) dries out more: straw yellow.
+        {
+          // Dried out: towards straw beige (as bright as the grass, a little
+          // brighter), the long grass most, patchily.
+          float lumG = dot(g, vec3(0.3, 0.59, 0.11));
+          // (A drought summer: parched pale straw, only shady and damp
+          // patches holding a little green.)
+          vec3 straw = vec3(1.55, 1.3, 0.72) * lumG * 1.45;
+          float patchy = 0.85 + 0.3 * gNoise(p / 9.0);
+          g = mix(g, straw, clamp(uGrassDry * (1.15 - mown * 0.2) * patchy, 0.0, 1.0) * grassy);
+        }
         diffuseColor.rgb *= g;
       `);
   };

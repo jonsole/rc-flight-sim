@@ -118,7 +118,7 @@ export class Panel {
     const entry = this.opts.aircraftEntry();
     const values = loadTuning(entry.id);
     const decimals = (step) => (step >= 1 ? 0 : step >= 0.1 ? 1 : 2);
-    const fmt = (t, v) => `${Number(v).toFixed(decimals(t.step))}${t.unit ? ` ${t.unit}` : ''}`;
+    const fmt = (t, v) => (t.choices ? t.choices[Math.round(v)] : `${Number(v).toFixed(decimals(t.step))}${t.unit ? ` ${t.unit}` : ''}`);
     // Which groups are open (remembered in this browser).
     let open = {};
     try {
@@ -156,6 +156,20 @@ export class Panel {
       const changed = values[t.key] != null;
       const show = el('span', { class: 'val' }, fmt(t, v));
       const note = t.note ? el('small', { class: 'tune-note' }, t.note(tuned, v)) : null;
+      // A setting with named choices is a drop-down rather than a slider.
+      if (t.choices) {
+        const sel = el('select', { class: 'tune-choice', onchange: (e) => setValue(t, Number(e.target.value)) },
+          Object.entries(t.choices).map(([k, label]) => el('option', { value: k, selected: Number(k) === Math.round(v) }, label)));
+        return el('div', { class: changed ? 'tune-row tuned' : 'tune-row' },
+          el('div', { class: 'tune-head' },
+            el('span', { class: 'tune-lbl' }, t.label),
+            el('small', {}, `default ${fmt(t, t.dflt)}`),
+            el('button', {
+              class: 'tune-reset', title: `Back to ${fmt(t, t.dflt)}`, disabled: !changed,
+              onclick: () => { delete values[t.key]; commit(); },
+            }, '↺')),
+          el('div', { class: 'tune-ctl' }, sel));
+      }
       const input = el('input', {
         type: 'range', min: t.min, max: t.max, step: t.step, value: v,
         oninput: (e) => {
