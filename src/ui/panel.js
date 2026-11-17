@@ -369,6 +369,7 @@ export class Panel {
       this.#check('Sunbeams through the clouds', 'godRays'),
       this.#select('Mist and fog', 'mist', { seasonal: 'Seasonal (spring and autumn mornings)', off: 'Off', light: 'Light mist', thick: 'Thick fog' }),
       this.#select('Low cloud', 'lowCloud', { seasonal: 'Seasonal (spring and autumn)', off: 'Off', broken: 'Broken', overcast: 'Overcast' }),
+      this.#select('Snow', 'snow', { seasonal: 'Seasonal (some winter days)', off: 'Off', dusting: 'A dusting on the ground', lying: 'Lying snow', light: 'Light snowfall', heavy: 'Heavy snowfall' }),
       el('p', { class: 'hint' }, 'You stand at the flight line facing north; the runway runs east–west in front of you.'),
     ];
   }
