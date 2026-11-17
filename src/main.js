@@ -276,6 +276,51 @@ function applySettings() {
   if (rig.mode !== settings.cameraMode) rig.setMode(settings.cameraMode);
 }
 
+/**
+ * The heading to hand-launch on from (x, z): the one, within 100 degrees
+ * of `wanted` (into wind), with the longest climb-out clear of trees and
+ * buildings (a gentle 1-in-12 climb from shoulder height, checked to 250 m),
+ * favouring headings nearer into wind.
+ */
+function clearHeading(x, z, wanted) {
+  const y0 = ground.heightAt(x, z) + 1.8;
+  let best = wanted;
+  let bestScore = -1;
+  const near = [];
+  for (let k = -10; k <= 10; k++) {
+    const h = wanted + (k * 10 * Math.PI) / 180;
+    const cx = Math.cos(h);
+    const cz = -Math.sin(h);
+    let clear = 250;
+    for (let d = 2; d <= 250; d += 2) {
+      const px = x + cx * d;
+      const pz = z + cz * d;
+      const py = y0 + d / 12;
+      if (py < ground.heightAt(px, pz)) {
+        clear = d;
+        break;
+      }
+      let hit = false;
+      for (const s of obstacles.near(px, pz, 2, near)) {
+        if (Obstacles.test(s, px, py, pz)) {
+          hit = true;
+          break;
+        }
+      }
+      if (hit) {
+        clear = d;
+        break;
+      }
+    }
+    const score = clear * (0.75 + 0.25 * Math.cos((k * 10 * Math.PI) / 180));
+    if (score > bestScore + 1e-6) {
+      bestScore = score;
+      best = h;
+    }
+  }
+  return best;
+}
+
 function resetAircraft() {
   // Put the model back together if anything broke off.
   if (aircraft.broken.size || debris.items.length) replaceModel();
@@ -298,10 +343,15 @@ function resetAircraft() {
   } else if (entry.def.handLaunch) {
     // In the pilot's right hand at the flight line, half a metre ahead,
     // pointing along the runway into wind.
+    // Facing the clearest way: from into wind, turned (up to 100 degrees
+    // either way) to where it can climb out furthest before any tree.
     const [px, pz] = pilotSpot();
-    const hx = px + settings.pilotX + lane * 3 + Math.cos(heading) * 0.5 + Math.sin(heading) * 0.3;
-    const hz = pz + settings.pilotZ - Math.sin(heading) * 0.5 + Math.cos(heading) * 0.3;
-    aircraft.resetHandLaunch(hx, hz, heading);
+    const ex = px + settings.pilotX + lane * 3;
+    const ez = pz + settings.pilotZ;
+    const launch = clearHeading(ex, ez, heading);
+    const hx = ex + Math.cos(launch) * 0.5 + Math.sin(launch) * 0.3;
+    const hz = ez - Math.sin(launch) * 0.5 + Math.cos(launch) * 0.3;
+    aircraft.resetHandLaunch(hx, hz, launch);
   } else {
     const [gx, gz] = clubToWorld(RUNWAY.x - dir * run, RUNWAY.z + lane * 4);
     aircraft.resetOnGround(gx, gz, heading);
