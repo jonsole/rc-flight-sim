@@ -97,7 +97,9 @@ ul { padding-left: 20px; color: #ccd; font-size: 14px; line-height: 1.5; }
 #splash .version a { color: #9ab; }
 #splash select { width: 100%; padding: 8px 10px; font-size: 15px; }
 #splash-preview { display: block; width: 100%; height: 170px; margin: 6px 0 0; }
-@media (max-height: 640px) { #splash-preview { height: 110px; } }
+@media (max-height: 720px) { #splash-preview { height: 120px; } }
+/* Desktop only: no room on a phone or tablet (touch screen) or a small window. */
+@media (hover: none) and (pointer: coarse), (max-width: 700px), (max-height: 560px) { #splash-preview { display: none; } }
 #splash .summary { color: #99a; font-size: 13px; line-height: 1.45; min-height: 2.9em; margin: 8px 0 4px; }
 #splash table { width: 100%; font-size: 14px; margin: 12px 0 18px; border-collapse: collapse; }
 #splash td { padding: 3px 0; color: #ccd; }

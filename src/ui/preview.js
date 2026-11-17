@@ -26,6 +26,8 @@ export class AircraftPreview {
   /** @param {HTMLCanvasElement} canvas */
   constructor(canvas) {
     this.canvas = canvas;
+    // Hidden (phones and tablets, small windows: see style.css): no renderer.
+    if (!canvas || getComputedStyle(canvas).display === 'none') return;
     try {
       this.renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true });
     } catch {

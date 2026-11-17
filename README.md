@@ -59,8 +59,8 @@ to use 70% low rates when learning: set the rates to 0.7 under
 It runs in any modern browser (Chrome or Edge recommended on Windows). There is
 nothing to install for flying: the build is a static website.
 
-The start screen shows the selected aircraft turning slowly
-(`src/ui/preview.js`).
+On a desktop, the start screen shows the selected aircraft turning slowly
+(`src/ui/preview.js`); phones, tablets and small windows leave it out for room.
 
 **Play online:** https://jonsole.github.io/rc-flight-sim/
 
