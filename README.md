@@ -10,6 +10,7 @@ A browser-based radio-control aeroplane simulator with **line-of-sight** and
 | **Buschtrottel Highlander** | Same airframe with an angular tail and square wing tips. |
 | **Buschtrottel Agro** | Low wing with V-struts to the upper fuselage, full-span ailerons, black canopy block, low tailplane; orange and white; 8x4.5 three-blade prop. |
 | **Flite Test Mighty Mini F-22** | Foam-board pusher jet, 508 mm: the prop spins in a slot in the middle of the diamond wing; elevons, canted fins, no rudder or wheels. Hand-launched. |
+| **HobbyZone AeroScout S 2 1.1m** | Foam beginner trainer for club training: high wing with dihedral, pusher prop behind the cabin, tricycle gear with the nose wheel on the rudder. Starts in SAFE. |
 
 The Buschtrottels are set up as built here: AT2308 1450Kv,
 3S 1350 mAh with an 8x6 prop (Agro: 8x4.5 three-blade), ~450 g, KFm2 wing,
@@ -31,6 +32,22 @@ There is no landing gear: with *Start position: On the runway* the pilot holds
 it at the flight line (your pilot position) and throws it once the throttle
 passes 60%. Land it on its belly (the belly pan and side plates under the
 wing) with the motor off, since the prop hangs below the wing.
+
+The AeroScout (`src/aircraft/aeroscout.js`) is set up for club beginners. It
+starts with SAFE on (bank and pitch limited, wings level themselves when
+the sticks are let go); G switches to AS3X or off, like the real model's
+Beginner / Experienced modes. Published figures used: ~1095 mm span, ~870 mm
+long, 2306 2250Kv on 3S 2200 mAh, CG 75 mm behind the wing's leading edge at
+the root. The planform (~20 dm²), the prop (6x4 assumed), thrust, weight
+(~850 g) and drag are estimates, set so it flies level at about 55% throttle
+(~11 m/s) and climbs gently at full power, as the manual describes, and stalls
+at about 7 m/s. It sits level on its wheels, steers on the ground with the
+rudder (nose wheel), and takes off hands-off at full power. The 3D model is
+drawn from the dimensions in plain club colours (white, red trim, blue):
+change `"colors"` in its JSON file and run `node scripts/export-models.mjs
+hobbyzone-aeroscout` to repaint it in your club's colours. The manual says
+to use 70% low rates when learning: set the rates to 0.7 under
+*Menu → Transmitter → Expo & rates*.
 
 It runs in any modern browser (Chrome or Edge recommended on Windows). There is
 nothing to install for flying: the build is a static website.
@@ -248,9 +265,10 @@ can be read and edited on GitHub:
 | `buschtrottel-highlander.json` | Buschtrottel Highlander |
 | `buschtrottel-agro.json` | Buschtrottel Agro |
 | `ft-mini-f22.json` | Flite Test Mighty Mini F-22 |
+| `hobbyzone-aeroscout.json` | HobbyZone AeroScout S 2 1.1m |
 
 Each has `builder` (the code that turns the settings into a flight model and
-3D model: `se5a`, `buschtrottel` or `f22`), `id`, `name`, `summary`, `notes`
+3D model: `se5a`, `buschtrottel`, `f22` or `aeroscout`), `id`, `name`, `summary`, `notes`
 (explanations, ignored by the code), the builder's settings, `model` (its 3D
 model file, below) and `tuning`.
 Units are metres, kilograms, newtons and seconds; angles are in degrees
@@ -284,7 +302,7 @@ endings are fine; children of a named object go with it):
 | `elevator`, `rudder` | Elevator and rudder |
 | `elevon_R`, `elevon_L` | Elevons (the F-22) |
 | `wheel_R`, `wheel_L` | Roll along the ground and ride up on the tyre |
-| `tailwheel` | Steers with the rudder |
+| `tailwheel` | Steers with the rudder (a nose wheel too: the AeroScout's is named this) |
 | `prop` | An empty on the prop shaft, its X axis along it: the prop set in the Tuning tab is drawn and spun there (don't model the prop) |
 | `pilot` | Hidden in the FPV (cockpit) view |
 | `wing_R`, `wing_L`, `tail`, `gear_R`, `gear_L`, `canopy` | Groups that break off in a crash |
