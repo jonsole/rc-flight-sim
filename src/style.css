@@ -90,26 +90,43 @@ button.close { background: #e0a030; color: #1a1a1a; border: none; font-weight: 6
 .bar .fill { height: 100%; width: 50%; background: linear-gradient(90deg, #4a8, #e0a030); }
 ul { padding-left: 20px; color: #ccd; font-size: 14px; line-height: 1.5; }
 #splash { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(0,0,0,0.35), rgba(0,0,0,0.7)); }
-#splash .card { background: rgba(22,26,30,0.95); border: 1px solid #3a4148; border-radius: 14px; padding: 26px 30px; width: min(860px, 94vw); max-height: 96vh; overflow-y: auto; }
-/* Two columns: the aircraft and the controls on the left; the field,
-   graphics and Fly on the right. One column on a narrow screen. */
-#splash .cols { display: grid; grid-template-columns: 1.25fr 1fr; gap: 0 28px; }
-#splash .cols > .col:last-child { display: flex; flex-direction: column; }
-#splash .cols > .col:last-child #start { margin-top: auto; }
-#splash .cols > .col:last-child .sub { margin-top: 8px; }
-#splash .cols > .col:last-child select { margin-bottom: 6px; }
+#splash .card { background: rgba(22,26,30,0.95); border: 1px solid #3a4148; border-radius: 14px; padding: clamp(14px, 3.2vh, 26px) clamp(16px, 3vw, 30px); width: min(1180px, 96vw); max-height: 96vh; overflow-y: auto; box-sizing: border-box; }
+/* The start screen fits the window: the aircraft (picker, preview,
+   description), the controls, and the settings with Fly.
+   Wide and short (laptops): three columns. Medium: aircraft and controls on
+   the left, settings on the right. Narrow (phones upright): one column. */
+#splash .cols { display: grid; gap: 0 clamp(16px, 2.5vw, 30px); grid-template-columns: 1.25fr 1fr; grid-template-areas: "plane settings" "keys settings"; }
+#splash .col.plane { grid-area: plane; }
+#splash .col.keys { grid-area: keys; }
+#splash .col.settings { grid-area: settings; display: flex; flex-direction: column; }
+#splash .col.settings #start { margin-top: auto; }
+#splash .col.settings .sub { margin-top: 8px; }
+#splash .col.settings select { margin-bottom: 6px; }
+#splash .card { width: min(900px, 96vw); }
+@media (min-width: 1100px) and (max-height: 900px) {
+  #splash .card { width: min(1180px, 96vw); }
+  #splash .cols { grid-template-columns: 1.2fr 1fr 0.9fr; grid-template-areas: "plane keys settings"; }
+  #splash .col.keys { padding-top: 30px; }
+}
 @media (max-width: 700px) {
-  #splash .card { width: min(460px, 92vw); }
-  #splash .cols { grid-template-columns: 1fr; }
-  #splash .cols > .col:last-child #start { margin-top: 16px; }
+  #splash .card { width: min(460px, 94vw); }
+  #splash .cols { grid-template-columns: 1fr; grid-template-areas: "plane" "keys" "settings"; }
+  #splash .col.settings #start { margin-top: 16px; }
+}
+/* Short windows (landscape phones, small laptops): tighter. */
+@media (max-height: 600px) {
+  #splash h1 { font-size: 21px; }
+  #splash .summary { min-height: 0; }
+  #splash table { margin: 6px 0 10px; font-size: 13px; }
+  #splash td { padding: 1px 0; }
 }
 #splash h1 { margin: 0 0 4px; font-size: 26px; }
 #splash .sub { margin: 0 0 8px; color: #e0a030; }
 #splash .version { margin: 0 0 12px; color: #889; font-size: 12px; }
 #splash .version a { color: #9ab; }
 #splash select { width: 100%; padding: 8px 10px; font-size: 15px; }
-#splash-preview { display: block; width: 100%; height: 170px; margin: 6px 0 0; }
-@media (max-height: 720px) { #splash-preview { height: 120px; } }
+/* The preview grows and shrinks with the window's height. */
+#splash-preview { display: block; width: 100%; height: clamp(100px, 26vh, 260px); margin: 6px 0 0; }
 /* Desktop only: no room on a phone or tablet (touch screen) or a small window. */
 @media (hover: none) and (pointer: coarse), (max-width: 700px), (max-height: 560px) { #splash-preview { display: none; } }
 #splash .summary { color: #99a; font-size: 13px; line-height: 1.45; min-height: 2.9em; margin: 8px 0 4px; }
