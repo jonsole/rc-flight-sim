@@ -49,11 +49,12 @@ rudder (nose wheel), and takes off hands-off at full power. Its prop has square
 (bullnose) tips, drawn that way, and like the real one it is loud: square tips
 buzz harder and harsher than tapered ones, and the pusher prop chops through
 the wing's wake for a rasping note (*Blade tips* in the Tuning tab's
-Propeller group changes it on any model; the sound is made in `src/audio/engine.js`). The 3D model is
-drawn from the dimensions in the real one's colours (white foam, orange and
-dark grey bands, black canopy; no maker's logos or lettering): change
-`"colors"` in its JSON file and run `node scripts/export-models.mjs
-hobbyzone-aeroscout` to repaint it in your club's colours. The manual says
+Propeller group changes it on any model; the sound is made in `src/audio/engine.js`). The 3D model,
+`src/aircraft/models/hobbyzone-aeroscout.glb`, was made in Blender: textured
+in the real one's printed scheme, with a removable black canopy (it comes off
+in a crash). Edit it in Blender as below; don't run `scripts/export-models.mjs`
+for it, which would overwrite it with the simpler model drawn in code
+(`src/aircraft/aeroscoutModel.js`, shown only until the file has loaded). The manual says
 to use 70% low rates when learning: set the rates to 0.7 under
 *Menu → Transmitter → Expo & rates*.
 
