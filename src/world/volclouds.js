@@ -164,25 +164,37 @@ export class VolumetricClouds {
         // Cloud density (0..1) at a point: the pattern says where and how
         // tall (flat bases, rounded tops, the densest parts tallest), the 3D
         // detail eats into it (puffs at the edges, wisps).
+        // lod: 0 for the samples towards the sun (cheapest), 0.5 looking
+        // for cloud, 1 inside it (all the detail).
         float density(vec3 p, float lod) {
-          float n = pattern(p.xz);
-          float t = cloudThreshold();
-          float k = (n - t) / (cloudShape.w * 3.0 + 0.1);
-          if (k <= 0.0) return 0.0;
-          float kk = min(k, 1.0);
-          float top = 0.25 + 0.75 * pow(kk, 0.6); // its top (fraction of the layer)
           float h = (p.y - cloudShape.x) / cloudShape.y;
+          if (h < 0.0 || h > 1.0) return 0.0;
+          float t = cloudThreshold();
           // (Drifting with the clouds, rising a little.)
           vec3 q = vec3(p.x + cloudOffset.x, p.y - cloudEvolve.x * 300.0, p.z + cloudOffset.y) / 900.0;
+          // The outline wobbles with height (the pattern is flat: unwobbled,
+          // every cloud would be a straight-sided column, its shading in
+          // vertical flutes).
+          vec2 warp = vec2(0.0);
+          if (lod > 0.25) {
+            vec3 wq = q * 0.45;
+            warp = vec2(texture(detail, wq).r, texture(detail, wq + vec3(0.37, 0.11, 0.53)).r) - 0.5;
+          }
+          float n = pattern(p.xz + warp * cloudShape.y * 0.4 * (0.25 + h));
+          float k = (n - t) / (cloudShape.w * 3.0 + 0.1);
+          if (k <= 0.0) return 0.0;
+          float kk = min(k, 1.2);
+          // A dome: narrower higher up, the strongest parts the tallest.
+          float body = kk - 1.1 * h * h;
           // Its base: flattish, but higher under the thin edges (the
           // underside curving up to them), and lumpy from cloud to cloud.
           float lump = texture(detail, vec3(q.xz * 0.23, 0.37)).r;
-          float bottom = 0.16 * (1.0 - kk) * (1.0 - kk) + 0.07 * (lump - 0.5) + 0.03;
-          float shape = smoothstep(bottom, bottom + 0.1, h) * (1.0 - smoothstep(top * 0.55, top, h));
-          float d = smoothstep(0.0, 0.25, k) * shape;
+          float k1 = min(kk, 1.0);
+          float bottom = 0.16 * (1.0 - k1) * (1.0 - k1) + 0.07 * (lump - 0.5) + 0.03;
+          float d = smoothstep(0.0, 0.18, body) * smoothstep(bottom, bottom + 0.1, h);
           if (d <= 0.0) return 0.0;
           float det = texture(detail, q).r;
-          if (lod > 0.5) det = det * 0.7 + texture(detail, q * 3.1).r * 0.3;
+          if (lod > 0.75) det = det * 0.7 + texture(detail, q * 3.1).r * 0.3;
           // Thin parts eaten away more than the cores, and the underside more
           // (ragged, not ruled flat).
           float under = 1.0 - smoothstep(bottom, bottom + 0.2, h);
@@ -212,15 +224,18 @@ export class VolumetricClouds {
           float hg2 = (1.0 - 0.09) / pow(1.0 + 0.09 + 0.6 * g, 1.5);
           float phase = mix(hg2, hg1, 0.7) * 0.6;
           vec3 sunCol = lightColor * (1.0 - 0.3 * grey);
+          // (A fixed pattern from pixel to pixel, smoothed away when the
+          // picture is enlarged: the steps don't show as lines or bands.)
+          float dither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
           float t = t0 + coarse * 0.5;
           bool fine = false;
           int empty = 0;
           for (int i = 0; i < 60; i++) {
             if (trans < 0.03 || t > t1) break;
             // (Smaller close up, larger far off.)
-            float fineDt = min(coarse, 35.0 + t * 0.012);
+            float fineDt = min(coarse, 30.0 + t * 0.008);
             vec3 p = camPos + dir * t;
-            float d = density(p, fine ? 1.0 : 0.0);
+            float d = density(p, fine ? 1.0 : 0.5);
             if (d <= 0.001) {
               if (fine && ++empty >= 4) fine = false; // out the other side
               t += fine ? fineDt : coarse;
@@ -229,19 +244,18 @@ export class VolumetricClouds {
             if (!fine) {
               fine = true;
               empty = 0;
-              // (Each pixel's small steps start a little differently - a fixed
-              // pattern, smoothed away when the picture is enlarged - so the
-              // steps don't show as contour lines.)
-              float dither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+              // (Each pixel's small steps start a little differently.)
               t = max(t0, t - coarse + fineDt * dither);
               continue;
             }
             empty = 0;
             // Light reaching here from the sun: a few samples towards it.
             float tau = 0.0;
-            for (int j = 1; j <= 4; j++) {
-              float s = float(j * j) * 28.0;
-              tau += density(p + cloudSunDir * s, 0.0) * (float(j) * 56.0);
+            // (Offset per pixel too, or the shading comes out in bands.)
+            for (int j = 0; j < 5; j++) {
+              float jj = float(j) + 0.3 + 0.7 * dither;
+              float s = jj * jj * 20.0;
+              tau += density(p + cloudSunDir * s, 0.0) * (jj * 40.0);
             }
             // (Plus light that has bounced around inside: it gets deeper in.)
             float sunT = exp(-tau * sigma * 0.9) + 0.3 * exp(-tau * sigma * 0.18);
@@ -266,7 +280,7 @@ export class VolumetricClouds {
           float dist = distW / alpha;
           vec3 at = camPos + dir * dist;
           float far = length(at.xz - camPos.xz);
-          c = mix(c, hazeColor, smoothstep(1500.0, 7000.0, far) * 0.85);
+          c = mix(c, hazeColor, smoothstep(1000.0, 5500.0, far) * 0.9);
           alpha *= (1.0 - smoothstep(4000.0, 7000.0, far)) * mix(1.0, 0.8, night) * (1.0 - mistFade);
           if (fogMistA.x > 0.0 || fogMistA.z > 0.0) alpha *= exp(-vfAlong(camPos, at, hazeColor).x);
           gl_FragColor = vec4(c, alpha);
