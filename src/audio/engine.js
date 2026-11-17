@@ -1,5 +1,6 @@
 // Synthesised electric motor + propeller sound (no audio files needed).
 import { propOrders } from './propTones.js';
+import { playImpact } from './impacts.js';
 export class EngineSound {
   constructor() {
     this.ctx = null;
@@ -89,8 +90,21 @@ export class EngineSound {
     this.shake.connect(this.shakeGain).connect(this.buffetGain.gain);
     this.wind.connect(this.buffetFilter).connect(this.buffetGain).connect(this.master);
 
+    // Leaves and twigs brushing past while it's in a tree's foliage.
+    this.noiseBuf = buf;
+    this.rustle = ctx.createBufferSource();
+    this.rustle.buffer = buf;
+    this.rustle.loop = true;
+    this.rustleFilter = ctx.createBiquadFilter();
+    this.rustleFilter.type = 'highpass';
+    this.rustleFilter.frequency.value = 1800;
+    this.rustleGain = ctx.createGain();
+    this.rustleGain.gain.value = 0;
+    this.rustle.connect(this.rustleFilter).connect(this.rustleGain).connect(this.master);
+
     this.motor.start();
     this.shake.start();
+    this.rustle.start(0, 1.3);
     this.motor2.start();
     this.harm.start();
     this.noise.start();
@@ -104,7 +118,10 @@ export class EngineSound {
    * @param [listener]  the listener's position (Vector3), for the Doppler shift
    */
   update(aircraft, listenerDistance, fpv, listener = null) {
+    // Things hit since last time (src/audio/impacts.js).
+    const hits = aircraft.impacts?.splice(0) ?? [];
     if (!this.ctx) return;
+    if (!this.muted) for (const h of hits) playImpact(this.ctx, this.master, this.noiseBuf, h);
     const t = this.ctx.currentTime;
     // Doppler: higher coming towards the listener, lower going away.
     let dop = 1;
@@ -188,6 +205,10 @@ export class EngineSound {
     const rumble = (fpv ? 1.2 : 0.8) * stall * Math.min(1, (v / 14) ** 2);
     this.buffetGain.gain.setTargetAtTime(rumble, t, 0.08);
     this.shakeGain.gain.setTargetAtTime(rumble * 0.8, t, 0.08);
+    // Pushing through leaves: a rustle, louder the faster (it flickers as
+    // they brush past).
+    const fol = Math.min(1, (aircraft.foliageSpeed || 0) / 8);
+    this.rustleGain.gain.setTargetAtTime((fpv ? 0.6 : 0.4) * fol * (0.6 + 0.4 * Math.random()), t, 0.03);
     // Distance attenuation (LOS) — inverse distance, gentle.
     const att = fpv ? 0.6 : Math.min(1, 6 / Math.max(6, listenerDistance)) ** 0.8;
     const vol = this.muted ? 0 : this.volume * att;
