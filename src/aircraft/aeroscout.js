@@ -118,6 +118,8 @@ export function buildAeroScout(o) {
     alphaStall: 14 * deg,
     stallWidth: 0.03,
     stallDrop: o.stallDrop ?? 1.2,
+    // A stalled wing stays stalled until the nose is well down (src/sim/aircraft.js).
+    stallHysteresis: o.stallHysteresis ?? 4 * deg,
     cd0: o.cd0 ?? 0.028, // moulded foam, exposed hinges and servo arms
     ar: AR,
     e: 0.78,

@@ -218,7 +218,9 @@ transmitter or gamepad still takes priority.
 `src/sim/` is a rigid-body model built from individual lifting surfaces: each
 wing is split into spanwise panels, plus tailplane, fin and fuselage. Every
 panel sees its own local airflow (body rotation, prop wash and wing downwash),
-with lift and drag curves that stall and become flat-plate past the stall.
+with lift and drag curves that stall and become flat-plate past the stall
+(optionally with hysteresis: a stalled wing stays stalled until the nose has
+dropped a few degrees below the stall angle, as on the AeroScout).
 Stability, damping, adverse yaw, dihedral effect, wing drop at the stall and
 the tail-dragger ground handling come out of that rather than being scripted.
 Also modelled: ground surfaces (mown runway, field grass, rough ground and the

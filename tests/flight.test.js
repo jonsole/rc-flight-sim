@@ -597,6 +597,30 @@ describe('HobbyZone AeroScout (club trainer)', () => {
     });
   }
 
+  it('stays stalled for a moment after the stick is let go (the nose has to drop first)', () => {
+    const unstallTime = (hysteresis) => {
+      const dd = { ...d, surfaces: d.surfaces.map((s) => (s.wing ? { ...s, foil: { ...s.foil, stallHysteresis: hysteresis } } : s)) };
+      const ac = new Aircraft(dd, { ground });
+      ac.assistMode = 'off';
+      ac.resetInAir(new Vector3(0, 200, 0), 0, 12);
+      ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 0.3 };
+      ac.update(2);
+      ac.controls.pitch = 1;
+      for (let t = 0; t < 6 && ac.wingStall < 0.6; t += 0.02) ac.update(0.02);
+      ac.update(0.3);
+      ac.controls.pitch = 0;
+      for (let t = 0; t < 3; t += 0.02) {
+        ac.update(0.02);
+        if (ac.wingStall < 0.1) return t;
+      }
+      return 3;
+    };
+    const withHysteresis = unstallTime(d.surfaces.find((s) => s.wing).foil.stallHysteresis);
+    expect(withHysteresis).toBeGreaterThan(0.35); // was 0.14 s: unstalled the moment the stick was let go
+    expect(withHysteresis).toBeGreaterThan(2 * unstallTime(0));
+    expect(withHysteresis).toBeLessThan(1.5); // but it does recover
+  });
+
   it('SAFE keeps a beginner out of trouble with full stick held', () => {
     const ac = new Aircraft(d, { ground });
     ac.assistMode = 'safe';
