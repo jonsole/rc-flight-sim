@@ -55,16 +55,21 @@ function layout(o) {
       const t = Math.min(1, (z - panelBreak) / (half - panelBreak));
       return cg - 0.02 * t;
     },
-    // Fuselage stations: x, half-width, bottom, top, corner radius. A rounded
-    // nose, a cabin up to the wing, the top dropping steeply behind the wing
+    // Fuselage stations: x, half-width, bottom, top, corner radius. A
+    // bullet nose tapering to a low, rounded point; ahead of the wing the
+    // top is the seam under the removable canopy (canopy, below), which
+    // forms the upper nose and cabin. Behind the wing the top drops steeply
     // (the prop turns there) into a slim boom out to the tail.
     fuselage: [
-      [0.285, 0.016, -0.03, 0.006, 0.014],
-      [0.27, 0.03, -0.048, 0.022, 0.025],
-      [0.235, 0.039, -0.06, 0.035, 0.03],
-      [0.18, 0.044, -0.066, 0.043, 0.03],
-      [0.13, 0.046, -0.067, 0.05, 0.028],
-      [0.075, 0.047, -0.066, wingY, 0.02],
+      [0.292, 0.005, -0.036, -0.028, 0.004],
+      [0.284, 0.016, -0.047, -0.016, 0.014],
+      [0.268, 0.026, -0.056, -0.006, 0.02],
+      [0.24, 0.035, -0.063, -0.001, 0.024],
+      [0.2, 0.041, -0.067, -0.004, 0.024],
+      [0.15, 0.045, -0.068, -0.01, 0.022],
+      [0.1, 0.046, -0.068, -0.002, 0.02],
+      [0.06, 0.047, -0.067, 0.03, 0.02],
+      [0.035, 0.047, -0.066, wingY, 0.02],
       [-0.02, 0.046, -0.062, wingY, 0.018],
       [-0.1, 0.04, -0.056, wingY - 0.002, 0.016],
       [-0.135, 0.032, -0.052, 0.055, 0.014],
@@ -74,6 +79,9 @@ function layout(o) {
       [-0.45, 0.011, -0.034, -0.016, 0.006],
       [-0.585, 0.008, -0.026, -0.012, 0.004],
     ],
+    // The canopy hatch: its top line [x, y] from the nose back to the wing.
+    // Its lower edge is the fuselage's top (the seam) ahead of x = 0.035.
+    canopy: [[0.288, -0.024], [0.27, -0.004], [0.245, 0.014], [0.2, 0.036], [0.15, 0.052], [0.1, 0.064], [0.06, wingY - 0.004], [0.037, wingY - 0.002]],
     // Motor pylon on top of the pod behind the wing; the prop turns just
     // behind it, its lower blade passing over the boom.
     prop: { x: -0.175, y: 0.068, radius: o.prop.diameterIn * 0.0254 / 2, blades: o.prop.blades, pitchIn: o.prop.pitchIn, tip: o.prop.tip || 'square' },

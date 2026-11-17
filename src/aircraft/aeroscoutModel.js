@@ -105,7 +105,8 @@ export function createAeroScoutModel(L, colors = {}) {
   const dark = new MeshStandardMaterial({ color: '#2a2a2a', roughness: 0.8 });
   const metal = new MeshStandardMaterial({ color: '#a4a6a8', roughness: 0.35, metalness: 0.7 });
   // Painted-on canopy: opaque, glossy.
-  const glass = new MeshStandardMaterial({ color: C.canopy, roughness: 0.25, metalness: 0.2, side: DoubleSide });
+  // Front side only: the cockpit (FPV) camera inside it sees out.
+  const glass = new MeshStandardMaterial({ color: C.canopy, roughness: 0.25, metalness: 0.2 });
   // Stripes, laid just over the surface (see fileModel.js: "decal" materials).
   const decal = (color, name) => {
     const m = new MeshStandardMaterial({ color, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4, side: DoubleSide });
@@ -151,6 +152,21 @@ export function createAeroScoutModel(L, colors = {}) {
   );
   root.add(fus);
 
+  /** The canopy's top line at x (see L.canopy). */
+  const canopyTop = (x) => {
+    const c = L.canopy;
+    if (x >= c[0][0]) return c[0][1];
+    for (let i = 0; i < c.length - 1; i++) {
+      if (x <= c[i][0] && x >= c[i + 1][0]) {
+        const t = (c[i][0] - x) / (c[i][0] - c[i + 1][0]);
+        return c[i][1] + (c[i + 1][1] - c[i][1]) * t;
+      }
+    }
+    return c[c.length - 1][1];
+  };
+  /** The cabin's outline top at x: the canopy's top ahead of the wing, else the fuselage's. */
+  const cabinTop = (x) => (x >= L.canopy[L.canopy.length - 1][0] ? canopyTop(x) : fusAt(L, x)[3]);
+
   // Points on the fuselage surface, for paint laid over it.
   /** z of the fuselage's side at station x and height y (rounded corners). */
   const sideZ = (x, y) => {
@@ -167,7 +183,9 @@ export function createAeroScoutModel(L, colors = {}) {
         const x = x0 + ((x1 - x0) * i) / n;
         const f = i / n;
         const [, , yb, yt] = fusAt(L, x);
-        const yc = yb + (yt - yb) * centre(f);
+        // As a fraction of the cabin's whole depth (canopy included), so the
+        // stripes run smoothly past the canopy; kept on the white below it.
+        const yc = Math.min(yt - 0.004 - halfW(f), yb + (cabinTop(x) - yb) * centre(f));
         const h = halfW(f);
         const lo = new Vector3(x, yc - h, side * (sideZ(x, yc - h) + 0.0008));
         const hi = new Vector3(x, yc + h, side * (sideZ(x, yc + h) + 0.0008));
@@ -187,9 +205,9 @@ export function createAeroScoutModel(L, colors = {}) {
   // A long pinstripe from under the cabin back along the boom, and a pair of
   // swept flashes on the cabin side, curving up towards the wing.
   const ease = (f) => f * f * (3 - 2 * f);
-  stripe(0.2, -0.5, (f) => 0.26 + 0.2 * ease(Math.min(1, f * 1.6)), (f) => 0.0035 * (1 - 0.6 * f), accentDecal);
-  stripe(0.16, -0.085, (f) => 0.42 + 0.3 * f * f, (f) => 0.006 * Math.sin(Math.PI * Math.min(1, 0.1 + f * 0.9)) + 0.001, accentDecal);
-  stripe(0.11, -0.09, (f) => 0.6 + 0.22 * f * f, (f) => 0.0035 * Math.sin(Math.PI * Math.min(1, 0.1 + f * 0.9)) + 0.0008, darkDecal);
+  stripe(0.2, -0.5, (f) => 0.2 + 0.26 * ease(Math.min(1, f * 1.6)), (f) => 0.0035 * (1 - 0.6 * f), accentDecal);
+  stripe(0.16, -0.085, (f) => 0.3 + 0.32 * f * f, (f) => 0.006 * Math.sin(Math.PI * Math.min(1, 0.1 + f * 0.9)) + 0.001, accentDecal);
+  stripe(0.11, -0.09, (f) => 0.4 + 0.3 * f * f, (f) => 0.0035 * Math.sin(Math.PI * Math.min(1, 0.1 + f * 0.9)) + 0.0008, darkDecal);
 
   // A thin pinstripe along the belly, from under the nose back under the cabin.
   {
@@ -214,34 +232,34 @@ export function createAeroScoutModel(L, colors = {}) {
     root.add(new Mesh(g, accentDecal));
   }
 
-  // Canopy: painted over the top and upper sides of the cabin, from the nose
-  // back under the wing; its lower edge dips at the front of the cabin.
+  // Canopy: a separate black hatch forming the upper nose and cabin, from
+  // the nose back under the wing. It sits on the fuselage's top (the seam)
+  // and arches up to its own top line; it comes off in a crash.
   {
-    const xs = [];
-    for (let i = 0; i <= 24; i++) xs.push(0.245 - (0.245 + 0.03) * (i / 24));
-    const edge = (x) => {
-      const f = (0.245 - x) / 0.275; // 0 at the front, 1 at the back
-      return 0.62 - 0.22 * Math.sin(Math.PI * Math.min(1, f * 1.3)) + 0.25 * Math.max(0, f - 0.8) / 0.2;
-    };
-    const m = 14; // points around each half
-    const rings = xs.map((x) => {
-      const [, hw, yb, yt] = fusAt(L, x);
-      const yTop = Math.min(yt, L.wingY - 0.001);
-      const y0 = yb + (yt - yb) * Math.min(0.95, edge(x));
-      const pts = [];
-      // Right side up from the edge, over the top, down the left side.
+    const x0 = L.canopy[0][0] - 0.004;
+    const x1 = L.canopy[L.canopy.length - 1][0];
+    const n = 28;
+    const m = 16;
+    const rings = [];
+    for (let i = 0; i <= n; i++) {
+      // Closer stations at the nose, where it curves most.
+      const f = (i / n) ** 1.4;
+      const x = x0 + (x1 - x0) * f;
+      const seam = fusAt(L, x)[3];
+      const half = sideZ(x, seam) + 0.0006;
+      const yTop = Math.max(seam + 0.004, canopyTop(x));
+      const ring = [];
+      // An arch from the right side of the seam, over the top, to the left:
+      // upright sides, a well-rounded top. The seam closes it underneath.
       for (let k = 0; k <= m; k++) {
-        const y = y0 + (yTop - y0) * (k / m);
-        pts.push(new Vector3(x, y + 0.0009, sideZ(x, y) + 0.0009));
+        const a = (Math.PI * k) / m;
+        const sinA = Math.sin(a);
+        ring.push(new Vector3(x, seam + (yTop - seam) * Math.sqrt(sinA), half * Math.cos(a)));
       }
-      for (let k = m; k >= 0; k--) {
-        const y = y0 + (yTop - y0) * (k / m);
-        pts.push(new Vector3(x, y + 0.0009, -(sideZ(x, y) + 0.0009)));
-      }
-      void hw;
-      return pts;
-    });
-    root.add(new Mesh(loft(rings, { caps: false }), glass));
+      rings.push(ring);
+    }
+    const hatch = new Mesh(loft(rings), glass);
+    root.add(tag(hatch, 'canopy'));
   }
   // Pilot (hidden in the cockpit view).
   const pilot = new Group();
