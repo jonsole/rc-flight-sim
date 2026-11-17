@@ -6,7 +6,7 @@
 // rather than being scripted.
 
 import { Vector3, Quaternion } from 'three';
-import { coefficients, liftSlope } from './aero.js';
+import { coefficients, liftSlope, stallBlend } from './aero.js';
 import { Obstacles } from './obstacles.js';
 
 const RHO = 1.225;
@@ -20,6 +20,12 @@ const MAX_SPIN = 60; // rad/s
 const WINDMILL_SLIP = 0.5;
 const WINDMILL_START = 3;
 const WINDMILL_DRAG = 0.12;
+// Stall hysteresis (see step): chord lengths of travel for the flow to
+// separate and to reattach.
+const SEPARATE_CHORDS = 2;
+const REATTACH_CHORDS = 10;
+// Extra profile drag per rad² of aileron deflection, [trailing edge down, up].
+const AILERON_DRAG = [0.08, 0.015];
 
 const _v = new Vector3();
 const _windCG = new Vector3();
@@ -76,7 +82,7 @@ export class Aircraft {
       // Orthonormalise chord against span.
       chord.addScaledVector(span, -chord.dot(span)).normalize();
       const normal = new Vector3().crossVectors(span, chord).normalize();
-      return { ...s, pos: vec(s.pos), chord, span, normal, alpha: 0, cl: 0, stalled: 0, deflection: 0 };
+      return { ...s, pos: vec(s.pos), chord, span, normal, alpha: 0, cl: 0, stalled: 0, sep: null, deflection: 0 };
     });
     // Wingspan for ground effect: given by the definition, else estimated from
     // the outermost wing panel.
@@ -194,6 +200,7 @@ export class Aircraft {
     this.battery.used = 0;
     this.time = 0;
     this.held = null;
+    for (const s of this.surfaces) s.sep = null; // settles to the steady value on the first step
   }
 
   crash(reason) {
@@ -347,13 +354,33 @@ export class Aircraft {
       }
       alpha += dAlpha;
       s.deflection = defl;
-      const co = coefficients(alpha, s.foil);
+      // Stall hysteresis (a foil with stallHysteresis, radians): separation
+      // sets in within a couple of chord lengths of travel once past the
+      // stall angle, but the flow only reattaches once the angle of attack is
+      // that much below it, and then takes several chord lengths to do so.
+      // So letting the stick go doesn't unstall the wing at once: the nose
+      // has to drop first. Without it the stall follows the angle of attack.
+      const sepOn = stallBlend(alpha, s.foil);
+      const hyst = s.foil.stallHysteresis;
+      if (!hyst || s.sep == null) s.sep = sepOn;
+      else {
+        const lenTime = (s.chordLen ?? 0.15) / Math.sqrt(speed2);
+        if (sepOn >= s.sep) s.sep += (sepOn - s.sep) * Math.min(1, dt / (SEPARATE_CHORDS * lenTime));
+        else if (stallBlend(alpha, s.foil, -hyst) < 0.5) {
+          // Below the reattachment angle: back to the steady value.
+          s.sep += (sepOn - s.sep) * Math.min(1, dt / (REATTACH_CHORDS * lenTime));
+        }
+      }
+      const co = coefficients(alpha, s.foil, s.sep);
       let cl = co.cl;
       // Control deflection adds a little profile drag; an aileron deflected
       // down (into the wing's pressure side) much more than one deflected up,
       // which is where most of a model's adverse yaw comes from.
       const aileron = s.wing && s.controls.length > 0 && s.controls.every((ct) => ct.input === 'roll');
-      let cd = co.cd + (aileron ? (defl > 0 ? 0.08 : 0.015) : 0.04) * defl * defl;
+      // s.aileronDrag: [down, up] for a model with differential ailerons
+      // (less down-going travel: less adverse yaw).
+      const ad = s.aileronDrag ?? AILERON_DRAG;
+      let cd = co.cd + (aileron ? (defl > 0 ? ad[0] : ad[1]) : 0.04) * defl * defl;
       if (s.wing && s.ge < 0.999) {
         const ar = s.foil.ar;
         cl *= liftSlope(ar / s.ge) / liftSlope(ar);

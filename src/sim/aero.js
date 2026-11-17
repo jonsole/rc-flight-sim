@@ -12,25 +12,40 @@ export function liftSlope(aspectRatio) {
   return (TWO_PI * ar) / (2 + Math.sqrt(4 + ar * ar));
 }
 
+function wrap(alpha) {
+  let a = alpha;
+  if (a > Math.PI) a -= TWO_PI * Math.ceil((a - Math.PI) / TWO_PI);
+  if (a < -Math.PI) a += TWO_PI * Math.ceil((-Math.PI - a) / TWO_PI);
+  return a;
+}
+
+/**
+ * How separated the flow is at `alpha` in steady conditions: 0 = attached,
+ * 1 = fully stalled (flat plate). `shift` moves the stall angle (radians):
+ * negative for where separated flow reattaches.
+ * Stall transition width: ~1° (abrupt) by default; slotted/slatted wings
+ * stall later and more gently.
+ */
+export function stallBlend(alpha, p, shift = 0) {
+  const aLin = wrap(alpha) - p.alpha0;
+  const width = p.stallWidth ?? 0.018;
+  const over = Math.abs(aLin) - (p.alphaStall + shift) - 1.5 * width;
+  return 1 / (1 + Math.exp(-over / width));
+}
+
 /**
  * Lift and drag coefficients at angle of attack `alpha` (radians, any value).
  * @param {number} alpha
  * @param {object} p  { cla, alpha0, alphaStall, cd0, ar, e, stallWidth?, stallDrop? }
+ * @param {number} [separation]  the flow's state (0..1) when it lags the
+ *   angle of attack (stall hysteresis, see Aircraft); else the steady value
  * @returns {{cl:number, cd:number, stalled:number}} stalled: 0..1 blend factor
  */
-export function coefficients(alpha, p) {
-  // Wrap to [-pi, pi]
-  let a = alpha;
-  if (a > Math.PI) a -= TWO_PI * Math.ceil((a - Math.PI) / TWO_PI);
-  if (a < -Math.PI) a += TWO_PI * Math.ceil((-Math.PI - a) / TWO_PI);
-
+export function coefficients(alpha, p, separation) {
+  const a = wrap(alpha);
   const aLin = a - p.alpha0;
   // Stall blend: 0 = attached flow, 1 = fully separated (flat plate).
-  // Stall transition width: ~1° (abrupt) by default; slotted/slatted wings
-  // stall later and more gently.
-  const width = p.stallWidth ?? 0.018;
-  const over = Math.abs(aLin) - p.alphaStall - 1.5 * width;
-  const sigma = 1 / (1 + Math.exp(-over / width));
+  const sigma = separation ?? stallBlend(alpha, p);
 
   const clLin = p.cla * aLin;
   const s = Math.sin(a);

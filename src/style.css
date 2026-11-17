@@ -197,6 +197,7 @@ body.touch #splash .keys-only { display: none; }
 .tune-ctl { display: grid; grid-template-columns: 40px 1fr 40px 84px; gap: 8px; align-items: center; margin-top: 6px; }
 .tune-ctl input[type=range] { width: 100%; min-width: 0; }
 .tune-ctl .val { text-align: right; }
+.tune-ctl .tune-choice { grid-column: 1 / -1; justify-self: start; min-width: 200px; }
 .tune-step { padding: 6px 0; font-size: 18px; line-height: 1; touch-action: manipulation; }
 .tune-reset { padding: 2px 8px; }
 .tune-reset:disabled { opacity: 0.3; cursor: default; }

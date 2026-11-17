@@ -20,13 +20,15 @@ function propDiscTexture() {
 }
 
 /**
- * @param {{ radius:number, blades?:number, pitchIn?:number }} P
+ * @param {{ radius:number, blades?:number, pitchIn?:number, tip?:'square'|'tapered' }} P
  * @param {object} [opts]  spinner: radius of the spinner cone (0 for none)
  * @returns {{ group: Group, update(rpm:number, dt:number, broken:boolean): void }}
  */
-/** A prop as tuned ({ diameterIn, pitchIn, blades }) in the models' terms ({ radius m, pitchIn, blades }). */
+/** A prop as tuned ({ diameterIn, pitchIn, blades, tip }) in the models' terms ({ radius m, pitchIn, blades, tip }). */
 export function propGeometry(p) {
-  return { radius: (p.diameterIn * 0.0254) / 2, pitchIn: p.pitchIn, blades: p.blades };
+  const g = { radius: (p.diameterIn * 0.0254) / 2, pitchIn: p.pitchIn, blades: p.blades };
+  if (p.tip) g.tip = p.tip; // 'square' | 'tapered' (else the model's own)
+  return g;
 }
 
 /**
@@ -59,7 +61,10 @@ export function createProp(P, { spinner = 0.011 } = {}) {
   for (let i = 0; i <= 6; i++) {
     const r = 0.01 * scale + ((P.radius - 0.01 * scale) * i) / 6;
     const rr = r / scale;
-    const c = (0.02 * (1 - 0.5 * ((rr - 0.045) / 0.06) ** 2) + 0.003) * scale;
+    // Tapered blades narrow to a point; square-tipped (bullnose) ones keep
+    // their width out to a blunt, squared-off end.
+    const shape = (x) => 0.02 * (1 - 0.5 * ((x - 0.045) / 0.06) ** 2) + 0.003;
+    const c = (P.tip === 'square' ? shape(Math.min(rr, 0.045)) * (rr > 0.045 ? 1.05 : 1) : shape(rr)) * scale;
     const twist = Math.atan(pitchM / (2 * Math.PI * Math.max(r, 0.02)));
     const ring = [];
     for (let j = 0; j < 8; j++) {
