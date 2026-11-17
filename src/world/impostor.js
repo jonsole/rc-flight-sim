@@ -196,7 +196,9 @@ export function impostorGeometry(index) {
  * FLUFFY define) into the impostor one.
  */
 export function makeImpostor(material, atlas) {
-  material.alphaTest = 0.5;
+  // Soft, anti-aliased edges (alpha to coverage: no sorting needed).
+  material.alphaTest = 0.02;
+  material.alphaToCoverage = true;
   material.side = DoubleSide;
   material.defines = { ...(material.defines || {}), FLUFFY: '', IMPOSTOR: '', SPECIES: '', CLOUD_PER_VERTEX: '' };
   const uniforms = {
@@ -271,6 +273,9 @@ export function makeImpostor(material, atlas) {
           vec4 hi = mix(texture2D(tex, impAt(r0 + 1.0, a0)), texture2D(tex, impAt(r0 + 1.0, a1)), at);
           return mix(lo, hi, rt);
         }`)
+      // (Keep the soft alpha: three.js's alpha-to-coverage test would sharpen
+      // it to a one-pixel edge.)
+      .replace('#include <alphatest_fragment>', 'if ( diffuseColor.a < 0.02 ) discard;')
       .replace('#include <map_fragment>', `
         float r0 = floor(vImpRow);
         float rt = vImpRow - r0;
@@ -282,14 +287,20 @@ export function makeImpostor(material, atlas) {
         vec4 brk = impPick(uImpBark, r0, rt, a0, a1, at);
         // Leaves still on at this time of year (as on the leafy cards).
         float fallAt = nrm.a / max(alb.a, 0.01);
-        bool leaf = alb.a > 0.35 && vBare < fallAt - 0.005;
+        // Soft edges: how much of this pixel is leaf (or twig), from the
+        // picture's coverage, drawn with the screen's anti-aliasing
+        // (alpha to coverage) rather than a hard cut-out.
+        float leafA = smoothstep(0.1, 0.55, alb.a) * step(vBare, fallAt - 0.005);
+        float barkA = smoothstep(0.08, 0.35, brk.a);
+        bool leaf = leafA > 0.0 && leafA >= barkA * 0.8;
+        diffuseColor.a *= max(leafA, barkA);
         vec3 impN = vec3(0.0, 0.0, 1.0);
         if (leaf) {
           // (x0.8: the shade the leafy crowns' own leaves cast inside them,
           // which the picture, taking no shadows, lacks.)
           diffuseColor.rgb *= alb.rgb / max(alb.a, 0.01) * 0.8;
           impN = normalize(nrm.rgb / max(alb.a, 0.01) * 2.0 - 1.0);
-        } else if (brk.a > 0.2) { // (twigs are thin: keep them joined up)
+        } else if (barkA > 0.0) { // (twigs are thin: keep them joined up)
           // Bark: grey-brown, like the leafy trees' branches seen from afar
           // (and not the leaves' tint).
           // (Its species' bark, half way to the grey-brown of fine twigs.)
