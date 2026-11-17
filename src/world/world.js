@@ -507,22 +507,27 @@ export class World {
         // clouds' shadows - shafts fanning out from the sun. Along the line
         // of sight (up to the cloud base), how much of it is in sunlight.
         float toSun = dot(sd, cloudSunDir);
-        if (godRays > 0.0 && cloudCover > 0.01 && toSun > 0.0 && cloudSunDir.y > 0.02) {
-          float phase = toSun * toSun;
+        // (Only within ~50 degrees of the sun, where they show; sampled at
+        // 12 points along the line of sight, each pixel's a little offset
+        // so the samples don't stack up as bands.)
+        if (godRays > 0.0 && cloudCover > 0.01 && toSun > 0.6 && cloudSunDir.y > 0.02) {
+          float phase = (toSun - 0.6) / 0.4;
+          phase *= phase;
           float base = cloudShape.x;
           float tMax = sd.y > 0.02 ? min((base - cameraPosition.y) / sd.y, 5000.0) : 5000.0;
           float sunUp = max(cloudSunDir.y, 0.08);
+          float dither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
           float lit = 0.0;
-          for (int i = 0; i < 8; i++) {
-            vec3 p = cameraPosition + sd * tMax * (float(i) + 0.5) / 8.0;
+          float t = cloudThreshold();
+          for (int i = 0; i < 12; i++) {
+            vec3 p = cameraPosition + sd * tMax * (float(i) + dither) / 12.0;
             vec2 at = p.xz + cloudSunDir.xz / sunUp * (base - p.y);
-            float t = cloudThreshold();
-            lit += 1.0 - smoothstep(t, t + cloudShape.w, cloudNoise(at));
+            lit += 1.0 - smoothstep(t, t + cloudShape.w * 2.0, cloudNoise(at));
           }
-          lit /= 8.0;
-          // Brighter shafts, darker streaks (about the average, so the sky
-          // doesn't change overall).
-          gl_FragColor.rgb *= 1.0 + godRays * cloudShadowStrength * phase * (lit - 0.55) * 1.8;
+          lit /= 12.0;
+          // Brighter shafts, darker streaks, gently (about the average, so
+          // the sky doesn't change overall).
+          gl_FragColor.rgb *= 1.0 + godRays * cloudShadowStrength * phase * (lit - 0.6) * 0.9;
         }
         // Mist and low cloud in the way (out to 3 km).
         if (fogMistA.x > 0.0 || fogMistA.z > 0.0) {
