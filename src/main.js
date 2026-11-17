@@ -5,7 +5,7 @@ import { Obstacles, setLeafiness } from './sim/obstacles.js';
 import { seasonFor } from './world/seasons.js';
 import { Wind } from './sim/wind.js';
 import { World, RUNWAY } from './world/world.js';
-import { AIRCRAFT, getAircraft } from './aircraft/index.js';
+import { AIRCRAFT, getAircraft, loadModelFile, loadModelFiles, onModelLoaded } from './aircraft/index.js';
 import { AircraftPreview } from './ui/preview.js';
 import { Input } from './input/input.js';
 import { TouchControls, isTouchDevice } from './input/touch.js';
@@ -416,6 +416,8 @@ function resetAircraft() {
 /** User picked a different model: load it with its default flight assist. */
 function selectAircraft(id) {
   loadAircraft(id);
+  // Its model file, if not loaded yet: drawn once it has (onModelLoaded).
+  loadModelFile(entry.id);
   mp.setInfo(settings.mpName, entry.id);
   settings.assist = entry.defaultAssist;
   applySettings();
@@ -665,6 +667,16 @@ function updateSplash() {
   }
 }
 updateSplash();
+// A model file arriving later (another aircraft chosen, or a peer's): draw it.
+onModelLoaded((id) => {
+  if (id === entry.id) {
+    replaceModel();
+    preview.shown = null;
+    updateSplash();
+  }
+});
+// The other aircraft's models after the start, while you choose or fly.
+setTimeout(() => loadModelFiles(), 1500);
 
 document.getElementById('start').addEventListener('click', () => {
   document.getElementById('splash').remove();

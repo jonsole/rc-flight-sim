@@ -80,31 +80,46 @@ const MODEL_URLS = Object.fromEntries(
   Object.entries(import.meta.glob('./models/*.glb', { eager: true, query: '?url', import: 'default' })).map(([path, url]) => [path.split('/').pop(), url]),
 );
 
-let loading = null;
+let gltf = null;
+const loads = new Map(); // aircraft id -> promise of its model file
 /**
- * Load every aircraft's model file (once). Resolves with the ids that now use
- * their file; one that fails to load keeps its built-in model.
+ * Load one aircraft's model file (once; later calls share it). Resolves
+ * true once its model is ready, false if it has none or it failed.
  */
-export function loadModelFiles() {
-  loading ||= (async () => {
-    const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
-    const loader = new GLTFLoader();
-    const done = [];
-    await Promise.all(
-      AIRCRAFT.filter((a) => a.modelFile).map(async (a) => {
-        const url = MODEL_URLS[a.modelFile];
-        if (!url) return console.warn(`${a.id}: no model file ${a.modelFile} in src/aircraft/models`);
-        try {
-          a.fileScene = (await loader.loadAsync(url)).scene;
-          done.push(a.id);
-        } catch (e) {
-          console.warn(`${a.id}: couldn't load ${a.modelFile}`, e);
-        }
-      }),
-    );
-    return done;
-  })();
-  return loading;
+export function loadModelFile(id) {
+  const a = getAircraft(id);
+  if (!loads.has(a.id)) {
+    loads.set(a.id, (async () => {
+      if (!a.modelFile) return false;
+      const url = MODEL_URLS[a.modelFile];
+      if (!url) {
+        console.warn(`${a.id}: no model file ${a.modelFile} in src/aircraft/models`);
+        return false;
+      }
+      try {
+        gltf ||= import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) => new GLTFLoader());
+        a.fileScene = (await (await gltf).loadAsync(url)).scene;
+        for (const f of modelListeners) f(a.id);
+        return true;
+      } catch (e) {
+        console.warn(`${a.id}: couldn't load ${a.modelFile}`, e);
+        return false;
+      }
+    })());
+  }
+  return loads.get(a.id);
+}
+
+const modelListeners = new Set();
+/** Call `f(id)` whenever an aircraft's model file has loaded (to redraw it). */
+export function onModelLoaded(f) {
+  modelListeners.add(f);
+}
+
+/** Load every aircraft's model file. Resolves with the ids now using theirs. */
+export async function loadModelFiles() {
+  const ok = await Promise.all(AIRCRAFT.map((a) => loadModelFile(a.id)));
+  return AIRCRAFT.filter((_, i) => ok[i]).map((a) => a.id);
 }
 
 export const DEFAULT_AIRCRAFT_ID = AIRCRAFT[0].id;

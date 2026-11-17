@@ -1,5 +1,5 @@
 // Start-up: pick the flying site, load its baked data (real sites) and the
-// aircraft's 3D model files, then start the simulator. The site is fixed for the session; changing it in the
+// chosen aircraft's 3D model file, then start the simulator. The site is fixed for the session; changing it in the
 // menu reloads the page with ?field=<id>.
 import { LOCATIONS, setLocation } from './sim/location.js';
 import { loadSettings, saveSettings } from './ui/settings.js';
@@ -26,8 +26,9 @@ async function load() {
   return data;
 }
 
-// The aircraft's model files load alongside the site.
-const models = import('./aircraft/index.js').then((m) => m.loadModelFiles());
+// The chosen aircraft's model file loads alongside the site (the others
+// after the start: main.js), not every one of them.
+const models = import('./aircraft/index.js').then((m) => m.loadModelFile(settings.aircraft));
 
 load()
   .then((data) => setLocation(site.id, data))
