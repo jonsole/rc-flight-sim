@@ -1,12 +1,11 @@
-// Clouds: a layer of cumulus (or stratocumulus) with real body - flat
-// bases, rounded tops and sunlit sides - and, by type, a high, streaky layer
-// of cirrus. Both drift with the wind aloft and change shape slowly.
+// Clouds: a low layer of cumulus (or stratocumulus) and, by type, a high,
+// streaky layer of cirrus. Both drift with the wind aloft and change shape
+// slowly.
 //
-// The low layer is drawn on one big sheet at its base by a shader: each pixel
-// follows its line of sight up through the layer (a few steps) to where it
-// meets a cloud, whose height at each point comes from the same noise as its
-// outline. The same noise darkens the sunlight on the ground below (cloud
-// shadows), so they always match.
+// The low layer is drawn on one big sheet at its base by a noise shader:
+// the cloud bases, darker under deeper cloud, lighter at their thin edges
+// and where the sun shines through. The same noise darkens the sunlight on
+// the ground below (cloud shadows), so they always match.
 //
 // Types (setType): fair-weather cumulus, towering cumulus, stratocumulus,
 // cirrus only, or cumulus with cirrus above.
@@ -171,77 +170,38 @@ export class CloudLayer {
         varying vec3 vWorld;
         ${NOISE}
         ${FIELD_GLSL}
-        // A cloud's height above the base (0..1 of the layer's depth) where its
-        // pattern is n: straight sides up from the edge of its base (no thin,
-        // see-through fringe around it), then rounded tops, the densest parts
-        // tallest.
+        // How deep the cloud is over a point (0..1) where its pattern is n:
+        // the densest parts the deepest (and darkest underneath).
         float cloudH(float n) {
           float k = (n - cloudThreshold()) / (cloudShape.w * 3.0 + 0.1);
-          return k <= 0.0 ? 0.0 : 0.18 + 0.82 * pow(min(k, 1.0), 0.6);
+          return k <= 0.0 ? 0.0 : pow(min(k, 1.0), 0.6);
         }
         void main() {
           vec3 dir = normalize(vWorld - cameraPosition);
           if (dir.y < 0.002) discard;
           float base = cloudShape.x, T = cloudShape.y;
-          // Up through the layer from the base: where does it meet a cloud?
-          // (Its flat base, if there's cloud right there; else on up through
-          // the gap to the side of a cloud beyond.) One pattern for outline,
-          // height and shading, so they agree.
+          // Where the line of sight meets the cloud base. (Following it on
+          // up to find the clouds' sides came out as streaks near the
+          // horizon: the bases are drawn, shaded for their depth.)
           float t0 = (base - cameraPosition.y) / dir.y;
-          float len = min(T / dir.y, 2500.0);
-          const int N = 12;
-          float hitT = -1.0;
-          float n = cloudNoise((cameraPosition + dir * t0).xz);
-          // Sides and tops only show looking out towards the horizon; looking
-          // up, just the flat bases (sides fading in from ~15 degrees up to
-          // fully below ~5).
-          float sides = 1.0 - smoothstep(0.08, 0.26, dir.y);
-          if (n > cloudThreshold()) hitT = t0;
-          else if (sides <= 0.0) discard;
-          else {
-            for (int i = 1; i <= N; i++) {
-              float t = t0 + len * float(i) / float(N);
-              vec3 p = cameraPosition + dir * t;
-              float np = cloudNoise(p.xz);
-              if (p.y - base <= T * cloudH(np)) {
-                // (Closer to its surface: halve the step back three times.)
-                float lo = t - len / float(N), hi = t;
-                n = np;
-                for (int k = 0; k < 3; k++) {
-                  float m = 0.5 * (lo + hi);
-                  vec3 pm = cameraPosition + dir * m;
-                  float nm = cloudNoise(pm.xz);
-                  if (pm.y - base <= T * cloudH(nm)) { hi = m; n = nm; } else lo = m;
-                }
-                hitT = hi;
-                break;
-              }
-            }
-            if (hitT < 0.0) discard;
-          }
-          vec3 q = cameraPosition + dir * hitT;
-          float d = smoothstep(cloudThreshold(), cloudThreshold() + cloudShape.w, n);
-          float f = clamp((q.y - base) / T, 0.0, 1.0); // up the cloud
-          // Its surface there: the slope of the height (towards the sun is lit).
-          float e = 30.0;
-          float hx = cloudH(cloudNoise(q.xz + vec2(e, 0.0))) - cloudH(cloudNoise(q.xz - vec2(e, 0.0)));
-          float hz = cloudH(cloudNoise(q.xz + vec2(0.0, e))) - cloudH(cloudNoise(q.xz - vec2(0.0, e)));
-          vec3 nrm = normalize(vec3(-hx * T / (2.0 * e), 0.35, -hz * T / (2.0 * e)));
-          float sun = clamp(dot(nrm, cloudSunDir) * 0.5 + 0.5, 0.0, 1.0);
-          // Sides lit towards the sun, brighter up the cloud; the flat base
-          // darker under deeper cloud, lighter at the thin edges - blending
-          // into each other low on the sides.
-          float sideLit = mix(0.3, 1.1, sun) * mix(0.6, 1.0, f);
-          float baseLit = mix(0.45, 0.05, cloudH(n)) + 0.3 * (1.0 - d);
-          float lit = mix(baseLit, sideLit, smoothstep(0.0, 0.12, f));
+          vec3 q = cameraPosition + dir * t0;
+          float n = cloudNoise(q.xz);
+          float dist = length(q.xz - cameraPosition.xz);
+          // (Edges a little softer far away.)
+          float d = smoothstep(cloudThreshold(), cloudThreshold() + cloudShape.w * (1.0 + dist / 2500.0), n);
+          if (d < 0.005) discard;
+          // Darker under deeper cloud; lighter at the thin edges, and where
+          // the sun shines through a thin part (a bright rim on the sun's side).
+          float deep = cloudH(n);
+          float towardSun = cloudDensity(q.xz + cloudSunDir.xz / max(cloudSunDir.y, 0.15) * T * 0.4);
+          float lit = mix(0.5, 0.05, deep) + 0.35 * (1.0 - d) + 0.25 * (1.0 - towardSun);
           vec3 c = mix(shadeColor, lightColor, lit);
           c = mix(c, vec3(dot(c, vec3(0.3, 0.55, 0.15))) * 0.85, grey);
           // Fade into the horizon haze far away.
-          float dist = length(q.xz - cameraPosition.xz);
           float haze = smoothstep(1500.0, 6500.0, dist);
           c = mix(c, hazeColor, haze * 0.85);
           // (The base fades out at its edge; a side is solid.)
-          float a = (hitT == t0 ? min(1.0, d * 1.5) : sides) * (1.0 - smoothstep(5000.0, 6800.0, dist)) * mix(1.0, 0.8, night) * (1.0 - mistFade);
+          float a = min(1.0, d * 1.5) * (1.0 - smoothstep(5000.0, 6800.0, dist)) * mix(1.0, 0.8, night) * (1.0 - mistFade);
           // Mist and low cloud between here and it hide it (gradually).
           if (fogMistA.x > 0.0 || fogMistA.z > 0.0) a *= exp(-vfAlong(cameraPosition, q, hazeColor).x);
           if (a < 0.005) discard;
