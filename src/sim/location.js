@@ -71,7 +71,8 @@ const WATERBEACH = {
   id: 'waterbeach',
   name: 'Barrack Field',
   summary: 'Barrack Field at Waterbeach, Cambridgeshire: the real field, from Environment Agency LIDAR and OpenStreetMap.',
-  load: () => import('../locations/waterbeach.json'),
+  // Its baked data: a JSON file, fetched with progress (src/ui/loading.js).
+  dataUrl: () => import('../locations/waterbeach.json?url'),
   layout: {
     // The cricket pitch in the middle of the field is the runway: 28 m,
     // heading about 101°/281°. You stand 10 m south of its middle, facing it.
@@ -138,7 +139,7 @@ const IMPINGTON = {
   id: 'impington',
   name: 'Impington Village College',
   summary: 'The sports field at Impington Village College, Cambridgeshire, from Environment Agency LIDAR and OpenStreetMap. Best with the Google photorealistic scenery (Menu → View → Graphics).',
-  load: () => import('../locations/impington.json'),
+  dataUrl: () => import('../locations/impington.json?url'),
   layout: {
     // You start in the middle of the main playing field; take off east or
     // west into wind from just in front of you, on the grass.
@@ -243,4 +244,16 @@ export function inPolygon(p, x, z) {
     if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
   }
   return inside;
+}
+
+/**
+ * A site's baked data, downloaded with progress (0-1) reported; null for a
+ * site with none.
+ */
+export async function loadSiteData(site, onProgress = () => {}) {
+  if (!site.dataUrl) return null;
+  const url = (await site.dataUrl()).default;
+  const { fetchJsonWithProgress } = await import('../ui/loading.js');
+  const sizes = typeof __SITE_SIZES__ === 'object' ? __SITE_SIZES__ : {};
+  return fetchJsonWithProgress(url, onProgress, sizes[site.id] || 0);
 }

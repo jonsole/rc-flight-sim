@@ -14,7 +14,7 @@ import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail, groundUniforms } from './ground.js';
 import { seasonFor } from './seasons.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
-import { fluffyCrown, crownWood, fluffyConifer, coniferWood, makeFluffy, fluffyDepthMaterial, pickAsBall, setLeafDetail, LEAF_ROWS } from './fluffy.js';
+import { fluffyCrown, crownWood, fluffyConifer, coniferWood, makeFluffy, fluffyDepthMaterial, pickAsBall, setLeafDetail, setLeafSpecies, leafTexture, LEAF_ROWS } from './fluffy.js';
 import { CrownLod, addLodFade, addCloseSwitch, closeUniforms } from './lod.js';
 import { LowCloud } from './mist.js';
 import { installVolumetricFog, fog4, FIELD_GLSL } from './volfog.js';
@@ -360,6 +360,12 @@ export class World {
     this.fluffy = opts.treeStyle !== 'classic';
     this.renderer = opts.renderer; // for drawing the distant trees' pictures (impostors)
     if (this.quality.leafy?.leafPx) setLeafDetail(this.quality.leafy.leafPx);
+    // Only the leaves this site's trees and bushes have are drawn.
+    setLeafSpecies([
+      ...obstacles.trees.map((t) => leafName(speciesOf(t).name)),
+      ...(obstacles.bushes.length ? ['hawthorn'] : []),
+      'beech', // (the distant pictures' broadleaf leaves)
+    ]);
     this.twigMeshes = [];
     this.scene = new Scene();
     this.scene.background = new Color('#9cc3e6');
@@ -385,15 +391,42 @@ export class World {
     // drawn by the volumetric fog (volfog.js).
     this.lowCloud = new LowCloud();
     this.#lights();
-    this.#terrain();
-    // The club's own things (runway, pad, fence, pits) in the club frame.
-    this.club = new Group();
-    this.club.rotation.y = -clubAngle();
-    this.scene.add(this.club);
-    this.#runway();
-    this.#site();
-    this.#props();
-    this.setTime(14, 172);
+    // The rest, in steps (build): all now, or (opts.defer) by the caller,
+    // with the start screen showing how far it's got.
+    this.steps = [
+      // [what, rough share of the time, do it]
+      ['ground', 1, () => {
+        this.#terrain();
+        // The club's own things (runway, pad, fence, pits) in the club frame.
+        this.club = new Group();
+        this.club.rotation.y = -clubAngle();
+        this.scene.add(this.club);
+        this.#runway();
+      }],
+      ['leaves', 3, () => this.fluffy && leafTexture()],
+      ['distant trees', 1, () => this.fluffy && this.#impostorMat()],
+      ['trees and bushes', 4, () => this.#site()],
+      ['the rest', 1, () => {
+        this.#props();
+        this.setTime(14, 172);
+      }],
+    ];
+    if (!opts.defer) for (const [, , run] of this.steps) run();
+  }
+
+  /**
+   * Build the rest of the world (opts.defer), a step at a time, letting the
+   * screen update between them. onProgress(fraction 0-1).
+   */
+  async build(onProgress = () => {}, between = () => Promise.resolve()) {
+    const total = this.steps.reduce((a, [, w]) => a + w, 0);
+    let done = 0;
+    for (const [, w, run] of this.steps) {
+      run();
+      done += w;
+      onProgress(done / total);
+      await between();
+    }
   }
 
   #sky() {
@@ -937,22 +970,24 @@ export class World {
     const needleMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true, side: DoubleSide })));
     needleMat.defines = { CONIFER: '' };
     const conTrunk = coniferTrunk();
-    const sets = [
-      { trees: near, crowns: CROWN_SEEDS.map((s) => broadleafCrown(s, q.nearDetail)), trunks: [trunk(3), trunk(41), trunk(67)], conifers: [conifer(5), conifer(17), conifer(29)] },
-      { trees: far, crowns: CROWN_SEEDS.map((s) => (q.farDetail === 'blob' ? blobCrown(s) : broadleafCrown(s, q.farDetail))), trunks: [simpleTrunk()], conifers: [conifer(5)] },
-    ];
-    // Leafy: the broadleaf crowns are drawn by the level-of-detail sorter
-    // (leafy near the camera, solid beyond), not with their sets.
+    // Leafy: the crowns are drawn by the level-of-detail sorters (leafy near
+    // the camera, pictures beyond), so the classic solid crowns and conifers
+    // aren't made at all (they took a good part of start-up).
+    const SP = Object.keys(WOOD);
+    const sets = this.fluffy
+      ? [
+        // Near trunks grown as their species grows them (where it forks, its
+        // main limbs): a design per trunk pick and species.
+        { trees: near, crowns: [], conifers: [], trunks: TRUNK_SEEDS.flatMap((seed) => SP.map((sp) => trunk(seed, false, WOOD[sp].trunk))),
+          trunkIndex: (t) => (t.pick % 3) * SP.length + Math.max(0, SP.indexOf(speciesOf(t).name)) },
+        { trees: far, crowns: [], conifers: [], trunks: [simpleTrunk()] },
+      ]
+      : [
+        { trees: near, crowns: CROWN_SEEDS.map((s) => broadleafCrown(s, q.nearDetail)), trunks: [trunk(3), trunk(41), trunk(67)], conifers: [conifer(5), conifer(17), conifer(29)] },
+        { trees: far, crowns: CROWN_SEEDS.map((s) => (q.farDetail === 'blob' ? blobCrown(s) : broadleafCrown(s, q.farDetail))), trunks: [simpleTrunk()], conifers: [conifer(5)] },
+      ];
     const lodTrees = [];
     const lodConifers = [];
-    if (this.fluffy) {
-      for (const set of sets) set.crowns = [];
-      // Near trunks grown as their species grows them (where it forks, its
-      // main limbs): a design per trunk pick and species.
-      const SP = Object.keys(WOOD);
-      sets[0].trunks = TRUNK_SEEDS.flatMap((seed) => SP.map((sp) => trunk(seed, false, WOOD[sp].trunk)));
-      sets[0].trunkIndex = (t) => (t.pick % 3) * SP.length + Math.max(0, SP.indexOf(speciesOf(t).name));
-    }
     this.trees = { trunks: [], conTrunks: [], crowns: [], conifers: [] };
     for (const set of sets) {
       if (!set.trees.length) continue;
