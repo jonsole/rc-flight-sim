@@ -8,8 +8,10 @@
 //  - a patchwork of farm fields with hedgerows on the hills;
 //  - a dirt track and a gravel car park by the club hut.
 // At a real site the baked colour map (roads, paths, water, gardens, fields
-// from OpenStreetMap) replaces the made-up zones, with the grass texture's
-// detail on top; the made-up farmland only carries on beyond it.
+// from OpenStreetMap, or an orthophoto) replaces the made-up zones, with the
+// grass texture's detail on top; the made-up farmland only carries on beyond
+// it, unless the site has a coarser map of the country round about too
+// (`farGround`: mountains).
 import { CanvasTexture, SRGBColorSpace, Vector2, Vector3, RepeatWrapping, NoColorSpace } from 'three';
 import { RUNWAY } from '../sim/terrain.js';
 import { LOCATION, clubAngle } from '../sim/location.js';
@@ -148,7 +150,14 @@ function realGround() {
   const tex = new CanvasTexture(d.groundImage);
   tex.colorSpace = SRGBColorSpace;
   tex.anisotropy = 8;
-  return { tex, origin: new Vector2(d.ground.x0, d.ground.z0), size: d.ground.size };
+  let far = null;
+  if (d.farGroundImage) {
+    const t = new CanvasTexture(d.farGroundImage);
+    t.colorSpace = SRGBColorSpace;
+    t.anisotropy = 8;
+    far = { tex: t, origin: new Vector2(d.farGround.x0, d.farGround.z0), size: d.farGround.size };
+  }
+  return { tex, origin: new Vector2(d.ground.x0, d.ground.z0), size: d.ground.size, far };
 }
 
 // Track: from the car park by the hut, out through the field gate and away.
@@ -200,12 +209,18 @@ export function addGroundDetail(material) {
       shader.uniforms.groundOrigin = { value: real.origin };
       shader.uniforms.groundSize = { value: real.size };
       shader.defines = { ...shader.defines, REAL_GROUND: '' };
+      if (real.far) {
+        shader.uniforms.farMap = { value: real.far.tex };
+        shader.uniforms.farOrigin = { value: real.far.origin };
+        shader.uniforms.farSize = { value: real.far.size };
+        shader.defines.FAR_GROUND = '';
+      }
     }
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vGroundWorld;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGroundWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${GLSL}\n${polyGlsl()}\nuniform vec3 uGrassTint;\nuniform float uGrassDry;\nuniform float uGrassLen;\nuniform sampler2D grassFine;\nuniform float grassFineMean;\n#ifdef REAL_GROUND\nuniform sampler2D groundMap; uniform vec2 groundOrigin; uniform float groundSize;\n#endif`)
+      .replace('#include <common>', `#include <common>\n${GLSL}\n${polyGlsl()}\nuniform vec3 uGrassTint;\nuniform float uGrassDry;\nuniform float uGrassLen;\nuniform sampler2D grassFine;\nuniform float grassFineMean;\n#ifdef REAL_GROUND\nuniform sampler2D groundMap; uniform vec2 groundOrigin; uniform float groundSize;\n#endif\n#ifdef FAR_GROUND\nuniform sampler2D farMap; uniform vec2 farOrigin; uniform float farSize;\n#endif`)
       .replace('#include <map_fragment>', /* glsl */ `
         vec2 p = vGroundWorld.xz;
         // Grass texture at two scales and angles, blended by a slow noise,
@@ -245,8 +260,16 @@ export function addGroundDetail(material) {
         float onField = 1.0 - smoothstep(0.0, 8.0, ${fieldDist()});
 ${mownGlsl()}
         site = mix(site, g, max(mown, onField * 0.9));
+#ifdef FAR_GROUND
+        // Beyond it, the coarser map of the country round about.
+        vec2 fuv = (p - farOrigin) / farSize;
+        vec3 farCol = texture2D(farMap, vec2(fuv.x, 1.0 - fuv.y)).rgb * mix(1.0, detail, 0.5) * (0.94 + 0.12 * patches);
+        g = mix(farCol, site, inMap);
+        float farm = 0.0;
+#else
         g = mix(g, site, inMap);
         float farm = 1.0 - inMap;
+#endif
 #else
         // Rough: longer, darker, browner grass with seed heads.
         float rough = smoothstep(${(FIELD.r - 15).toFixed(1)}, ${(FIELD.r + 25).toFixed(1)}, rField);
@@ -337,7 +360,7 @@ ${mownGlsl()}
       `);
   };
   const prevKey = material.customProgramCacheKey?.bind(material);
-  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|groundDetail${real ? '|real' : ''}`;
+  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|groundDetail${real ? '|real' : ''}${real?.far ? '|far' : ''}`;
   material.needsUpdate = true;
   return material;
 }

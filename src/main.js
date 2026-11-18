@@ -118,6 +118,7 @@ function showGoogle(on) {
       lat: LOCATION.data.origin.lat,
       lon: LOCATION.data.origin.lon,
       groundHeight: LOCATION.data.origin.height,
+      geoid: LOCATION.data.origin.geoid,
       trueNorth: LOCATION.data.origin.trueNorth,
       quality: settings.graphics,
       creditEl: document.getElementById('map-credits'),

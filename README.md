@@ -135,19 +135,28 @@ Pick the field on the start screen or under *Menu → Flying → Flying field*
 | --- | --- |
 | **Club field** | Made up: a mown field in rolling country. |
 | **Barrack Field** | The real field at Waterbeach, Cambridgeshire: the cricket pitch is the runway, with the grass mown about 32 m round it, and you stand 10 m south of it. 2 × 2 km of scenery around it is built from Environment Agency 1 m LIDAR (ground, ~5000 trees at their measured heights and crown sizes, hedges, building heights) and OpenStreetMap (building outlines, roads, paths, water, gardens, farmland), touched up from what's there now: bigger trees, the chain-link and temporary fences, demolished buildings left out. |
+| **Hotel Glocknerhof** | The hotel's model airfield at Berg im Drautal, Carinthia (Austria), in the Drau valley under the hotel: a 200 m mown grass runway running roughly north-south between the access road and a maize field, the pits behind a 5 m safety net, the big green and white pyramid tent, cars along the road. You stand at the net near the north end, facing east. 2 × 2 km round it from the BEV's 1 m laser-scan heights (ground, ~5000 trees, conifers told from broadleaves by how dark they are from above, building heights), coloured from basemap.at aerial photos, with OpenStreetMap building outlines; and 14 × 14 km of the mountains round the valley (up to ~2500 m) from the same heights every 32 m, coloured from the aerial photos. `?field=glocknerhof`. |
 
 Real fields are baked by `tools/bake_location.py` into `src/locations/<id>.json`
 (about 2.6 MB), so nothing is fetched at run time and no API key is needed:
 
 ```bash
-pip install numpy scipy pyproj tifffile pillow
+pip install numpy scipy pyproj tifffile pillow imagecodecs
 python3 tools/bake_location.py waterbeach --cache /tmp/waterbeach-data
 ```
 
 To add a field in England, add it to `SITES` in the script (the OSGB
 easting/northing where the pilot stands) and its layout (runway and its
 heading, mown areas, pilot box, fences, trees grown since the survey) to
-`src/sim/location.js`. Players in multiplayer only meet others at the same
+`src/sim/location.js`.
+
+Austrian fields (`source: 'bev'`, `tools/bev.py`) take the pilot's
+latitude and longitude instead, and read the BEV's ALS DTM and DSM (CC BY 4.0)
+straight from its 6 GB files over HTTP, only the parts they need (a few
+hundred MB the first time, kept in the cache folder). They are laid out in a
+local frame with true north up. With `far_half` and `far_cell` they also bake
+the mountains round about (`far`, `farGround`), which the terrain then covers
+instead of fading into made-up country. Players in multiplayer only meet others at the same
 field.
 
 ### Scenery editor

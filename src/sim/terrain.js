@@ -3,7 +3,9 @@
 // Made-up club field: the flying field (a ~400 m circle around the pilot) is
 // flat at y = 0; beyond it, gentle rolling hills rise towards the horizon.
 // Real sites (src/sim/location.js): the LIDAR ground, levelled on the mown
-// field, fading into gentle made-up country beyond the baked area.
+// field, fading into gentle made-up country beyond the baked area, or, where
+// the site has them baked (`far`: mountains), into the real country round
+// about, on a bigger terrain grid.
 import { LOCATION, inMown, clubAngle } from './location.js';
 
 const FIELD_RADIUS = 260;
@@ -84,15 +86,45 @@ function sampleReal(x, z) {
   return (a + (b - a) * v) / 100;
 }
 
+// The country round about (real sites with `far`): heights in decimetres
+// on a coarse square grid.
+let farGrid = null;
+function farTerrain() {
+  const t = LOCATION.data.far;
+  const bytes = Uint8Array.from(atob(t.dm), (c) => c.charCodeAt(0));
+  return { ...t, dm: new Int16Array(bytes.buffer) };
+}
+
+function sampleFar(x, z) {
+  const t = farGrid;
+  const fx = Math.min(t.n - 1.001, Math.max(0, (x - t.x0) / t.cell));
+  const fz = Math.min(t.n - 1.001, Math.max(0, (z - t.z0) / t.cell));
+  const ix = Math.floor(fx);
+  const iz = Math.floor(fz);
+  const u = fx - ix;
+  const v = fz - iz;
+  const k = iz * t.n + ix;
+  const a = t.dm[k] + (t.dm[k + 1] - t.dm[k]) * u;
+  const b = t.dm[k + t.n] + (t.dm[k + t.n + 1] - t.dm[k + t.n]) * u;
+  return (a + (b - a) * v) / 10;
+}
+
 function realHeight(x, z) {
   real ??= realTerrain();
   const t = real;
-  // Beyond the baked area: flat country at the edge height with a little
-  // gentle relief, blended in over the last 150 m.
+  // Beyond the baked area: the real country round about where it is baked,
+  // else flat country at the edge height with a little gentle relief;
+  // blended in over the last 150 m.
   const cx = t.x0 + t.half;
   const cz = t.z0 + t.half;
   const out = Math.max(Math.abs(x - cx), Math.abs(z - cz)) - t.half;
-  const beyond = t.edge + (fbm(x / 400, z / 400) - 0.5) * 6 + Math.max(0, out) / 200;
+  let beyond;
+  if (LOCATION.data.far) {
+    farGrid ??= farTerrain();
+    beyond = sampleFar(x, z);
+  } else {
+    beyond = t.edge + (fbm(x / 400, z / 400) - 0.5) * 6 + Math.max(0, out) / 200;
+  }
   const w = Math.min(1, Math.max(0, (out + 150) / 150));
   let h = w >= 1 ? beyond : sampleReal(x, z) * (1 - w * w * (3 - 2 * w)) + beyond * (w * w * (3 - 2 * w));
   // The club's field is levelled (it is within a few cm anyway).
@@ -117,8 +149,11 @@ function shapeHeight(x, z) {
 // float above or sink into the drawn hills. Heights are sampled once onto the
 // grid and interpolated over the same triangles three.js's PlaneGeometry uses:
 // in each cell the diagonal runs from (ix, iz+1) to (ix+1, iz).
-export const TERRAIN_SIZE = 7000;
-export const TERRAIN_SEGMENTS = 280;
+// 7 km in 25 m cells; a site with mountains baked round it covers them, in
+// cells the size of their grid's.
+const FAR = LOCATION.data?.far;
+export const TERRAIN_SIZE = FAR ? (FAR.n - 1) * FAR.cell : 7000;
+export const TERRAIN_SEGMENTS = FAR ? FAR.n - 1 : 280;
 const CELL = TERRAIN_SIZE / TERRAIN_SEGMENTS;
 const HALF = TERRAIN_SIZE / 2;
 const N = TERRAIN_SEGMENTS + 1;

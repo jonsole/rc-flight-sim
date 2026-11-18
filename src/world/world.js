@@ -8,7 +8,7 @@ import {
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY, PILOT_PAD } from '../sim/terrain.js';
 import { buildingsMesh } from './buildings.js';
-import { clubAngle } from '../sim/location.js';
+import { clubAngle, LOCATION } from '../sim/location.js';
 import { sunPosition, moonPosition } from './sun.js';
 import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
 import { addGroundDetail, groundUniforms } from './ground.js';
@@ -22,7 +22,7 @@ import { speciesOf, bushSpeciesAt, barkColor, trunkThickness, SPECIES, WOOD, CON
 import { bakeImpostors, impostorGeometry, makeImpostor } from './impostor.js';
 import { QUALITY } from './quality.js';
 import { CROWN_SEEDS, crownOf } from '../sim/treeShapes.js';
-import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes, bushMatrix, siteFence, bushShapes, leafyBushShapes, bushTwigShapes } from './props.js';
+import { clubhouse, shippingContainer, car, gazebo, pyramidTent, gravelTexture, bushes, bushMatrix, siteFence, bushShapes, leafyBushShapes, bushTwigShapes } from './props.js';
 
 const smooth = (e0, e1, x) => {
   const t = MathUtils.clamp((x - e0) / (e1 - e0), 0, 1);
@@ -670,7 +670,8 @@ export class World {
       p.setY(i, h);
       const n = Math.sin(x * 0.011) * Math.cos(z * 0.013) * 0.5 + 0.5;
       tmp.copy(c1).lerp(c2, n * 0.8);
-      if (h > 40) tmp.lerp(c3, Math.min(1, (h - 40) / 120));
+      // (Hills paler, except where a site's map has the real colours.)
+      if (h > 40 && !LOCATION.data?.farGround) tmp.lerp(c3, Math.min(1, (h - 40) / 120));
       colors.push(tmp.r, tmp.g, tmp.b);
     }
     geo.setAttribute('color', new Float32BufferAttribute(colors, 3));
@@ -1264,6 +1265,12 @@ export class World {
     for (const o of clubThings) {
       shadowy(o);
       this.club.add(o);
+    }
+    for (const o of ob.tents.map(pyramidTent)) {
+      shadowy(o);
+      o.userData.kind = 'tent';
+      this.scene.add(o);
+      this.builtScenery.push(o);
     }
     for (const o of ob.cars.map(car)) {
       shadowy(o);
