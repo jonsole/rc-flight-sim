@@ -22,12 +22,13 @@ const BED_STEP = 1.25; // m between the bed mesh's points
  * water one pixel covers (m): anything smaller than a few pixels is left
  * out (it would only alias into stripes).
  *
- * A dozen waves spread round the wind's direction (each its own length,
- * angle and phase, at the speed real waves of that length run), stronger in
- * gusty patches carried slowly across the lake with the water (3% of the
- * wind speed) and weaker in the
- * calm stretches between, sheltered in the lee of the upwind bank, and a
- * drifting noise over them all so no pattern repeats.
+ * Two dozen waves spread round the wind's direction (each its own length,
+ * angle and phase, at the speed real waves of that length run), each coming
+ * and going in its own patches (groups of a few crests, not endless lines),
+ * their crests gently bent; stronger in gusty patches carried slowly across
+ * the lake with the water (3% of the wind speed) and weaker in the calm
+ * stretches between, sheltered in the lee of the upwind bank; and noise at
+ * three sizes over them all, so nothing repeats or lines up.
  */
 function rippleGlsl() {
   let seed = 7;
@@ -36,23 +37,24 @@ function rippleGlsl() {
     return seed / 2147483647;
   };
   const waves = [];
-  const N = 12;
+  const N = 24;
   for (let i = 0; i < N; i++) {
-    // Lengths spread evenly (log) from 3 m down to 12 cm.
-    const len = 3 * Math.pow(0.12 / 3, (i + rnd() * 0.8) / N);
-    // Mostly with the wind, some well across it.
-    const spread = (rnd() - 0.5) * (rnd() < 0.3 ? 2.6 : 1.2);
+    // Lengths spread (log) from 3 m down to 12 cm, unevenly.
+    const len = 3 * Math.pow(0.12 / 3, Math.min(1, (i + rnd() * 1.6) / N));
+    // Mostly with the wind (a bell round it), a quarter well across it.
+    const spread = rnd() < 0.25 ? (rnd() - 0.5) * 3.2 : (rnd() + rnd() + rnd() - 1.5) * 1.1;
     const k = (2 * Math.PI) / len;
     // Speed: gravity waves, with surface tension for the shortest, at
     // 40% (the eye follows groups of ripples, which run at about half the
     // crests' speed; at the full speed it all looked to race).
     const speed = 0.4 * Math.sqrt(9.81 / k + 7.3e-5 * k);
     // Slope a little steeper for the shorter ones.
-    const amp = Math.pow(len / 1.5, -0.15) * (0.7 + rnd() * 0.6);
-    waves.push({ len, spread, speed, amp, phase: rnd() * 6.2832 });
+    // (x0.7: twice as many as there were.)
+    const amp = 0.7 * Math.pow(len / 1.5, -0.15) * (0.5 + rnd());
+    waves.push({ len, spread, speed, amp, phase: rnd() * 6.2832, env: i % 4 });
   }
   const f = (v) => v.toFixed(4);
-  const lines = waves.map((w) => `WAVE(${f(Math.cos(w.spread))}, ${f(Math.sin(w.spread))}, ${f(w.len)}, ${f(w.speed)}, ${f(w.amp)}, ${f(w.phase)})`);
+  const lines = waves.map((w) => `WAVE(${f(Math.cos(w.spread))}, ${f(Math.sin(w.spread))}, ${f(w.len)}, ${f(w.speed)}, ${f(w.amp)}, ${f(w.phase)}, env.${'xyzw'[w.env]})`);
   return /* glsl */ `
   float rpHash(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -79,23 +81,32 @@ function rippleGlsl() {
     vec2 pl = p - LAKE_CENTRE;
     vec2 gp = (pl - drift) / 28.0;
     float gust = 0.65 * rpNoise(gp) + 0.35 * rpNoise(gp * 2.3 + 4.1);
-    float rough = 0.15 + 1.5 * smoothstep(0.3, 0.75, gust);
+    float rough = 0.35 + 1.2 * smoothstep(0.3, 0.75, gust);
     // In the lee of the upwind bank: calmer.
     float lee = mix(0.3, 1.0, smoothstep(1.05, 0.85, lakeQ(p - d * 18.0)));
     // Each wave's slope (a breath of wind still ruffles it a little; twelve
     // of them at random phases add up to ~3.5 times one).
     float a = (0.002 + 0.018 * min(w / 6.0, 1.0)) * rough * lee;
     vec2 g = vec2(0.0);
-    #define WAVE(c, sn, len, spd, amp, ph0) { vec2 dir = d * (c) + s * (sn); float kk = 6.2832 / (len); float ph = kk * (dot(dir, pl) - (spd) * t) + (ph0); g += dir * cos(ph) * a * (amp) * (1.0 - smoothstep(0.08 * (len), 0.3 * (len), pf)); }
+    // Where each wave is (its group of crests) and isn't: four patchworks of
+    // different sizes, drifting with the water, a quarter of the waves each.
+    vec2 ep = pl - drift;
+    vec4 env = vec4(rpNoise(ep / 2.3 + 1.7), rpNoise(ep / 3.7 + 5.3), rpNoise(ep / 6.1 + 9.1), rpNoise(ep / 9.7 + 13.7));
+    env = 0.1 + 1.8 * smoothstep(0.2, 0.8, env);
+    // Crests bent a little (not ruler-straight).
+    vec2 pw = pl + (vec2(rpNoise(ep / 2.9 + 3.1), rpNoise(ep / 2.9 + 8.4)) - 0.5) * 0.9;
+    #define WAVE(c, sn, len, spd, amp, ph0, e) { vec2 dir = d * (c) + s * (sn); float kk = 6.2832 / (len); float ph = kk * (dot(dir, pw) - (spd) * t) + (ph0); g += dir * cos(ph) * a * (amp) * (e) * (1.0 - smoothstep(0.08 * (len), 0.3 * (len), pf)); }
     ${lines.join('\n    ')}
-    // Noise over it all (two scales, carried with the water): no repeats.
+    // Noise over it all (three sizes, carried with the water): no repeats.
     {
       vec2 q = (pl - drift) / 0.55;
       float e = 0.15;
       vec2 n1 = vec2(rpNoise(q + vec2(e, 0.0)) - rpNoise(q - vec2(e, 0.0)), rpNoise(q + vec2(0.0, e)) - rpNoise(q - vec2(0.0, e))) / (2.0 * e * 0.55);
       vec2 q2 = (pl - drift + 17.0) / 1.9;
       vec2 n2 = vec2(rpNoise(q2 + vec2(e, 0.0)) - rpNoise(q2 - vec2(e, 0.0)), rpNoise(q2 + vec2(0.0, e)) - rpNoise(q2 - vec2(0.0, e))) / (2.0 * e * 1.9);
-      g += n1 * a * 0.4 * (1.0 - smoothstep(0.05, 0.25, pf)) + n2 * a * 1.0 * (1.0 - smoothstep(0.2, 0.8, pf));
+      vec2 q3 = (pl - drift + 41.0) / 0.95;
+      vec2 n3 = vec2(rpNoise(q3 + vec2(e, 0.0)) - rpNoise(q3 - vec2(e, 0.0)), rpNoise(q3 + vec2(0.0, e)) - rpNoise(q3 - vec2(0.0, e))) / (2.0 * e * 0.95);
+      g += n1 * a * 0.6 * (1.0 - smoothstep(0.05, 0.25, pf)) + n3 * a * 0.9 * (1.0 - smoothstep(0.1, 0.4, pf)) + n2 * a * 1.3 * (1.0 - smoothstep(0.2, 0.8, pf));
     }
     return g;
   }`;
