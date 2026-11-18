@@ -17,6 +17,80 @@ import { addSnowCover } from './snow.js';
 
 const BED_STEP = 1.25; // m between the bed mesh's points
 
+/**
+ * GLSL ripple(p, pf): the water's slope (dh/dx, dh/dz) at p. pf: how much
+ * water one pixel covers (m): anything smaller than a few pixels is left
+ * out (it would only alias into stripes).
+ *
+ * A dozen waves spread round the wind's direction (each its own length,
+ * angle and phase, at the speed real waves of that length run), stronger in
+ * gusty patches that drift across the lake with the wind and weaker in the
+ * calm stretches between, sheltered in the lee of the upwind bank, and a
+ * drifting noise over them all so no pattern repeats.
+ */
+function rippleGlsl() {
+  let seed = 7;
+  const rnd = () => {
+    seed = (seed * 16807) % 2147483647;
+    return seed / 2147483647;
+  };
+  const waves = [];
+  const N = 12;
+  for (let i = 0; i < N; i++) {
+    // Lengths spread evenly (log) from 3 m down to 12 cm.
+    const len = 3 * Math.pow(0.12 / 3, (i + rnd() * 0.8) / N);
+    // Mostly with the wind, some well across it.
+    const spread = (rnd() - 0.5) * (rnd() < 0.3 ? 2.6 : 1.2);
+    const k = (2 * Math.PI) / len;
+    // Speed: gravity waves, with surface tension for the shortest.
+    const speed = Math.sqrt(9.81 / k + 7.3e-5 * k);
+    // Slope a little steeper for the shorter ones.
+    const amp = Math.pow(len / 1.5, -0.15) * (0.7 + rnd() * 0.6);
+    waves.push({ len, spread, speed, amp, phase: rnd() * 6.2832 });
+  }
+  const f = (v) => v.toFixed(4);
+  const lines = waves.map((w) => `WAVE(${f(Math.cos(w.spread))}, ${f(Math.sin(w.spread))}, ${f(w.len)}, ${f(w.speed)}, ${f(w.amp)}, ${f(w.phase)})`);
+  return /* glsl */ `
+  float rpHash(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+  }
+  float rpNoise(vec2 p) {
+    vec2 i = floor(p), f = p - i;
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(rpHash(i), rpHash(i + vec2(1.0, 0.0)), u.x), mix(rpHash(i + vec2(0.0, 1.0)), rpHash(i + vec2(1.0, 1.0)), u.x), u.y);
+  }
+  vec2 ripple(vec2 p, float pf) {
+    float w = length(uWaterWind);
+    vec2 d = w > 0.05 ? uWaterWind / w : vec2(1.0, 0.0);
+    vec2 s = vec2(-d.y, d.x);
+    float t = uWaterTime;
+    // Gusts: rougher patches and calm stretches, drifting downwind.
+    vec2 gp = (p - uWaterWind * t * 0.8) / 28.0;
+    float gust = 0.65 * rpNoise(gp) + 0.35 * rpNoise(gp * 2.3 + 4.1);
+    float rough = 0.15 + 1.5 * smoothstep(0.3, 0.75, gust);
+    // In the lee of the upwind bank: calmer.
+    float lee = mix(0.3, 1.0, smoothstep(1.05, 0.85, lakeQ(p - d * 18.0)));
+    // Each wave's slope (a breath of wind still ruffles it a little; twelve
+    // of them at random phases add up to ~3.5 times one).
+    float a = (0.002 + 0.018 * min(w / 6.0, 1.0)) * rough * lee;
+    vec2 g = vec2(0.0);
+    #define WAVE(c, sn, len, spd, amp, ph0) { vec2 dir = d * (c) + s * (sn); float kk = 6.2832 / (len); float ph = kk * (dot(dir, p) - (spd) * t) + (ph0); g += dir * cos(ph) * a * (amp) * (1.0 - smoothstep(0.08 * (len), 0.3 * (len), pf)); }
+    ${lines.join('\n    ')}
+    // Noise over it all (drifting downwind, two scales): no repeats.
+    {
+      vec2 q = (p - d * t * 0.6) / 0.55;
+      float e = 0.15;
+      vec2 n1 = vec2(rpNoise(q + vec2(e, 0.0)) - rpNoise(q - vec2(e, 0.0)), rpNoise(q + vec2(0.0, e)) - rpNoise(q - vec2(0.0, e))) / (2.0 * e * 0.55);
+      vec2 q2 = (p - d * t * 0.35 + 17.0) / 1.9;
+      vec2 n2 = vec2(rpNoise(q2 + vec2(e, 0.0)) - rpNoise(q2 - vec2(e, 0.0)), rpNoise(q2 + vec2(0.0, e)) - rpNoise(q2 - vec2(0.0, e))) / (2.0 * e * 1.9);
+      g += n1 * a * 0.4 * (1.0 - smoothstep(0.05, 0.25, pf)) + n2 * a * 1.0 * (1.0 - smoothstep(0.2, 0.8, pf));
+    }
+    return g;
+  }`;
+}
+
 /** Shared by the water's shader: set every frame (World.updateWater). */
 export const waterUniforms = {
   uWaterTime: { value: 0 },
@@ -77,26 +151,8 @@ export function makeLake(groundTexture) {
         uniform vec3 uSunGlint;
         uniform vec3 uTreeLine;
         ${LAKE_GLSL}
-        // Slope of the ripples at p (dh/dx, dh/dz): waves running with the
-        // wind (bigger and faster in more wind), and a little cross-chop.
-        // pf: how much water one pixel covers (m): waves smaller than a few
-        // pixels are left out (they'd only alias into stripes).
-        vec2 ripple(vec2 p, float pf) {
-          float w = length(uWaterWind);
-          vec2 d = w > 0.05 ? uWaterWind / w : vec2(1.0, 0.0);
-          vec2 s = vec2(-d.y, d.x);
-          float a = 0.004 + 0.012 * min(w / 6.0, 1.0); // wave slope
-          float t = uWaterTime;
-          vec2 g = vec2(0.0);
-          // (wave: direction, wavelength (m), speed (m/s))
-          #define WAVE(dir, len, spd, amp) { vec2 k = (dir) * (6.2832 / (len)); float ph = dot(k, p) - (spd) * t * (6.2832 / (len)); g += k * cos(ph) * (amp) * (1.0 - smoothstep(0.08 * (len), 0.3 * (len), pf)); }
-          WAVE(d, 1.7, 1.6, a)
-          WAVE(normalize(d + 0.6 * s), 1.1, 1.3, a * 0.8)
-          WAVE(normalize(d - 0.5 * s), 0.73, 1.05, a * 0.6)
-          WAVE(normalize(s + 0.3 * d), 0.41, 0.8, a * 0.5)
-          WAVE(normalize(d * 0.8 - s), 0.29, 0.66, a * 0.4)
-          return g;
-        }`)
+        // Ripple slope at p (dh/dx, dh/dz): see rippleGlsl.
+        ${rippleGlsl()}`)
       .replace('#include <opaque_fragment>', /* glsl */ `
         {
           vec2 xz = vWaterWorld.xz;
