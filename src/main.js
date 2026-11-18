@@ -203,6 +203,7 @@ function replaceModel() {
   navLights = addNavLights(model, { shine: true });
   planeShadow.setModel(model, entry.def.wingSpan);
   world.scene.add(model.root);
+  snowTracks.setModel(model);
 }
 let navLights = null;
 
@@ -769,6 +770,7 @@ function frame(now) {
     while (aircraft.breakEvents.length) {
       const ev = aircraft.breakEvents.shift();
       debris.spawn(model.parts?.[ev.part], aircraft, ev.speed);
+      snowTracks.setModel(model); // (without the part that came off)
     }
     debris.update(dt);
     snowTracks.update(aircraft, dt, world.snow, debris.items);

@@ -1,5 +1,5 @@
 // Tracks in the snow: where a wheel, skid, belly or any other part of the
-// airframe (wing tip, nose, tail) runs over lying snow it leaves a groove
+// airframe (wing, nose, tail) runs through lying snow it leaves a groove
 // behind it, its own width (a fuselage sliding on its belly: a wide one),
 // deeper the harder it's pressed. Pieces that break off in a crash leave
 // theirs where they tumble and slide, and anything hitting hard leaves a
@@ -8,10 +8,15 @@
 // the ground's: src/world/snow.js SNOW_GLSL), and falling snow slowly fills
 // them in.
 //
+// The wheels and skids leave theirs from the flight model's contacts; the
+// rest of the airframe from points on the 3D model (setModel) that dip into
+// the snow, which lies SNOW_DEPTH deep: a wing brushing the snow marks it,
+// though the flight model only feels the ground under it.
+//
 // The most recent MAX pieces are kept (a ring), so a long session of
 // circuits leaves its tracks until the oldest give way. They go when the
 // snow does.
-import { BufferGeometry, BufferAttribute, Mesh, MeshLambertMaterial, Vector3, Quaternion, DoubleSide } from 'three';
+import { BufferGeometry, BufferAttribute, Mesh, MeshLambertMaterial, Vector3, Quaternion, Matrix4, DoubleSide } from 'three';
 import { heightAt } from '../sim/terrain.js';
 import { addCloudShadows } from './clouds.js';
 import { SNOW_GLSL, snowUniforms } from './snow.js';
@@ -28,6 +33,11 @@ const FILL_RATE = 1 / 240;
 // Pressed this hard (times its share of the weight... or the whole
 // weight) on first touching, a contact leaves a dent.
 const DENT_LOAD = 2.5;
+const SNOW_DEPTH = 0.04; // m, under a full cover
+const MODEL_POINTS = 500; // points on the 3D model, at most
+const MODEL_HALF = 0.02; // half the width of the groove each one leaves (m)
+const _m = new Matrix4();
+const _inv = new Matrix4();
 
 const _p = new Vector3();
 const _q = new Quaternion();
@@ -58,6 +68,8 @@ export class SnowTracks {
     this.cover = 0;
     this.fallen = { value: 0 }; // snow fallen so far (for filling in)
     this.state = new Map(); // per thing pressing: where its track last ended
+    this.samples = []; // points on the 3D model (its own frame): { p }
+    this.pressed = []; // where the contacts pressed this frame (x, z)
 
     const mat = addCloudShadows(new MeshLambertMaterial({
       transparent: true,
@@ -158,6 +170,37 @@ export class SnowTracks {
     Object.assign(s, { x, z, lx, lz, rx, rz, depth });
   }
 
+  /**
+   * The aircraft's 3D model (src/aircraft/fileModel.js: root, parts): points
+   * spread over its surface, leaving out the wheels and legs (their own
+   * tracks) and the propeller. Again after parts break off (they're gone).
+   */
+  setModel(model) {
+    for (const s of this.samples) this.lift(s);
+    this.samples = [];
+    if (!model?.root) return;
+    const skip = new Set();
+    for (const id of ['wheelL', 'wheelR', 'prop']) {
+      for (const n of model.parts?.[id] ?? []) n.traverse((o) => skip.add(o));
+    }
+    const root = model.root;
+    root.updateMatrixWorld(true);
+    _inv.copy(root.matrixWorld).invert();
+    const meshes = [];
+    root.traverse((o) => {
+      if (!o.isMesh || skip.has(o) || o.userData.broken || !o.geometry?.attributes.position) return;
+      if (o.material?.transparent && o.material.opacity < 0.5) return; // (prop discs, glows)
+      meshes.push(o);
+    });
+    const total = meshes.reduce((n, o) => n + o.geometry.attributes.position.count, 0);
+    const step = Math.max(1, Math.ceil(total / MODEL_POINTS));
+    for (const o of meshes) {
+      const pos = o.geometry.attributes.position;
+      _m.multiplyMatrices(_inv, o.matrixWorld);
+      for (let i = 0; i < pos.count; i += step) this.samples.push({ p: new Vector3().fromBufferAttribute(pos, i).applyMatrix4(_m) });
+    }
+  }
+
   /** It's left the snow (its next touch starts a new track). */
   lift(key) {
     this.state.delete(key);
@@ -188,8 +231,11 @@ export class SnowTracks {
     if (aircraft) {
       _q.copy(aircraft.orientation);
       const weight = (aircraft.mass || 1) * 9.81;
+      const model = this.samples.length > 0;
+      this.pressed.length = 0;
       for (const c of aircraft.contacts) {
-        if (c.type === 'prop' || !c.onGround || aircraft.held) {
+        // (With the 3D model, the airframe's own points leave its marks.)
+        if (c.type === 'prop' || (model && c.type === 'hard') || !c.onGround || aircraft.held) {
           this.lift(c);
           continue;
         }
@@ -200,6 +246,22 @@ export class SnowTracks {
         if (!this.state.has(c) && press > DENT_LOAD) this.dent(_p.x, _p.z, half * 2.2, 1);
         // Deeper the harder it's pressed (its share of the weight, or more).
         this.press(c, _p.x, _p.z, half, Math.min(1, Math.max(0.3, 0.3 + press * 0.9)));
+        this.pressed.push(_p.x, _p.z, half);
+      }
+      // The rest of the airframe: any point down in the snow.
+      const deep = SNOW_DEPTH * Math.min(1, snow.cover * 1.5);
+      for (const s of this.samples) {
+        if (aircraft.held) {
+          this.lift(s);
+          continue;
+        }
+        _p.copy(s.p).applyQuaternion(_q).add(aircraft.position);
+        const under = heightAt(_p.x, _p.z) + deep - _p.y;
+        if (under <= 0 || this.#nearPressed(_p.x, _p.z)) {
+          this.lift(s);
+          continue;
+        }
+        this.press(s, _p.x, _p.z, MODEL_HALF, 0.35 + 0.65 * Math.min(1, under / deep));
       }
     }
     // Wreckage: a groove where each piece slides or rolls, a dent where it lands hard.
@@ -217,6 +279,16 @@ export class SnowTracks {
       this.track.needsUpdate = true;
       this.mesh.visible = true;
     }
+  }
+
+  /** Within a contact's own track this frame (no second groove over it). */
+  #nearPressed(x, z) {
+    const P = this.pressed;
+    for (let i = 0; i < P.length; i += 3) {
+      const r = P[i + 2] + MODEL_HALF;
+      if ((x - P[i]) ** 2 + (z - P[i + 1]) ** 2 < r * r) return true;
+    }
+    return false;
   }
 
   /** One quad: corners a-left, a-right, b-left, b-right; `along` at a and b (dents). */
