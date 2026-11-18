@@ -48,6 +48,9 @@ import { flightLineMiddle } from './edits.js';
 //   tents               big pyramid marquees (world frame): { x, z, r, wall, h, sides, colors }
 //   noTrees             real sites: no trees within r of { x, z } (things the LIDAR
 //                       took for trees, like a tent)
+//   haze                how hazy the air is (1 lowland England; less: clearer)
+//   snowLine            mountain sites: the snow line through the year, [[day, m above
+//                       sea level, m lower facing north], ...] (src/world/snow.js)
 //
 // A real site's data can also carry `far` (the country round about, on a
 // coarse grid: mountains) and `farGround` (its colour map); then the terrain
@@ -215,6 +218,20 @@ const GLOCKNERHOF = {
     ],
     // The tall safety net between the pits and the flight line.
     fences: [{ from: [-7.9, -28], to: [1.8, 22], height: 5, kind: 'net' }],
+    // Clear mountain air: the peaks 5 km off stand out, not lost in haze.
+    haze: 0.5,
+    // The snow line through the year, south side of the eastern Alps:
+    // [day of the year, metres above sea level, metres lower facing north
+    // (higher facing south)]. The valley (590 m) lies white from about
+    // mid-December to the end of February; south-facing slopes clear first
+    // in the spring, north-facing ones hold it hundreds of metres lower into
+    // May and June, and the last patches on the north faces of the peaks
+    // (~2500 m) go in July. First snow on the tops in October.
+    snowLine: [
+      [1, 500, 100], [32, 470, 120], [60, 640, 200], [80, 950, 300], [105, 1400, 350], [135, 1850, 400],
+      [160, 2250, 400], [185, 2650, 350], [205, 3200, 300], [280, 3200, 200], [295, 2100, 200],
+      [320, 1450, 150], [340, 900, 120], [352, 560, 100],
+    ],
   },
 };
 

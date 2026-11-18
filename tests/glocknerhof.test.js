@@ -2,7 +2,8 @@
 // the mountains round the valley, the runway is clear and mown, and the
 // pyramid tent and the safety net are solid.
 import { describe, it, expect, beforeAll } from 'vitest';
-import { setLocation, inField, clubToWorld } from '../src/sim/location.js';
+import { setLocation, inField, clubToWorld, LOCATION } from '../src/sim/location.js';
+import { snowLineFor, snowAtHeight } from '../src/world/snow.js';
 import data from '../src/locations/glocknerhof.json';
 
 let terrain;
@@ -59,5 +60,26 @@ describe('Hotel Glocknerhof', () => {
     expect(hit(-4, 8, 30, 'the tent')).toBeUndefined(); // over the top
     // The net, 2.5 m west of the pilot, 2 m up.
     expect(hit(-2.49, 2, 0, 'the safety net')?.depth).toBeGreaterThan(0);
+  });
+
+  it('has a snow line through the year: the valley white in midwinter, the peaks into summer', () => {
+    const table = LOCATION.layout.snowLine;
+    const seasonal = { snow: 'seasonal' };
+    const field = data.origin.height; // ~590 m
+    const at = (day, h) => snowAtHeight(h, snowLineFor(table, seasonal, day));
+    // January: the field and everything above under snow.
+    expect(at(15, field)).toBe(1);
+    // Christmas (wrapping the year end): already white.
+    expect(at(358, field)).toBeGreaterThan(0.9);
+    // April: the field green, the mountains white from ~1400 m.
+    expect(at(105, field)).toBe(0);
+    expect(at(105, 1800)).toBe(1);
+    // August: none even on the tops; mid-June still on the peaks.
+    expect(at(225, 2550)).toBe(0);
+    expect(at(165, 2550)).toBe(1);
+    // North faces hold it lower in the spring melt.
+    expect(snowLineFor(table, seasonal, 120).aspect).toBeGreaterThan(300);
+    // Snow off: none anywhere.
+    expect(snowLineFor(table, { snow: 'off' }, 15).line).toBe(Infinity);
   });
 });

@@ -13,6 +13,10 @@
 // that face up: the ground, runway and pad, roofs, the tops of things.
 // Falling snow: src/world/snowfall.js, and the air thickens with it
 // (src/world/volfog.js: fog4.under.w).
+//
+// Mountain sites also have a snow line (layout.snowLine: snowLineFor): above
+// it the snow lies whatever the day's weather, lower on slopes facing north
+// (in shade) than on those facing south, most of all in the spring melt.
 
 const smooth = (a, b, x) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -54,9 +58,39 @@ export function snowFor(settings, day, hours) {
   return { cover: Math.min(1, cover + 0.3 * falling), falling };
 }
 
+/**
+ * The snow line on a day of the year, from a site's table of
+ * [day, metres above sea level, aspect metres] (interpolated, wrapping at
+ * the year end): snow lies above `line` on level ground; `aspect` m lower
+ * on a slope facing north, as much higher facing south. None off the table
+ * (no table, or Snow: Off).
+ * @returns {{ line: number, aspect: number }}
+ */
+export function snowLineFor(table, settings, day) {
+  if (!table?.length || settings.snow === 'off') return { line: Infinity, aspect: 0 };
+  const t = [...table].sort((a, b) => a[0] - b[0]);
+  // The entry before and after the day (wrapping round the year).
+  let i = t.findIndex((e) => e[0] > day);
+  const b = i < 0 ? t[0] : t[i];
+  const a = i <= 0 ? t[t.length - 1] : t[i - 1];
+  const span = (b[0] - a[0] + 365) % 365 || 365;
+  const k = ((day - a[0] + 365) % 365) / span;
+  return { line: a[1] + (b[1] - a[1]) * k, aspect: a[2] + (b[2] - a[2]) * k };
+}
+
+/** How much snow lies on level ground `h` m above sea level (0-1) for a snow line. */
+export function snowAtHeight(h, { line }) {
+  return line === Infinity ? 0 : smooth(line - SNOW_BAND, line + SNOW_BAND, h);
+}
+const SNOW_BAND = 60;
+
 /** Shared by every material with snow cover. */
 export const snowUniforms = {
   uSnow: { value: 0 }, // cover, 0-1
+  // The snow line (m above the site's origin: the world's y) and how much
+  // lower it is facing north; 1e5: none.
+  uSnowLine: { value: 1e5 },
+  uSnowAspect: { value: 0 },
 };
 
 /** How far you can see (m) in falling snow of this amount (0-1), or Infinity. */
@@ -137,14 +171,28 @@ export function addSnowCover(material, opts = {}) {
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>
         uniform float uSnow;
+        uniform float uSnowLine;
+        uniform float uSnowAspect;
         varying vec3 vSnowWorld;
         ${SNOW_GLSL}`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         // (After every change to the normal: the distant trees' pictures
         // set theirs in normal_fragment_maps.)
-        if (uSnow > 0.0) {
+        if (uSnow > 0.0 || uSnowLine < 9e4) {
           vec3 upV = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
           vec2 sp = vSnowWorld.xz;
+          // Above the snow line it lies whatever the weather: lower facing
+          // north, higher facing south (level ground has no aspect), with a
+          // ragged edge (gullies hold it, ridges lose it).
+          float snowHere = uSnow;
+          if (uSnowLine < 9e4) {
+            vec3 wn = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
+            float across = length(wn.xz);
+            float north = ${foliage ? '0.0' : '-wn.z / max(across, 1e-3) * smoothstep(0.03, 0.2, across)'};
+            float rag = 160.0 * (snNoise(sp / 230.0 + 3.7) - 0.5) + 60.0 * (snNoise(sp / 41.0 + 9.1) - 0.5);
+            float eff = vSnowWorld.y + uSnowAspect * north + rag;
+            snowHere = max(snowHere, smoothstep(uSnowLine - ${SNOW_BAND.toFixed(1)}, uSnowLine + ${SNOW_BAND.toFixed(1)}, eff));
+          }
           #if ${foliage ? 1 : 0}
           // Clumps of snow through the crown (by height too, so the sides
           // aren't streaked), mostly on the upper side.
@@ -157,7 +205,7 @@ export function addSnowCover(material, opts = {}) {
           // stretched with it, point almost sideways, and they hold clumps
           // too.)
           float v = clump + 0.4 * up;
-          float s = smoothstep(-0.05, 0.05, v - (1.0 - 0.55 * uSnow * ${amount})) * ${strength};
+          float s = smoothstep(-0.05, 0.05, v - (1.0 - 0.55 * snowHere * ${amount})) * ${strength};
           vec3 snowCol = vec3(1.1, 1.13, 1.19) * (0.9 + 0.1 * clump);
           #else
           // (Either face of a double-sided surface.)
@@ -165,7 +213,7 @@ export function addSnowCover(material, opts = {}) {
           float onTop = smoothstep(${flat}, ${flat} + 0.25, facing);
           // (Not by the ground's colour: its texture's pixels showed.)
           float n = snPatch(sp);
-          float t = snowThreshold(uSnow * ${amount});
+          float t = snowThreshold(snowHere * ${amount});
           // The edge soft by how much the pattern changes across a pixel
           // (no stair-steps far off), a little soft close up.
           float e = max(0.05, 1.5 * fwidth(n));

@@ -386,8 +386,12 @@ export class World {
     this.scene = new Scene();
     this.scene.background = new Color('#9cc3e6');
     // Exponential haze: distant hills fade into the colour of the horizon.
-    // A shorter scenery distance closes the haze in to match.
-    const haze = Math.max(0.00028, 1.3 / (opts.viewDistance ?? Infinity));
+    // A shorter scenery distance closes the haze in to match, except where
+    // the site has the country round about baked (its mountains are cheap
+    // to draw and the woods are on their map). Some sites have clearer air
+    // (layout.haze: mountain air, where you see the peaks).
+    const closeIn = LOCATION.data?.far ? 0 : 1.3 / (opts.viewDistance ?? Infinity);
+    const haze = Math.max(0.00028 * (LOCATION.layout.haze ?? 1), closeIn);
     // Haze, mist and low cloud: src/world/volfog.js.
     installVolumetricFog(haze);
     this.scene.fog = new FogExp2('#c3d5e8', haze);
@@ -640,12 +644,16 @@ export class World {
 
   /** Cloud cover, 0 (clear) to 1 (overcast). */
   /**
-   * Snow ({ cover, falling }, 0-1 each: src/world/snow.js snowFor). Call
-   * after setTime (snow on the ground lights things from below).
+   * Snow ({ cover, falling }, 0-1 each: src/world/snow.js snowFor), and
+   * a mountain site's snow line (m above the origin, and how much lower
+   * facing north: snowLineFor). Call after setTime (snow on the ground
+   * lights things from below).
    */
-  setSnow(s) {
+  setSnow(s, line = Infinity, aspect = 0) {
     this.snow = s;
     snowUniforms.uSnow.value = s.cover;
+    snowUniforms.uSnowLine.value = Number.isFinite(line) ? line : 1e5;
+    snowUniforms.uSnowAspect.value = aspect;
     // Light reflected up off the snow: the sky light from below turns white.
     const g = this.hemi.groundColor;
     const lum = Math.max(g.r, g.g, g.b) * 2.2;

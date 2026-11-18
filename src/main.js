@@ -33,7 +33,7 @@ import { cardUniforms } from './world/fluffy.js';
 import { setStage, nextFrame } from './ui/loading.js';
 import { SunGlare } from './view/glare.js';
 import { weatherFor } from './world/mist.js';
-import { snowFor } from './world/snow.js';
+import { snowFor, snowLineFor, snowAtHeight } from './world/snow.js';
 import { loadEdits } from './sim/edits.js';
 import { Editor } from './editor/editor.js';
 
@@ -266,8 +266,13 @@ function applyTime() {
   world.setWeather(weatherFor(settings, day, hours));
   // Snow: as set, or some winter days (src/world/snow.js). Lying snow slows
   // the wheels (src/sim/terrain.js).
-  const snow = snowFor(settings, day, hours);
-  world.setSnow(snow);
+  // Mountain sites: snow above the snow line for the time of year, and on
+  // the field too once the line comes down to it.
+  const weatherSnow = snowFor(settings, day, hours);
+  const snowLine = snowLineFor(LOCATION.layout.snowLine, settings, day);
+  const ground0 = LOCATION.data?.origin?.height ?? 0;
+  const snow = { ...weatherSnow, cover: Math.max(weatherSnow.cover, snowAtHeight(ground0, snowLine)) };
+  world.setSnow(snow, snowLine.line - ground0, snowLine.aspect);
   setSnowCover(snow.cover);
   // Snowing: the sky is overcast (grey stratocumulus).
   world.setClouds(Math.max(Number(settings.cloudCover), snow.falling > 0 ? 0.75 + 0.25 * snow.falling : 0));
