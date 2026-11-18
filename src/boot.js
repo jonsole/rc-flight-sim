@@ -30,11 +30,15 @@ async function load() {
     show();
   });
   if (!data) return null;
-  // The ground colour map, decoded before the world is built.
-  const img = new Image();
-  img.src = `data:image/png;base64,${data.ground.png}`;
-  await img.decode();
-  data.groundImage = img;
+  // The ground colour maps (round the field, and the country round about if
+  // the site has it), decoded before the world is built.
+  const decode = async (g) => {
+    const img = new Image();
+    img.src = g.jpg ? `data:image/jpeg;base64,${g.jpg}` : `data:image/png;base64,${g.png}`;
+    await img.decode();
+    return img;
+  };
+  [data.groundImage, data.farGroundImage] = await Promise.all([decode(data.ground), data.farGround && decode(data.farGround)]);
   return data;
 }
 

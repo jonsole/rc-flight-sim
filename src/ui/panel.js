@@ -1,4 +1,5 @@
 // Settings / setup panel (plain DOM).
+import { canFullscreen, isFullscreen, toggleFullscreen } from './fullscreen.js';
 import { CLOUD_TYPES } from '../world/clouds.js';
 import { CHANNELS, rawInput } from '../input/input.js';
 import { CAMERA_LABELS } from '../view/cameras.js';
@@ -8,6 +9,7 @@ import { formatDay } from '../world/seasons.js';
 import { LOCATIONS, LOCATION } from '../sim/location.js';
 import { QUALITY, DISTANCES } from '../world/quality.js';
 import { googleSessions } from '../world/googleTiles.js';
+import { MODES, loadBest } from '../game/challenges.js';
 import { tunablesFor, loadTuning, saveTuning, tunedDef, powerSummary } from '../sim/tuning.js';
 
 const CH_LABEL = { roll: 'Aileron (roll)', pitch: 'Elevator (pitch)', yaw: 'Rudder (yaw)', throttle: 'Throttle' };
@@ -85,7 +87,7 @@ export class Panel {
   }
 
   render() {
-    const tabs = { fly: 'Flying', tune: 'Tuning', mp: 'Multiplayer', view: 'View', env: 'Weather', controls: 'Transmitter', help: 'Help' };
+    const tabs = { fly: 'Flying', game: 'Challenges', tune: 'Tuning', mp: 'Multiplayer', view: 'View', env: 'Weather', controls: 'Transmitter', help: 'Help' };
     this.root.replaceChildren(
       el('div', { class: 'panel' },
         el('div', { class: 'panel-head' },
@@ -115,6 +117,28 @@ export class Panel {
       el('p', { class: 'hint' }, 'Move, resize or delete trees, buildings and fences, or add new ones. Edits are saved in this browser for this field.'),
       this.#range('Volume', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.#check('Show HUD / OSD (H)', 'showHud'),
+      this.#check('Full screen on phones and tablets (when you press Fly)', 'fullscreen'),
+      ...(canFullscreen()
+        ? [el('div', { class: 'row' }, el('button', { onclick: () => { toggleFullscreen(); this.opts.onClose(); } }, isFullscreen() ? 'Leave full screen (F)' : 'Full screen (F)'))]
+        : [el('p', { class: 'hint' }, 'This browser can\'t go full screen. On an iPhone: tap Share, then Add to Home Screen, and open the simulator from there: it opens with no browser bars.')]),
+    ];
+  }
+
+  /** Challenges (src/game/challenges.js): pick one, start again, best scores here. */
+  tab_game() {
+    const mode = MODES[this.settings.challenge] ? this.settings.challenge : 'none';
+    const best = loadBest();
+    const rows = Object.entries(MODES).filter(([k]) => k !== 'none').map(([k, m]) => {
+      const b = best[`${k}:${LOCATION.id}`];
+      return el('tr', {}, el('td', {}, m.title), el('td', {}, b ? b.text : '–'), el('td', {}, b?.aircraft ?? ''));
+    });
+    return [
+      this.#select('Challenge', 'challenge', Object.fromEntries(Object.entries(MODES).map(([k, m]) => [k, m.title]))),
+      el('p', { class: 'hint' }, MODES[mode].about),
+      el('div', { class: 'row' }, el('button', { onclick: () => { this.opts.onReset(); this.opts.onClose(); } }, mode === 'none' ? 'Reset aircraft (R)' : 'Start again (R)')),
+      el('p', { class: 'hint' }, 'The course is set out in the most open part of the field, in front of you. R starts it again (and resets the aircraft). The arrow on screen points to what\'s next.'),
+      el('h3', {}, `Your best here (${LOCATION.name})`),
+      el('table', { class: 'best' }, el('tr', {}, el('th', {}, 'Challenge'), el('th', {}, 'Best'), el('th', {}, 'Aircraft')), rows),
     ];
   }
 

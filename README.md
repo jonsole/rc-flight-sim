@@ -135,19 +135,28 @@ Pick the field on the start screen or under *Menu → Flying → Flying field*
 | --- | --- |
 | **Club field** | Made up: a mown field in rolling country. |
 | **Barrack Field** | The real field at Waterbeach, Cambridgeshire: the cricket pitch is the runway, with the grass mown about 32 m round it, and you stand 10 m south of it. 2 × 2 km of scenery around it is built from Environment Agency 1 m LIDAR (ground, ~5000 trees at their measured heights and crown sizes, hedges, building heights) and OpenStreetMap (building outlines, roads, paths, water, gardens, farmland), touched up from what's there now: bigger trees, the chain-link and temporary fences, demolished buildings left out. |
+| **Hotel Glocknerhof** | The hotel's model airfield at Berg im Drautal, Carinthia (Austria), in the Drau valley under the hotel: a 200 m mown grass runway running roughly north-south between the access road and a maize field, the pits behind a 5 m safety net, the big green and white pyramid tent, cars along the road. You stand at the net near the north end, facing east. 2 × 2 km round it from the BEV's 1 m laser-scan heights (ground, ~5000 trees, conifers told from broadleaves by how dark they are from above, building heights), coloured from basemap.at aerial photos, with OpenStreetMap building outlines; and 14 × 14 km of the mountains round the valley (up to ~2500 m) from the same heights every 32 m, coloured from the aerial photos. `?field=glocknerhof`. |
 
 Real fields are baked by `tools/bake_location.py` into `src/locations/<id>.json`
 (about 2.6 MB), so nothing is fetched at run time and no API key is needed:
 
 ```bash
-pip install numpy scipy pyproj tifffile pillow
+pip install numpy scipy pyproj tifffile pillow imagecodecs
 python3 tools/bake_location.py waterbeach --cache /tmp/waterbeach-data
 ```
 
 To add a field in England, add it to `SITES` in the script (the OSGB
 easting/northing where the pilot stands) and its layout (runway and its
 heading, mown areas, pilot box, fences, trees grown since the survey) to
-`src/sim/location.js`. Players in multiplayer only meet others at the same
+`src/sim/location.js`.
+
+Austrian fields (`source: 'bev'`, `tools/bev.py`) take the pilot's
+latitude and longitude instead, and read the BEV's ALS DTM and DSM (CC BY 4.0)
+straight from its 6 GB files over HTTP, only the parts they need (a few
+hundred MB the first time, kept in the cache folder). They are laid out in a
+local frame with true north up. With `far_half` and `far_cell` they also bake
+the mountains round about (`far`, `farGround`), which the terrain then covers
+instead of fading into made-up country. Players in multiplayer only meet others at the same
 field.
 
 ### Scenery editor
@@ -222,6 +231,29 @@ camera, reset, flight assist and the menu. Turn the phone sideways. Stick mode
 and showing or hiding the sticks are under **Menu → Transmitter**; a connected
 transmitter or gamepad still takes priority.
 
+## Challenges
+
+Pick one on the start screen or under *Menu → Challenges* (*Free flying* for
+none). The course is set out in the most open part of the field, in front of
+you, worked out from the trees and buildings there (your scenery edits too).
+A box at the top shows the clock and progress, a yellow ring or edge arrow
+points to what's next, and **R** starts it again. Your best for each
+challenge is kept in this browser, per field.
+
+| Challenge | What to do |
+| --- | --- |
+| **Hoops** | Eight floating hoops round a loop at different heights. Fly through them in order, either way through; the next one is lit. The clock runs from the first to the last. |
+| **Balloon burst** | Fifteen helium balloons tied to pegs on strings, blown about by the wind and its gusts. Burst them all (any part of the model will do). Clip a string instead and the balloon rises away downwind trailing its string: chase it and burst it before it gets out of reach (120 m up or 350 m away), or it costs 15 s. The clock starts when you take off. |
+| **Limbo** | A bar between two poles, starting at 8 m. Fly under it (either way) and it drops, down to 32 cm. Over the top doesn't count; touch it and it falls, ending the run; the poles are solid. Scored by passes. |
+| **Pylon race** | Three laps round three inflatable pylons: cross the start line (the white line between two black flags) either way, which sets which way round you race, then round the lit pylon each time, on the outside. Later laps must cross the line the same way. Cutting inside one means going back round it, and hitting one is a crash. |
+| **Streamer cutting** | Three model aeroplanes fly loops towing a crepe-paper streamer from each wing tip. Cut them with your wings, prop or fuselage, again and again, until only stubs are left; don't hit the aeroplanes. In multiplayer you tow streamers too, and everyone can cut everyone's (the streamer aeroplanes are your own, not shared). |
+
+The code is in `src/game/`: `courses.js` (the courses), `challenges.js`
+(clock, scores, HUD, sounds, multiplayer streamers), `ribbon.js` (the
+streamers: light paper that drifts with the air, flutters and is towed),
+`arena.js` (finding open sky) and `geom.js` (through a hoop, touching a
+streamer or a ball).
+
 ## Views
 
 | View | What it is |
@@ -274,6 +306,7 @@ src/world/     sky, terrain, runway, trees, windsock
 src/view/      camera rig (LOS / FPV / chase)
 src/input/     transmitter (Gamepad API) + keyboard, expo & rates
 src/ui/        OSD/HUD, settings panel
+src/game/      challenges: hoops, balloons, limbo, pylon race, streamer cutting
 src/audio/     synthesised motor and prop sound
 tests/         vitest flight-model tests
 ```

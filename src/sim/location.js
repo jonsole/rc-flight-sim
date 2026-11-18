@@ -2,7 +2,7 @@ import { flightLineMiddle } from './edits.js';
 
 // Where you fly. The made-up club field is drawn from code; real sites come
 // from a baked data file (tools/bake_location.py): LIDAR terrain, trees and
-// buildings, and a ground colour map from OpenStreetMap.
+// buildings, and a ground colour map from OpenStreetMap (or an orthophoto).
 //
 // The site is picked before the simulation loads (src/boot.js) and stays for
 // the session: switching reloads the page. Every module that lays out the
@@ -41,9 +41,20 @@ import { flightLineMiddle } from './edits.js';
 //                       { from, to, width, grow, minH, spacing } scales trees within
 //                       width/2 of the line and fills gaps longer than `spacing`
 //   fences              site fences: { path: [[x, z], ...] (or from/to), height,
-//                       kind: 'chainlink' (concrete posts) or 'panels' (temporary
-//                       mesh panels on wooden posts) }
+//                       kind: 'chainlink' (concrete posts), 'panels' (temporary
+//                       mesh panels on wooden posts) or 'net' (a tall safety net
+//                       on steel poles) }
 //   bushBelts           real sites: lines of tall bushes: { from, to, width, minH, maxH }
+//   tents               big pyramid marquees (world frame): { x, z, r, wall, h, sides, colors }
+//   noTrees             real sites: no trees within r of { x, z } (things the LIDAR
+//                       took for trees, like a tent)
+//   haze                how hazy the air is (1 lowland England; less: clearer)
+//   snowLine            mountain sites: the snow line through the year, [[day, m above
+//                       sea level, m lower facing north], ...] (src/world/snow.js)
+//
+// A real site's data can also carry `far` (the country round about, on a
+// coarse grid: mountains) and `farGround` (its colour map); then the terrain
+// covers that instead of fading into made-up country.
 
 const HOME = {
   id: 'home',
@@ -64,6 +75,9 @@ const HOME = {
     table: { x: 6, z: 3 },
     windsock: { x: -35, z: -42, height: 5 },
     fence: { z: 6, x0: -100, x1: 100 },
+    // A lake out beyond the runway to the north-east (src/sim/lake.js):
+    // ~120 x 70 m, its water 45 cm below the field, 2.2 m deep in the middle.
+    lake: { x: 95, z: -130, rx: 58, rz: 34, angle: 20, level: -0.45, depth: 2.2 },
   },
 };
 
@@ -166,7 +180,65 @@ const IMPINGTON = {
   },
 };
 
-export const LOCATIONS = [HOME, WATERBEACH, IMPINGTON];
+const GLOCKNERHOF = {
+  id: 'glocknerhof',
+  name: 'Hotel Glocknerhof',
+  summary: 'The Hotel Glocknerhof model airfield at Berg im Drautal, Carinthia (Austria): in the Drau valley under the hotel, with the mountains all round, from BEV laser-scan heights, basemap.at aerial photos and OpenStreetMap.',
+  dataUrl: () => import('../locations/glocknerhof.json?url'),
+  layout: {
+    // The 200 m mown grass runway runs along the valley floor between the
+    // access road (west) and a maize field (east), about 11° west of
+    // north-south like the road. You stand at the safety net in front of the
+    // pits, near its north end, facing east across it. Laid out off the
+    // basemap.at and Esri aerial photos.
+    angle: 79,
+    runway: { x: 61.5, z: -17.6, length: 200, width: 16 },
+    pilotPad: null,
+    // All mown, from the road to the maize.
+    field: { poly: [[-25, -58], [69, -58], [70, 79], [80, 182], [19, 182]] },
+    flat: { x0: -26, x1: 81, z0: -60, z1: 184, fade: 40 },
+    // The big green and white pyramid marquee at the south end of the pits
+    // (the LIDAR took it for a tree).
+    tents: [{ x: -4, z: 30, r: 7.5, wall: 2.2, h: 7.5, sides: 8, colors: ['#f4f4ef', '#2f9a4a'] }],
+    noTrees: [{ x: -4, z: 30, r: 8 }],
+    // The wooden hut (toilets) across the road, a pits canopy, and the
+    // windsock at the north end of the net.
+    hut: { x: -49.5, z: 24, w: 7, d: 6, wall: 2.6, ridge: 4.2 },
+    container: null,
+    gazebo: { x: -20, z: 8.3, size: 3, h: 2.5 },
+    table: null,
+    windsock: { x: -31, z: 3, height: 6 },
+    fence: null,
+    // Cars parked along the road behind the pits.
+    cars: [
+      { x: -20.6, z: -50, color: '#c9ccd0' },
+      { x: -19.5, z: -44, color: '#1d1f22' },
+      { x: -18.4, z: -38, color: '#284f8f' },
+      { x: -17.3, z: -32, color: '#e8e8e4' },
+      { x: -16.2, z: -26, color: '#7a7d80' },
+      { x: -15.1, z: -20, color: '#b8202a' },
+      { x: -13.0, z: -8, color: '#c9ccd0' },
+    ],
+    // The tall safety net between the pits and the flight line.
+    fences: [{ from: [-7.9, -28], to: [1.8, 22], height: 5, kind: 'net' }],
+    // Clear mountain air: the peaks 5 km off stand out, not lost in haze.
+    haze: 0.5,
+    // The snow line through the year, south side of the eastern Alps:
+    // [day of the year, metres above sea level, metres lower facing north
+    // (higher facing south)]. The valley (590 m) lies white from about
+    // mid-December to the end of February; south-facing slopes clear first
+    // in the spring, north-facing ones hold it hundreds of metres lower into
+    // May and June, and the last patches on the north faces of the peaks
+    // (~2500 m) go in July. First snow on the tops in October.
+    snowLine: [
+      [1, 500, 100], [32, 470, 120], [60, 640, 200], [80, 950, 300], [105, 1400, 350], [135, 1850, 400],
+      [160, 2250, 400], [185, 2650, 350], [205, 3200, 300], [280, 3200, 200], [295, 2100, 200],
+      [320, 1450, 150], [340, 900, 120], [352, 560, 100],
+    ],
+  },
+};
+
+export const LOCATIONS = [HOME, WATERBEACH, IMPINGTON, GLOCKNERHOF];
 
 export const LOCATION = { ...HOME, data: null };
 

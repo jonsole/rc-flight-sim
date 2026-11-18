@@ -8,7 +8,7 @@ import {
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY, PILOT_PAD } from '../sim/terrain.js';
 import { buildingsMesh } from './buildings.js';
-import { clubAngle } from '../sim/location.js';
+import { clubAngle, LOCATION } from '../sim/location.js';
 import { sunPosition, moonPosition, solarHours } from './sun.js';
 import { CloudLayer, cloudUniforms, addCloudShadows, CLOUD_GLSL } from './clouds.js';
 import { VolumetricClouds } from './volclouds.js';
@@ -20,12 +20,13 @@ import { CrownLod, addLodFade, addCloseSwitch, closeUniforms } from './lod.js';
 import { LowCloud } from './mist.js';
 import { addSnowCover, snowUniforms, snowVisibility } from './snow.js';
 import { Snowfall } from './snowfall.js';
+import { makeLake, waterUniforms } from './water.js';
 import { installVolumetricFog, fog4, FIELD_GLSL } from './volfog.js';
 import { speciesOf, bushSpeciesAt, barkColor, trunkThickness, SPECIES, WOOD, CONIFER, leafName } from './species.js';
 import { bakeImpostors, impostorGeometry, makeImpostor } from './impostor.js';
 import { QUALITY } from './quality.js';
 import { CROWN_SEEDS, crownOf } from '../sim/treeShapes.js';
-import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes, bushMatrix, siteFence, bushShapes, leafyBushShapes, bushTwigShapes } from './props.js';
+import { clubhouse, shippingContainer, car, gazebo, pyramidTent, gravelTexture, bushes, bushMatrix, siteFence, bushShapes, leafyBushShapes, bushTwigShapes } from './props.js';
 
 const smooth = (e0, e1, x) => {
   const t = MathUtils.clamp((x - e0) / (e1 - e0), 0, 1);
@@ -386,8 +387,12 @@ export class World {
     this.scene = new Scene();
     this.scene.background = new Color('#9cc3e6');
     // Exponential haze: distant hills fade into the colour of the horizon.
-    // A shorter scenery distance closes the haze in to match.
-    const haze = Math.max(0.00028, 1.3 / (opts.viewDistance ?? Infinity));
+    // A shorter scenery distance closes the haze in to match, except where
+    // the site has the country round about baked (its mountains are cheap
+    // to draw and the woods are on their map). Some sites have clearer air
+    // (layout.haze: mountain air, where you see the peaks).
+    const closeIn = LOCATION.data?.far ? 0 : 1.3 / (opts.viewDistance ?? Infinity);
+    const haze = Math.max(0.00028 * (LOCATION.layout.haze ?? 1), closeIn);
     // Haze, mist and low cloud: src/world/volfog.js.
     installVolumetricFog(haze);
     this.scene.fog = new FogExp2('#c3d5e8', haze);
@@ -640,12 +645,16 @@ export class World {
 
   /** Cloud cover, 0 (clear) to 1 (overcast). */
   /**
-   * Snow ({ cover, falling }, 0-1 each: src/world/snow.js snowFor). Call
-   * after setTime (snow on the ground lights things from below).
+   * Snow ({ cover, falling }, 0-1 each: src/world/snow.js snowFor), and
+   * a mountain site's snow line (m above the origin, and how much lower
+   * facing north: snowLineFor). Call after setTime (snow on the ground
+   * lights things from below).
    */
-  setSnow(s) {
+  setSnow(s, line = Infinity, aspect = 0) {
     this.snow = s;
     snowUniforms.uSnow.value = s.cover;
+    snowUniforms.uSnowLine.value = Number.isFinite(line) ? line : 1e5;
+    snowUniforms.uSnowAspect.value = aspect;
     // Light reflected up off the snow: the sky light from below turns white.
     const g = this.hemi.groundColor;
     const lum = Math.max(g.r, g.g, g.b) * 2.2;
@@ -738,6 +747,40 @@ export class World {
   }
 
 
+
+  /**
+   * The lake's water (every frame): its ripples run with the wind; it
+   * reflects the sky of the moment and glints in the sun.
+   */
+  updateWater(dt, wind) {
+    if (!this.lake) return;
+    const u = waterUniforms;
+    u.uWaterTime.value = (u.uWaterTime.value + dt) % 10000;
+    // The wind the water feels: the windsock's, with its gusts and swings
+    // smoothed out over ~15 s (waves build and turn slowly; following every
+    // gust, the ripples flicked back and forth).
+    const ww = u.uWaterWind.value;
+    if (!this.waterWindSet) {
+      ww.set(wind.x, wind.z);
+      this.waterWindSet = true;
+    } else {
+      const k = 1 - Math.exp(-dt / 15);
+      ww.x += (wind.x - ww.x) * k;
+      ww.y += (wind.z - ww.y) * k;
+    }
+    // The surface drifts downwind at ~3% of the wind's speed (wind drift:
+    // 2.5-4%), added up as it goes (kept small for the GPU's precision).
+    const drift = u.uWaterDrift.value;
+    drift.x = (drift.x + ww.x * 0.03 * dt) % 2800;
+    drift.y = (drift.y + ww.y * 0.03 * dt) % 2800;
+    // The sky: the haze colour low down, the sky light's colour overhead.
+    u.uSkyHorizon.value.copy(this.scene.fog.color);
+    u.uSkyZenith.value.copy(this.hemi.color).multiplyScalar(0.55 * this.hemi.intensity).lerp(this.scene.fog.color, 0.25);
+    u.uSunDir.value.copy(this.lightDir);
+    u.uSunGlint.value.copy(this.sun.color).multiplyScalar(this.sun.intensity * 0.5);
+    // Trees round the far banks: dark green, lit by the sky and the sun.
+    u.uTreeLine.value.setRGB(0.05, 0.075, 0.035).multiplyScalar(this.hemi.intensity * 0.9 + this.sun.intensity * 0.25).lerp(this.scene.fog.color, 0.12);
+  }
 
   /**
    * Falling snow around the camera (every frame).
@@ -840,7 +883,8 @@ export class World {
       p.setY(i, h);
       const n = Math.sin(x * 0.011) * Math.cos(z * 0.013) * 0.5 + 0.5;
       tmp.copy(c1).lerp(c2, n * 0.8);
-      if (h > 40) tmp.lerp(c3, Math.min(1, (h - 40) / 120));
+      // (Hills paler, except where a site's map has the real colours.)
+      if (h > 40 && !LOCATION.data?.farGround) tmp.lerp(c3, Math.min(1, (h - 40) / 120));
       colors.push(tmp.r, tmp.g, tmp.b);
     }
     geo.setAttribute('color', new Float32BufferAttribute(colors, 3));
@@ -855,6 +899,13 @@ export class World {
     this.terrainMesh = ground;
     ground.userData.kind = 'terrain';
     this.builtScenery.push(ground);
+    // A lake (src/sim/lake.js): its bed and banks, and the water (water.js).
+    const lake = makeLake(tex);
+    if (lake) {
+      this.scene.add(lake.bed, lake.water);
+      this.builtScenery.push(lake.bed, lake.water);
+      this.lake = lake;
+    }
   }
 
   #runway() {
@@ -1436,6 +1487,12 @@ export class World {
     for (const o of clubThings) {
       shadowy(o);
       this.club.add(o);
+    }
+    for (const o of ob.tents.map(pyramidTent)) {
+      shadowy(o);
+      o.userData.kind = 'tent';
+      this.scene.add(o);
+      this.builtScenery.push(o);
     }
     for (const o of ob.cars.map(car)) {
       shadowy(o);

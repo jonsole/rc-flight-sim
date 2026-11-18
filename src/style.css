@@ -241,3 +241,32 @@ body.touch #splash .keys-only { display: none; }
 /* Start-up progress (src/ui/loading.js). */
 #splash .load-bar { height: 4px; background: rgba(255,255,255,0.12); border-radius: 2px; overflow: hidden; margin: -4px 0 10px; }
 #splash .load-bar > div { height: 100%; width: 0; background: #e0a030; }
+/* Challenges (src/game/challenges.js): score box at the top, flash messages, and the pointer to what's next. */
+#challenge {
+  position: fixed; top: 34px; left: 50%; transform: translateX(-50%); z-index: 4; pointer-events: none;
+  min-width: 170px; padding: 4px 14px 6px; border-radius: 8px; background: rgba(15,18,22,0.55); color: #fff;
+  font: 13px/1.35 system-ui, sans-serif; text-align: center; text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+}
+#challenge .ch-title { font-weight: 700; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #e0a030; }
+#challenge .ch-big { font: 700 24px/1.15 ui-monospace, Menlo, Consolas, monospace; }
+#challenge .ch-best { font-size: 11px; color: #bcc; }
+#challenge .ch-best:empty { display: none; }
+body.challenge #mp-toast { top: 130px; }
+#challenge-msg {
+  position: fixed; top: 30%; left: 50%; transform: translateX(-50%); z-index: 4; pointer-events: none; opacity: 0;
+  color: #fff; font: 700 clamp(18px, 3.2vw, 30px)/1.2 system-ui, sans-serif; text-align: center; white-space: nowrap;
+  text-shadow: 0 2px 6px rgba(0,0,0,0.8);
+}
+#challenge-msg.show { animation: ch-flash 2.2s ease-out forwards; }
+@keyframes ch-flash { 0% { opacity: 0; transform: translateX(-50%) scale(1.25); } 10% { opacity: 1; transform: translateX(-50%) scale(1); } 75% { opacity: 1; } 100% { opacity: 0; } }
+#challenge-mark {
+  position: fixed; z-index: 3; pointer-events: none; transform: translate(-50%, -50%); color: #ffd020;
+  display: flex; flex-direction: column; align-items: center; font: 600 11px/1.2 system-ui, sans-serif; text-shadow: 0 1px 2px #000;
+}
+#challenge-mark .a { display: block; width: 22px; height: 22px; border: 2px solid #ffd020; border-radius: 50%; }
+#challenge-mark .a svg { display: none; }
+#challenge-mark.edge .a { border: none; width: auto; height: auto; }
+#challenge-mark.edge .a svg { display: block; width: 14px; height: 20px; filter: drop-shadow(0 1px 2px #000); }
+table.best { width: 100%; border-collapse: collapse; font-size: 13px; color: #ccd; }
+table.best th, table.best td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #2c3238; }
+table.best th { color: #99a; font-weight: 600; }
