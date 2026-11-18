@@ -19,6 +19,7 @@ import { CrownLod, addLodFade, addCloseSwitch, closeUniforms } from './lod.js';
 import { LowCloud } from './mist.js';
 import { addSnowCover, snowUniforms, snowVisibility } from './snow.js';
 import { Snowfall } from './snowfall.js';
+import { makeLake, waterUniforms } from './water.js';
 import { installVolumetricFog, fog4, FIELD_GLSL } from './volfog.js';
 import { speciesOf, bushSpeciesAt, barkColor, trunkThickness, SPECIES, WOOD, CONIFER, leafName } from './species.js';
 import { bakeImpostors, impostorGeometry, makeImpostor } from './impostor.js';
@@ -687,6 +688,24 @@ export class World {
 
 
   /**
+   * The lake's water (every frame): its ripples run with the wind; it
+   * reflects the sky of the moment and glints in the sun.
+   */
+  updateWater(dt, wind) {
+    if (!this.lake) return;
+    const u = waterUniforms;
+    u.uWaterTime.value = (u.uWaterTime.value + dt) % 10000;
+    u.uWaterWind.value.set(wind.x, wind.z);
+    // The sky: the haze colour low down, the sky light's colour overhead.
+    u.uSkyHorizon.value.copy(this.scene.fog.color);
+    u.uSkyZenith.value.copy(this.hemi.color).multiplyScalar(0.55 * this.hemi.intensity).lerp(this.scene.fog.color, 0.25);
+    u.uSunDir.value.copy(this.lightDir);
+    u.uSunGlint.value.copy(this.sun.color).multiplyScalar(this.sun.intensity * 0.5);
+    // Trees round the far banks: dark green, lit by the sky and the sun.
+    u.uTreeLine.value.setRGB(0.05, 0.075, 0.035).multiplyScalar(this.hemi.intensity * 0.9 + this.sun.intensity * 0.25).lerp(this.scene.fog.color, 0.12);
+  }
+
+  /**
    * Falling snow around the camera (every frame).
    * @param {number} screenH  drawing buffer height (pixels)
    */
@@ -770,6 +789,13 @@ export class World {
     this.terrainMesh = ground;
     ground.userData.kind = 'terrain';
     this.builtScenery.push(ground);
+    // A lake (src/sim/lake.js): its bed and banks, and the water (water.js).
+    const lake = makeLake(tex);
+    if (lake) {
+      this.scene.add(lake.bed, lake.water);
+      this.builtScenery.push(lake.bed, lake.water);
+      this.lake = lake;
+    }
   }
 
   #runway() {

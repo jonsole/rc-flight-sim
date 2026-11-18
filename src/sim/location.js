@@ -64,6 +64,9 @@ const HOME = {
     table: { x: 6, z: 3 },
     windsock: { x: -35, z: -42, height: 5 },
     fence: { z: 6, x0: -100, x1: 100 },
+    // A lake out beyond the runway to the north-east (src/sim/lake.js):
+    // ~120 x 70 m, its water 45 cm below the field, 2.2 m deep in the middle.
+    lake: { x: 95, z: -130, rx: 58, rz: 34, angle: 20, level: -0.45, depth: 2.2 },
   },
 };
 

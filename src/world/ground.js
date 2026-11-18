@@ -13,6 +13,7 @@
 import { CanvasTexture, SRGBColorSpace, Vector2, Vector3, RepeatWrapping, NoColorSpace } from 'three';
 import { RUNWAY } from '../sim/terrain.js';
 import { LOCATION, clubAngle } from '../sim/location.js';
+import { LAKE_GLSL } from '../sim/lake.js';
 
 const FIELD = { x: 0, z: -40, r: 260 };
 
@@ -184,8 +185,14 @@ function vec2s(pts) {
   return pts.map(([x, z]) => `vec2(${x.toFixed(1)}, ${z.toFixed(1)})`);
 }
 
-/** Add the ground detail to the terrain's MeshStandardMaterial. */
-export function addGroundDetail(material) {
+/**
+ * Add the ground detail to the terrain's MeshStandardMaterial.
+ * @param {{ lakeBed?: boolean }} [opts]  the lake's bed and banks (a fine
+ *   mesh: src/world/water.js) rather than the terrain grid, which leaves
+ *   them out (src/sim/lake.js)
+ */
+export function addGroundDetail(material, opts = {}) {
+  const lakeBed = !!opts.lakeBed;
   const prev = material.onBeforeCompile;
   const real = realGround();
   const track = vec2s(TRACK);
@@ -201,13 +208,25 @@ export function addGroundDetail(material) {
       shader.uniforms.groundSize = { value: real.size };
       shader.defines = { ...shader.defines, REAL_GROUND: '' };
     }
+    if (lakeBed) shader.defines = { ...shader.defines, LAKE_BED: '' };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vGroundWorld;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGroundWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\n${GLSL}\n${polyGlsl()}\nuniform vec3 uGrassTint;\nuniform float uGrassDry;\nuniform float uGrassLen;\nuniform sampler2D grassFine;\nuniform float grassFineMean;\n#ifdef REAL_GROUND\nuniform sampler2D groundMap; uniform vec2 groundOrigin; uniform float groundSize;\n#endif`)
+      .replace('#include <common>', `#include <common>\n${GLSL}\n${polyGlsl()}\nuniform vec3 uGrassTint;\nuniform float uGrassDry;\nuniform float uGrassLen;\nuniform sampler2D grassFine;\nuniform float grassFineMean;\n${LAKE_GLSL}\n#ifdef REAL_GROUND\nuniform sampler2D groundMap; uniform vec2 groundOrigin; uniform float groundSize;\n#endif`)
       .replace('#include <map_fragment>', /* glsl */ `
         vec2 p = vGroundWorld.xz;
+#ifdef HAS_LAKE
+        // The lake's bed and banks are their own fine mesh: the grid leaves
+        // them out, and that mesh draws only them (meeting where the bank
+        // has come up to the field).
+        float lakeK = lakeCarve(p);
+  #ifdef LAKE_BED
+        if (lakeK > -0.002) discard;
+  #else
+        if (lakeK <= -0.002) discard;
+  #endif
+#endif
         // Grass texture at two scales and angles, blended by a slow noise,
         // so no repeat pattern shows.
         vec2 uvA = vMapUv;
@@ -333,11 +352,24 @@ ${mownGlsl()}
           float patchy = 0.85 + 0.3 * gNoise(p / 9.0);
           g = mix(g, straw, clamp(uGrassDry * (1.15 - mown * 0.2) * patchy, 0.0, 1.0) * grassy);
         }
+#ifdef HAS_LAKE
+        {
+          // By the lake: damp, lusher grass down the banks, wet mud at the
+          // water's edge, brown silt under the water.
+          float q = lakeQ(p);
+          float wy = vGroundWorld.y - LAKE_LEVEL; // above the water (m)
+          vec3 mud = vec3(0.3, 0.25, 0.17) * (0.8 + 0.4 * gNoise(p * 1.3));
+          vec3 silt = vec3(0.32, 0.29, 0.2) * (0.85 + 0.3 * gNoise(p / 2.0));
+          g = mix(g, g * vec3(0.82, 0.95, 0.75), 1.0 - smoothstep(1.05, 1.3, q));
+          g = mix(g, mud, 1.0 - smoothstep(0.03, 0.18 + 0.1 * gNoise(p / 3.0), wy));
+          g = mix(g, silt, 1.0 - smoothstep(-0.25, -0.02, wy));
+        }
+#endif
         diffuseColor.rgb *= g;
       `);
   };
   const prevKey = material.customProgramCacheKey?.bind(material);
-  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|groundDetail${real ? '|real' : ''}`;
+  material.customProgramCacheKey = () => `${prevKey ? prevKey() : ''}|groundDetail${real ? '|real' : ''}${lakeBed ? '|lakeBed' : ''}`;
   material.needsUpdate = true;
   return material;
 }

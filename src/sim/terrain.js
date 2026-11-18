@@ -5,6 +5,7 @@
 // Real sites (src/sim/location.js): the LIDAR ground, levelled on the mown
 // field, fading into gentle made-up country beyond the baked area.
 import { LOCATION, inMown, clubAngle } from './location.js';
+import { lakeCarve } from './lake.js';
 
 const FIELD_RADIUS = 260;
 const BLEND = 200;
@@ -132,7 +133,16 @@ export function gridHeight(ix, iz) {
   return grid[iz * N + ix];
 }
 
+/**
+ * Ground height (m): the grid's triangles, and the lake carved into them
+ * (src/sim/lake.js: exact, finer than the grid).
+ */
 export function heightAt(x, z) {
+  return gridSurfaceAt(x, z) + lakeCarve(x, z);
+}
+
+/** The grid's own surface (its triangles), without the lake. */
+export function gridSurfaceAt(x, z) {
   const fx = (x + HALF) / CELL;
   const fz = (z + HALF) / CELL;
   if (fx < 0 || fz < 0 || fx >= TERRAIN_SEGMENTS || fz >= TERRAIN_SEGMENTS) return shapeHeight(x, z);
