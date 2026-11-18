@@ -3,7 +3,7 @@ import { Vector3, Quaternion } from 'three';
 import { throughHoop, segmentTouches, bodyShape, crossSegment2D } from '../src/game/geom.js';
 import { Ribbon, SEG } from '../src/game/ribbon.js';
 import { findArena, arenaToWorld } from '../src/game/arena.js';
-import { Hoops, Balloons, Limbo, Pylons, Streamers, LIMBO_HEIGHTS } from '../src/game/courses.js';
+import { Hoops, Balloons, Balloon, Limbo, Pylons, Streamers, LIMBO_HEIGHTS } from '../src/game/courses.js';
 import { Obstacles } from '../src/sim/obstacles.js';
 import { physicsGround as ground } from '../src/sim/terrain.js';
 import { Aircraft } from '../src/sim/aircraft.js';
@@ -136,6 +136,37 @@ describe('challenge courses', () => {
     fly(b, [t.clone().add(new Vector3(-4, 0, 0)), t.clone().add(new Vector3(4, 0, 0))]);
     expect(b.balloons[3].popped).toBe(true);
     expect(b.left).toBe(14);
+  });
+
+  it('a balloon on its string leans downwind and holds its length; cut free it floats up and away', () => {
+    const peg = new Vector3(0, ground.heightAt(0, 0), 0);
+    const b = new Balloon(peg, 10, 0.45);
+    const breeze = (p, out) => out.set(4, 0, 0);
+    for (let i = 0; i < 600; i++) b.step(1 / 60, breeze, floor);
+    expect(b.pos.distanceTo(peg)).toBeCloseTo(10, 2);
+    expect(b.pos.x).toBeGreaterThan(3); // blown over downwind
+    expect(b.pos.y - peg.y).toBeGreaterThan(6); // but still well up
+    b.cut(0.5);
+    for (let i = 0; i < 600; i++) b.step(1 / 60, breeze, floor);
+    expect(b.pos.y - peg.y).toBeGreaterThan(30); // rising at a few m/s
+    expect(b.pos.x).toBeGreaterThan(30); // and drifting with the wind
+    expect(b.trail.count).toBeGreaterThan(0);
+  });
+
+  it('balloons: flying through a string cuts it, and the balloon gets away', () => {
+    const bs = new Balloons(env());
+    fly(bs, [new Vector3(arena.x, arena.g + 60, arena.z), new Vector3(arena.x + 1, arena.g + 60, arena.z)]);
+    const b = bs.balloons[5];
+    // Across the string halfway up.
+    const mid = b.peg.clone().lerp(b.pos, 0.5);
+    fly(bs, [mid.clone().add(new Vector3(-4, 0, 0.01)), mid.clone().add(new Vector3(4, 0, 0.01))]);
+    expect(b.free).toBe(true);
+    expect(b.popped).toBe(false);
+    // Left to go, it rises out of reach.
+    fly(bs, [new Vector3(arena.x, arena.g + 200, arena.z), new Vector3(arena.x + 200, arena.g + 200, arena.z)], { stepLen: 0.05 });
+    expect(b.gone).toBe(true);
+    expect(bs.lost).toBe(1);
+    expect(bs.left).toBe(14);
   });
 
   it('limbo: under lowers the bar, over does not count, touching it ends it', () => {

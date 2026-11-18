@@ -162,11 +162,107 @@ export class Hoops {
 // --- Balloons ----------------------------------------------------------------
 
 const BALLOON_COLOURS = ['#e02828', '#2860e0', '#f0c020', '#30b040', '#e050c0', '#ff8020', '#f4f4f4', '#8040d0'];
+export const BALLOON = {
+  lift: 5, // m/s²: helium's pull up, less the balloon's weight
+  drag: 1.6, // 1/s: how hard the air drags it along (free, it rises at lift / drag ≈ 3 m/s)
+};
+const _bw = new Vector3();
+const _bd = new Vector3();
+
+/** A string drawn from a ribbon's points (strings fall and trail like streamers). */
+class StringLine {
+  constructor(ribbon) {
+    this.ribbon = ribbon;
+    const geo = new BufferGeometry().setAttribute('position', new BufferAttribute(new Float32Array((ribbon.max + 1) * 3), 3));
+    this.line = new Line(geo, new LineBasicMaterial({ color: '#dddddd' }));
+    this.line.frustumCulled = false;
+  }
+
+  update() {
+    const r = this.ribbon;
+    const a = this.line.geometry.attributes.position.array;
+    for (let i = 0; i <= r.count; i++) r.points[i].toArray(a, i * 3);
+    this.line.geometry.attributes.position.needsUpdate = true;
+    this.line.geometry.setDrawRange(0, r.count + 1);
+    this.line.visible = r.count > 0;
+  }
+}
+
+/**
+ * A helium balloon: pulled up by its lift and along by the wind (gusts and
+ * all), held by its string to a peg in the ground. Cut the string and it
+ * rises away downwind, trailing what's left of the string.
+ */
+export class Balloon {
+  constructor(peg, len, radius) {
+    this.peg = peg.clone();
+    this.len = len;
+    this.radius = radius;
+    this.pos = peg.clone().setY(peg.y + len);
+    this.vel = new Vector3();
+    this.free = false; // the string's been cut
+    this.popped = false;
+    this.gone = false; // floated out of reach
+    this.trail = null; // string hanging from a free balloon (Ribbon)
+    this.stub = null; // string left on the peg (Ribbon)
+  }
+
+  /** Where the string meets the balloon. */
+  knot(out) {
+    return out.copy(this.pos).setY(this.pos.y - this.radius * 1.18 - 0.08);
+  }
+
+  step(dt, wind, floor) {
+    if (this.popped || this.gone || dt <= 0) return;
+    const n = Math.max(1, Math.ceil(dt / (1 / 120)));
+    const h = dt / n;
+    for (let k = 0; k < n; k++) {
+      wind(this.pos, _bw);
+      // Dragged towards the wind's speed, lifted by the helium.
+      this.vel.addScaledVector(_bw.sub(this.vel), BALLOON.drag * h);
+      this.vel.y += BALLOON.lift * h;
+      this.pos.addScaledVector(this.vel, h);
+      if (!this.free) {
+        // The string holds it (taut: it can't go further than its length).
+        _bd.copy(this.pos).sub(this.peg);
+        const d = _bd.length();
+        if (d > this.len) {
+          _bd.divideScalar(d);
+          this.pos.copy(this.peg).addScaledVector(_bd, this.len);
+          const out = this.vel.dot(_bd);
+          if (out > 0) this.vel.addScaledVector(_bd, -out);
+        }
+      }
+      const g = floor(this.pos.x, this.pos.z) + this.radius;
+      if (this.pos.y < g) {
+        this.pos.y = g;
+        this.vel.y = Math.max(0, this.vel.y);
+      }
+    }
+  }
+
+  /**
+   * Cut the string `t` of the way up from the peg: the balloon goes free
+   * with the rest of the string; the part left on the peg falls.
+   */
+  cut(t) {
+    if (this.free) return;
+    this.free = true;
+    const top = this.knot(new Vector3());
+    const at = new Vector3().lerpVectors(this.peg, top, t);
+    const below = Math.max(0.5, this.len * t);
+    const above = Math.max(0.5, this.len * (1 - t));
+    this.stub = new Ribbon({ length: below, width: 0.01, color: '#dddddd' });
+    this.stub.place(this.peg, _bd.copy(at).sub(this.peg).normalize());
+    this.trail = new Ribbon({ length: above, width: 0.01, color: '#dddddd' });
+    this.trail.place(top, _bd.copy(at).sub(top).normalize());
+  }
+}
 
 export class Balloons {
   static id = 'balloons';
   static title = 'Balloon burst';
-  static about = 'Burst all the balloons. They are tied to pegs and sway in the wind. The clock starts when you take off.';
+  static about = 'Burst all the helium balloons. They are tied to pegs on strings and blown about by the wind. Clip a string and the balloon floats away: chase it and burst it before it gets out of reach. The clock starts when you take off.';
 
   constructor(env) {
     this.env = env;
@@ -180,6 +276,8 @@ export class Balloons {
     const knot = new ConeGeometry(0.06, 0.1, 8);
     this.balloons = [];
     this.bits = [];
+    this.burst = 0;
+    this.lost = 0;
     for (let k = 0; k < 15; k++) {
       const a = rand() * Math.PI * 2;
       const d = Math.sqrt(rand()) * 0.85 * R;
@@ -196,28 +294,66 @@ export class Balloons {
       const line = new Line(new BufferGeometry().setAttribute('position', new BufferAttribute(new Float32Array(6), 3)), new LineBasicMaterial({ color: '#dddddd' }));
       line.frustumCulled = false;
       this.group.add(mesh, line);
-      this.balloons.push({ peg, len: top.y - peg.y, pos: top.clone(), mesh, line, popped: false, phase: rand() * 10 });
+      const b = new Balloon(peg, top.y - peg.y, this.radius);
+      Object.assign(b, { mesh, line, strings: [] });
+      this.balloons.push(b);
     }
-    this.left = this.balloons.length;
+  }
+
+  get left() {
+    return this.balloons.length - this.burst - this.lost;
   }
 
   update(ctx) {
-    const w = ctx.wind(_c.set(this.env.arena.x, this.env.arena.g + 10, this.env.arena.z), _a);
+    const live = !ctx.ac.crashed && this.state !== 'done';
     for (const b of this.balloons) {
-      if (b.popped) continue;
-      // Leaning downwind on its string, bobbing.
-      const lean = Math.min(0.5, 0.05 * Math.hypot(w.x, w.z));
-      const sx = (w.x / (Math.hypot(w.x, w.z) || 1)) * lean + 0.04 * Math.sin(ctx.time * 1.3 + b.phase);
-      const sz = (w.z / (Math.hypot(w.x, w.z) || 1)) * lean + 0.04 * Math.cos(ctx.time * 1.1 + b.phase);
-      b.pos.set(b.peg.x + sx * b.len, b.peg.y + b.len * Math.sqrt(Math.max(0.5, 1 - sx * sx - sz * sz)), b.peg.z + sz * b.len);
+      if (b.popped || b.gone) continue;
+      b.step(ctx.dt, ctx.wind, ctx.floor);
+      // Leaning along its string (or, free, along the way it's going).
       b.mesh.position.copy(b.pos);
-      b.mesh.rotation.set(sz * 0.8, 0, -sx * 0.8);
-      const arr = b.line.geometry.attributes.position.array;
-      arr[0] = b.peg.x; arr[1] = b.peg.y; arr[2] = b.peg.z;
-      arr[3] = b.pos.x; arr[4] = b.pos.y - this.radius * 1.18 - 0.08; arr[5] = b.pos.z;
-      b.line.geometry.attributes.position.needsUpdate = true;
-      if (ctx.ac.crashed || this.state === 'done') continue;
-      if (ballTouches(ctx.shape, toBody(ctx.pose, b.pos, _b), this.radius, ctx.sweep)) this.#pop(b, ctx);
+      const lean = b.free ? _a.copy(b.vel).multiplyScalar(-0.15).add(_b.set(0, 1, 0)) : _a.copy(b.pos).sub(b.peg);
+      b.mesh.quaternion.setFromUnitVectors(_b.set(0, 1, 0), lean.normalize());
+      const top = b.knot(_c);
+      if (!b.free) {
+        const arr = b.line.geometry.attributes.position.array;
+        b.peg.toArray(arr, 0);
+        top.toArray(arr, 3);
+        b.line.geometry.attributes.position.needsUpdate = true;
+      } else {
+        b.trail.step(ctx.dt, top, ctx.wind, ctx.floor);
+        b.stub.step(ctx.dt, b.peg, ctx.wind, ctx.floor);
+        for (const s of b.strings) s.update();
+        // Out of reach: high up or blown far away.
+        if (b.pos.y > b.peg.y + 120 || b.pos.distanceTo(b.peg) > 350) {
+          b.gone = true;
+          b.mesh.visible = false;
+          for (const s of b.strings) s.line.visible = false;
+          this.lost++;
+          if (live) ctx.say(`One got away! ${this.left} left`);
+          this.#check(ctx);
+          continue;
+        }
+      }
+      if (!live) continue;
+      if (ballTouches(ctx.shape, toBody(ctx.pose, b.pos, _b), this.radius, ctx.sweep)) {
+        this.#pop(b, ctx);
+        continue;
+      }
+      // Clipped the string?
+      if (!b.free) {
+        toBody(ctx.pose, b.peg, _A);
+        toBody(ctx.pose, top, _B);
+        const t = segmentTouches(ctx.shape, _A, _B, ctx.sweep);
+        if (t >= 0) {
+          b.cut(t);
+          b.line.visible = false;
+          b.strings = [new StringLine(b.trail), new StringLine(b.stub)];
+          for (const s of b.strings) this.group.add(s.line);
+          if (this.state === 'ready') this.state = 'running';
+          ctx.sfx('tick');
+          ctx.say('Cut the string: it\'s getting away!');
+        }
+      }
     }
     // Shreds of rubber falling.
     for (const s of this.bits) {
@@ -241,7 +377,7 @@ export class Balloons {
     b.popped = true;
     b.mesh.visible = false;
     b.line.visible = false;
-    this.left--;
+    this.burst++;
     if (this.state === 'ready') this.state = 'running';
     ctx.sfx('pop');
     for (let i = 0; i < 9; i++) {
@@ -251,23 +387,33 @@ export class Balloons {
       this.group.add(m);
       this.bits.push({ m, v, spin: 5 + Math.random() * 10, life: 6 });
     }
-    if (!this.left) {
-      this.state = 'done';
-      ctx.sfx('finish');
-    } else ctx.say(`Pop! ${this.left} to go`);
+    // A free one's string drops.
+    if (b.trail) b.trail.attached = false;
+    if (!this.#check(ctx)) ctx.say(`Pop! ${this.left} to go`);
+  }
+
+  /** All burst or gone: finished. */
+  #check(ctx) {
+    if (this.left > 0 || this.state === 'done') return false;
+    this.state = 'done';
+    ctx.sfx('finish');
+    return true;
   }
 
   status() {
     const n = this.balloons.length;
-    return { line: `${n - this.left} of ${n} burst` };
+    return { line: `${this.burst} of ${n} burst${this.lost ? ` · ${this.lost} got away` : ''}` };
   }
 
   target() {
-    return null;
+    // A balloon that's getting away.
+    let best = null;
+    for (const b of this.balloons) if (b.free && !b.popped && !b.gone && (!best || b.pos.y < best.y)) best = b.pos;
+    return best;
   }
 
   score(time) {
-    return { value: time, text: fmt(time) };
+    return { value: time + 15 * this.lost, text: `${fmt(time + 15 * this.lost)}${this.lost ? ` (${this.lost} got away: +${15 * this.lost} s)` : ''}` };
   }
 }
 
