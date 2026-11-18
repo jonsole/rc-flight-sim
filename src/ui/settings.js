@@ -7,6 +7,7 @@ export const DEFAULT_SETTINGS = {
   startMode: 'runway', // 'runway' | 'air'
   location: 'home',    // flying field, see src/sim/location.js
   assist: 'as3x',      // 'off' | 'as3x' | 'safe'
+  challenge: 'none',   // src/game/challenges.js MODES
   // FPV
   fpvMount: 'cockpit', // 'cockpit' | 'wing'
   fpvTilt: 4,          // degrees of camera uptilt

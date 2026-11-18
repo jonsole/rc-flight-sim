@@ -222,6 +222,29 @@ camera, reset, flight assist and the menu. Turn the phone sideways. Stick mode
 and showing or hiding the sticks are under **Menu → Transmitter**; a connected
 transmitter or gamepad still takes priority.
 
+## Challenges
+
+Pick one on the start screen or under *Menu → Challenges* (*Free flying* for
+none). The course is set out in the most open part of the field, in front of
+you, worked out from the trees and buildings there (your scenery edits too).
+A box at the top shows the clock and progress, a yellow ring or edge arrow
+points to what's next, and **R** starts it again. Your best for each
+challenge is kept in this browser, per field.
+
+| Challenge | What to do |
+| --- | --- |
+| **Hoops** | Eight floating hoops round a loop at different heights. Fly through them in order, either way through; the next one is lit. The clock runs from the first to the last. |
+| **Balloon burst** | Fifteen balloons on strings, swaying in the wind. Burst them all (any part of the model will do); the clock starts when you take off. |
+| **Limbo** | A bar between two poles, starting at 8 m. Fly under it (either way) and it drops, down to 32 cm. Over the top doesn't count; touch it and it falls, ending the run; the poles are solid. Scored by passes. |
+| **Pylon race** | Three laps round three inflatable pylons: cross the start line left to right, then round the lit pylon each time, on the outside. Cutting inside one means going back round it, and hitting one is a crash. |
+| **Streamer cutting** | Three model aeroplanes fly loops towing a crepe-paper streamer from each wing tip. Cut them with your wings, prop or fuselage, again and again, until only stubs are left; don't hit the aeroplanes. In multiplayer you tow streamers too, and everyone can cut everyone's (the streamer aeroplanes are your own, not shared). |
+
+The code is in `src/game/`: `courses.js` (the courses), `challenges.js`
+(clock, scores, HUD, sounds, multiplayer streamers), `ribbon.js` (the
+streamers: light paper that drifts with the air, flutters and is towed),
+`arena.js` (finding open sky) and `geom.js` (through a hoop, touching a
+streamer or a ball).
+
 ## Views
 
 | View | What it is |
@@ -274,6 +297,7 @@ src/world/     sky, terrain, runway, trees, windsock
 src/view/      camera rig (LOS / FPV / chase)
 src/input/     transmitter (Gamepad API) + keyboard, expo & rates
 src/ui/        OSD/HUD, settings panel
+src/game/      challenges: hoops, balloons, limbo, pylon race, streamer cutting
 src/audio/     synthesised motor and prop sound
 tests/         vitest flight-model tests
 ```
