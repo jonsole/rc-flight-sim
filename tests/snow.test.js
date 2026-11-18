@@ -106,6 +106,30 @@ describe('tracks in the snow', async () => {
     expect(t.used).toBeGreaterThan(15);
   });
 
+  it('a wing dipping into the snow marks it, though no contact touches', async () => {
+    const { Group, Mesh, BoxGeometry, MeshBasicMaterial } = await import('three');
+    const t = new SnowTracks();
+    const root = new Group();
+    const wing = new Mesh(new BoxGeometry(0.2, 0.01, 1.2), new MeshBasicMaterial());
+    wing.position.set(0, 0.03, 0); // its underside 2.5 cm up: in 4 cm of snow
+    root.add(wing);
+    t.setModel({ root, parts: {} });
+    expect(t.samples.length).toBeGreaterThan(0);
+    const a = plane();
+    a.position.set(0, 0, 0);
+    a.contacts = [];
+    roll(t, a, { cover: 1, falling: 0 }, 1);
+    expect(t.used).toBeGreaterThan(5);
+    // Higher up, clear of the snow: nothing.
+    const t2 = new SnowTracks();
+    t2.setModel({ root, parts: {} });
+    const b = plane();
+    b.position.set(0, 0.2, 0);
+    b.contacts = [];
+    roll(t2, b, { cover: 1, falling: 0 }, 1);
+    expect(t2.used).toBe(0);
+  });
+
   it('the snow going clears them', () => {
     const t = new SnowTracks();
     const a = plane();
