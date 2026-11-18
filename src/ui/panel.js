@@ -1,4 +1,5 @@
 // Settings / setup panel (plain DOM).
+import { canFullscreen, isFullscreen, toggleFullscreen } from './fullscreen.js';
 import { CLOUD_TYPES } from '../world/clouds.js';
 import { CHANNELS, rawInput } from '../input/input.js';
 import { CAMERA_LABELS } from '../view/cameras.js';
@@ -115,6 +116,10 @@ export class Panel {
       el('p', { class: 'hint' }, 'Move, resize or delete trees, buildings and fences, or add new ones. Edits are saved in this browser for this field.'),
       this.#range('Volume', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.#check('Show HUD / OSD (H)', 'showHud'),
+      this.#check('Full screen on phones and tablets (when you press Fly)', 'fullscreen'),
+      ...(canFullscreen()
+        ? [el('div', { class: 'row' }, el('button', { onclick: () => { toggleFullscreen(); this.opts.onClose(); } }, isFullscreen() ? 'Leave full screen (F)' : 'Full screen (F)'))]
+        : [el('p', { class: 'hint' }, 'This browser can\'t go full screen. On an iPhone: tap Share, then Add to Home Screen, and open the simulator from there: it opens with no browser bars.')]),
     ];
   }
 

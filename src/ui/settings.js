@@ -45,6 +45,7 @@ export const DEFAULT_SETTINGS = {
   // Misc
   volume: 0.6,
   showHud: true,
+  fullscreen: true,      // phones and tablets: full screen when you press Fly (src/ui/fullscreen.js)
   // Touch screens
   touchControls: 'auto', // 'auto' | 'on' | 'off'
   stickMode: '2',        // '2' = throttle left, '1' = throttle right

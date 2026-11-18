@@ -12,6 +12,7 @@ import { TouchControls, isTouchDevice } from './input/touch.js';
 import { CameraRig, CAMERA_LABELS } from './view/cameras.js';
 import { Debris } from './view/debris.js';
 import { SnowTracks, snowDepth } from './world/snowTracks.js';
+import { canFullscreen, enterFullscreen, toggleFullscreen, isIPhone } from './ui/fullscreen.js';
 import { Shadows } from './world/shadows.js';
 import { PlaneShadow } from './view/planeShadow.js';
 import { Peers } from './view/peers.js';
@@ -460,12 +461,12 @@ peers.addShadow = (model, span) => {
 const mpBadge = document.getElementById('mp-badge');
 const mpToast = document.getElementById('mp-toast');
 const mpServer = () => settings.mpServer || DEFAULT_MP_SERVER;
-function toast(text) {
+function toast(text, ms = 3500) {
   const d = document.createElement('div');
   d.textContent = text;
   mpToast.append(d);
-  setTimeout(() => (d.style.opacity = '0'), 3500);
-  setTimeout(() => d.remove(), 4200);
+  setTimeout(() => (d.style.opacity = '0'), ms);
+  setTimeout(() => d.remove(), ms + 700);
 }
 const chatBtn = document.getElementById('chat-btn');
 const chat = new Chat({
@@ -634,6 +635,9 @@ input.onAction = (code) => {
     case 'KeyM':
       sound.muted = !sound.muted;
       break;
+    case 'KeyF':
+      toggleFullscreen();
+      break;
     case 'KeyE':
       openEditor();
       break;
@@ -699,6 +703,20 @@ onModelLoaded((id) => {
 setTimeout(() => loadModelFiles(), 1500);
 
 document.getElementById('start').addEventListener('click', () => {
+  // Phones and tablets: the whole screen (src/ui/fullscreen.js). Asked for
+  // here, as the browser only allows it in answer to a tap.
+  if (TOUCH_DEVICE && settings.fullscreen !== false) {
+    if (canFullscreen()) enterFullscreen();
+    else if (isIPhone() && !localStorage.getItem('rcsim.homeScreenTip')) {
+      // iPhone Safari has no full screen for pages: the home screen does it.
+      setTimeout(() => toast('For full screen on iPhone: tap Share, then Add to Home Screen, and open it from there.', 9000), 1500);
+      try {
+        localStorage.setItem('rcsim.homeScreenTip', '1');
+      } catch {
+        /* ignore */
+      }
+    }
+  }
   document.getElementById('splash').remove();
   preview.dispose();
   sound.start();
