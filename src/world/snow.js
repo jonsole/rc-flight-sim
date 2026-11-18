@@ -67,6 +67,41 @@ export function snowVisibility(falling) {
 }
 
 /**
+ * The lying snow's pattern (GLSL), shared by everything with snow cover and
+ * the tracks in it (src/world/snowTracks.js), so they agree where it lies:
+ * snPatch(xz) is 0-1; snow lies where it's above snowThreshold(amount).
+ */
+export const SNOW_GLSL = /* glsl */ `
+float snHash(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+float snNoise(vec2 p) {
+  vec2 i = floor(p), f = p - i;
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float a = snHash(i), b = snHash(i + vec2(1.0, 0.0)), c = snHash(i + vec2(0.0, 1.0)), d = snHash(i + vec2(1.0, 1.0));
+  return a + (b - a) * u.x + (c - a) * u.y + (a - b - c + d) * u.x * u.y;
+}
+// Drifts and bare patches (metres to tens of metres), and the grass poking
+// through close up. Each octave turned and the whole gently warped, so no
+// square grid shows in the edges.
+float snPatch(vec2 sp) {
+  vec2 w = sp + 6.0 * vec2(snNoise(sp / 17.0 + 11.0), snNoise(sp / 17.0 + 29.0));
+  return 0.5 * snNoise(mat2(0.8, -0.6, 0.6, 0.8) * w / 23.0)
+       + 0.27 * snNoise(mat2(0.28, -0.96, 0.96, 0.28) * w / 7.3 + 7.3)
+       + 0.15 * snNoise(mat2(-0.5, -0.87, 0.87, -0.5) * w / 2.3 + 3.1)
+       + 0.08 * snNoise(mat2(0.97, 0.26, -0.26, 0.97) * w / 0.7 + 5.7);
+}
+float snowThreshold(float cover) { return 1.0 - cover * 1.2; }
+// The snow's colour: blue-white (brighter than a plain colour can be: snow
+// reflects nearly all the light), a faint grain, shaded hollows.
+vec3 snowColour(vec2 sp, float n) {
+  return vec3(1.15, 1.18, 1.24) * (0.93 + 0.07 * snNoise(sp / 1.7)) * (0.96 + 0.04 * n);
+}
+`;
+
+/**
  * Snow lying on a Lambert/Standard material: on surfaces facing up, by
  * how much snow there is (snowUniforms.uSnow), patchy where it's thin.
  * Trees and bushes too: the tops of branches and twigs, and snow caught
@@ -103,17 +138,7 @@ export function addSnowCover(material, opts = {}) {
       .replace('#include <common>', `#include <common>
         uniform float uSnow;
         varying vec3 vSnowWorld;
-        float snHash(vec2 p) {
-          vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-          p3 += dot(p3, p3.yzx + 33.33);
-          return fract((p3.x + p3.y) * p3.z);
-        }
-        float snNoise(vec2 p) {
-          vec2 i = floor(p), f = p - i;
-          vec2 u = f * f * (3.0 - 2.0 * f);
-          float a = snHash(i), b = snHash(i + vec2(1.0, 0.0)), c = snHash(i + vec2(0.0, 1.0)), d = snHash(i + vec2(1.0, 1.0));
-          return a + (b - a) * u.x + (c - a) * u.y + (a - b - c + d) * u.x * u.y;
-        }`)
+        ${SNOW_GLSL}`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         // (After every change to the normal: the distant trees' pictures
         // set theirs in normal_fragment_maps.)
@@ -138,23 +163,14 @@ export function addSnowCover(material, opts = {}) {
           // (Either face of a double-sided surface.)
           float facing = abs(dot(normal, upV));
           float onTop = smoothstep(${flat}, ${flat} + 0.25, facing);
-          // Drifts and bare patches (metres to tens of metres), and the
-          // grass poking through close up. Each octave turned and the
-          // whole gently warped, so no square grid shows in the edges.
           // (Not by the ground's colour: its texture's pixels showed.)
-          vec2 w = sp + 6.0 * vec2(snNoise(sp / 17.0 + 11.0), snNoise(sp / 17.0 + 29.0));
-          float n = 0.5 * snNoise(mat2(0.8, -0.6, 0.6, 0.8) * w / 23.0)
-                  + 0.27 * snNoise(mat2(0.28, -0.96, 0.96, 0.28) * w / 7.3 + 7.3)
-                  + 0.15 * snNoise(mat2(-0.5, -0.87, 0.87, -0.5) * w / 2.3 + 3.1)
-                  + 0.08 * snNoise(mat2(0.97, 0.26, -0.26, 0.97) * w / 0.7 + 5.7);
-          float t = 1.0 - uSnow * ${amount} * 1.2;
+          float n = snPatch(sp);
+          float t = snowThreshold(uSnow * ${amount});
           // The edge soft by how much the pattern changes across a pixel
           // (no stair-steps far off), a little soft close up.
           float e = max(0.05, 1.5 * fwidth(n));
           float s = smoothstep(t - e, t + e, n) * onTop * ${strength};
-          // Snow: blue-white (brighter than a plain colour can be: snow
-          // reflects nearly all the light), a faint grain, shaded hollows.
-          vec3 snowCol = vec3(1.15, 1.18, 1.24) * (0.93 + 0.07 * snNoise(sp / 1.7)) * (0.96 + 0.04 * n);
+          vec3 snowCol = snowColour(sp, n);
           #endif
           diffuseColor.rgb = mix(diffuseColor.rgb, snowCol, s);
         }`);
