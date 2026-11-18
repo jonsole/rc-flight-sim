@@ -139,3 +139,36 @@ describe('tracks in the snow', async () => {
     expect(t.used).toBe(0);
   });
 });
+
+describe('snow drag on the airframe', async () => {
+  const { Aircraft } = await import('../src/sim/aircraft.js');
+  const { AIRCRAFT } = await import('../src/aircraft/index.js');
+  const { ground } = await import('../src/sim/terrain.js');
+  const { Vector3 } = await import('three');
+
+  // Rolling at 8 m/s on its wheels, a point at the right wing tip down at
+  // wheel level (in the snow, when there's snow).
+  const run = (depth) => {
+    const def = AIRCRAFT[0].def;
+    const ac = new Aircraft(def, { ground });
+    ac.resetOnGround(0, 0, 0);
+    ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 0 };
+    for (let i = 0; i < 60; i++) ac.update(1 / 60); // settle
+    ac.velocity.set(8, 0, 0).applyQuaternion(ac.orientation).setY(0);
+    const low = Math.min(...ac.contacts.map((c) => c.pos.y));
+    const span = Math.max(...ac.contacts.map((c) => Math.abs(c.pos.z)), 0.4);
+    ac.setSnowPoints([{ p: new Vector3(0, low + 0.005, span), area: 0.01 }, { p: new Vector3(-0.05, low + 0.005, span), area: 0.01 }]);
+    ac.snowDepth = depth;
+    const h0 = ac.attitude().heading;
+    for (let i = 0; i < 30; i++) ac.update(1 / 60);
+    return { speed: ac.velocity.length(), turn: ac.attitude().heading - h0 };
+  };
+
+  it('a wing tip dragging in the snow slows the model and swings it towards that side', () => {
+    const clear = run(0);
+    const snow = run(0.04);
+    expect(snow.speed).toBeLessThan(clear.speed - 0.2);
+    // Dragged back on the right (+z): the nose swings right (heading towards +z).
+    expect(snow.turn).toBeGreaterThan(clear.turn + 0.01);
+  });
+});

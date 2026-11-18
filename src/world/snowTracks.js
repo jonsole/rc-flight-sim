@@ -34,7 +34,12 @@ const FILL_RATE = 1 / 240;
 // weight) on first touching, a contact leaves a dent.
 const DENT_LOAD = 2.5;
 const SNOW_DEPTH = 0.04; // m, under a full cover
-const MODEL_POINTS = 500; // points on the 3D model, at most
+const MODEL_POINTS = 500; // points on the 3D model
+
+/** How deep the lying snow is (m) for its cover (0-1). */
+export function snowDepth(cover) {
+  return cover > 0.01 ? SNOW_DEPTH * Math.min(1, cover * 1.5) : 0;
+}
 const MODEL_HALF = 0.02; // half the width of the groove each one leaves (m)
 const _m = new Matrix4();
 const _inv = new Matrix4();
@@ -192,12 +197,56 @@ export class SnowTracks {
       if (o.material?.transparent && o.material.opacity < 0.5) return; // (prop discs, glows)
       meshes.push(o);
     });
-    const total = meshes.reduce((n, o) => n + o.geometry.attributes.position.count, 0);
-    const step = Math.max(1, Math.ceil(total / MODEL_POINTS));
+    // Spread evenly over the surface (by area, not by vertices: a wing is
+    // a few big triangles, a wheel hub hundreds of small ones), each point
+    // standing for an equal share of it (area, m²: the flight model's drag
+    // in snow, src/sim/aircraft.js setSnowPoints).
+    const tris = [];
+    let total = 0;
+    const a = new Vector3();
+    const b = new Vector3();
+    const c = new Vector3();
     for (const o of meshes) {
       const pos = o.geometry.attributes.position;
+      const idx = o.geometry.index;
       _m.multiplyMatrices(_inv, o.matrixWorld);
-      for (let i = 0; i < pos.count; i += step) this.samples.push({ p: new Vector3().fromBufferAttribute(pos, i).applyMatrix4(_m) });
+      const n = idx ? idx.count : pos.count;
+      for (let i = 0; i + 2 < n; i += 3) {
+        const at = (k) => (idx ? idx.getX(i + k) : i + k);
+        a.fromBufferAttribute(pos, at(0)).applyMatrix4(_m);
+        b.fromBufferAttribute(pos, at(1)).applyMatrix4(_m);
+        c.fromBufferAttribute(pos, at(2)).applyMatrix4(_m);
+        const area = b.clone().sub(a).cross(c.clone().sub(a)).length() / 2;
+        if (!(area > 0)) continue;
+        total += area;
+        tris.push({ a: a.clone(), b: b.clone(), c: c.clone(), upto: total });
+      }
+    }
+    if (!tris.length) return;
+    let seed = 12345; // (the same points every time)
+    const rnd = () => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    };
+    const share = total / MODEL_POINTS;
+    for (let i = 0; i < MODEL_POINTS; i++) {
+      const target = ((i + rnd()) / MODEL_POINTS) * total;
+      let lo = 0;
+      let hi = tris.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (tris[mid].upto < target) lo = mid + 1;
+        else hi = mid;
+      }
+      const t = tris[lo];
+      let u = rnd();
+      let v = rnd();
+      if (u + v > 1) {
+        u = 1 - u;
+        v = 1 - v;
+      }
+      const p = t.a.clone().addScaledVector(t.b.clone().sub(t.a), u).addScaledVector(t.c.clone().sub(t.a), v);
+      this.samples.push({ p, area: share });
     }
   }
 
@@ -249,7 +298,7 @@ export class SnowTracks {
         this.pressed.push(_p.x, _p.z, half);
       }
       // The rest of the airframe: any point down in the snow.
-      const deep = SNOW_DEPTH * Math.min(1, snow.cover * 1.5);
+      const deep = snowDepth(snow.cover);
       for (const s of this.samples) {
         if (aircraft.held) {
           this.lift(s);

@@ -46,6 +46,15 @@ const _vt = new Vector3();
 const _tmp = new Vector3();
 const _cp = new Vector3();
 const _fw = new Vector3();
+const _sf = new Vector3();
+// Drag of snow on the airframe ploughing through it (N per m² of surface,
+// per m deep, per (m/s)²-ish: F = K · area · depth · v · (v + 3)): a wing tip
+// dragging in the snow slows the model and swings it round (a brush, a
+// newton or two; not a cartwheel).
+const SNOW_PLOUGH = 15;
+// Points this near a wheel or skid (m) ride on the snow with it (their
+// friction is the contact's own), not through it.
+const SNOW_RIDE = 0.12;
 
 /**
  * Which breakable part a contact / collision point belongs to: prop, wingL,
@@ -469,6 +478,7 @@ export class Aircraft {
     const fWorld = _fw.copy(_f).applyQuaternion(q);
     fWorld.y -= this.mass * G;
     this.#groundContacts(fWorld, _m, q, _qi);
+    this.#snowDrag(fWorld, _m, q, _qi);
     if (this.env.obstacles) this.#obstacleContacts(fWorld, _m, q, _qi);
 
     // --- Integrate (semi-implicit Euler) ----------------------------------
@@ -751,6 +761,46 @@ export class Aircraft {
       mBody.add(_tmp.crossVectors(c.pos, _tmp));
     }
     this.onGround = any;
+  }
+
+  /**
+   * Points over the airframe's surface (body frame, each with its share of
+   * the surface area, m²: src/world/snowTracks.js setModel), for drag in
+   * lying snow. Those by a wheel or skid are left out: the model rides on
+   * the snow there (the contact's own friction).
+   * @param {{ p: Vector3, area: number }[]} samples
+   */
+  setSnowPoints(samples) {
+    this.snowSamples = samples;
+    const riders = this.contacts.filter((c) => c.type === 'wheel' || c.type === 'skid');
+    this.snowPts = samples.filter((s) => !riders.some((c) => c.pos.distanceTo(s.p) < SNOW_RIDE));
+    this.snowRadius = this.snowPts.reduce((r, s) => Math.max(r, s.p.length()), 0);
+  }
+
+  /** Snow ploughed by any part of the airframe down in it (this.snowDepth, m deep). */
+  #snowDrag(fWorld, mBody, q, qi) {
+    const depth = this.snowDepth;
+    if (!(depth > 0) || !this.snowPts?.length) return;
+    const ground = this.env.ground;
+    const hAt = ground.baseHeightAt ?? ground.heightAt;
+    // Nowhere near: nothing to do.
+    if (this.position.y - hAt(this.position.x, this.position.z) > this.snowRadius + depth + 0.5) return;
+    _w.copy(this.omega).applyQuaternion(q);
+    for (const s of this.snowPts) {
+      if (s.part && this.broken.has(s.part)) continue;
+      _r.copy(s.p).applyQuaternion(q);
+      const px = this.position.x + _r.x;
+      const pz = this.position.z + _r.z;
+      const under = Math.min(depth, hAt(px, pz) + depth - (this.position.y + _r.y));
+      if (under <= 0) continue;
+      _vt.crossVectors(_w, _r).add(this.velocity);
+      const v = _vt.length();
+      if (v < 1e-4) continue;
+      _sf.copy(_vt).multiplyScalar(-SNOW_PLOUGH * s.area * under * (v + 3));
+      fWorld.add(_sf);
+      _tmp.copy(_sf).applyQuaternion(qi);
+      mBody.add(_tmp.crossVectors(s.p, _tmp));
+    }
   }
 
   /** Euler angles for display: { heading, pitch, roll } in radians. */
