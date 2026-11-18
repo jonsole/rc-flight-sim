@@ -827,6 +827,7 @@ function frame(now) {
   if (!paused) world.updateClouds(dt, wind); // (the steady wind: drift aloft)
   world.updateWeather(rig.camera.position, paused ? 0 : dt, windTmp);
   world.updateSnowfall(paused ? 0 : dt, windTmp, rig.camera, renderer.domElement.height);
+  world.updateWater(paused ? 0 : dt, windTmp);
 
   const eye = rig.pilotEye();
   const dist = eye.distanceTo(aircraft.position);

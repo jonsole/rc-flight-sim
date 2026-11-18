@@ -14,6 +14,8 @@
 // Falling snow: src/world/snowfall.js, and the air thickens with it
 // (src/world/volfog.js: fog4.under.w).
 
+import { LAKE_GLSL } from '../sim/lake.js';
+
 const smooth = (a, b, x) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
@@ -138,7 +140,8 @@ export function addSnowCover(material, opts = {}) {
       .replace('#include <common>', `#include <common>
         uniform float uSnow;
         varying vec3 vSnowWorld;
-        ${SNOW_GLSL}`)
+        ${SNOW_GLSL}
+        ${LAKE_GLSL}`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         // (After every change to the normal: the distant trees' pictures
         // set theirs in normal_fragment_maps.)
@@ -170,6 +173,10 @@ export function addSnowCover(material, opts = {}) {
           // (no stair-steps far off), a little soft close up.
           float e = max(0.05, 1.5 * fwidth(n));
           float s = smoothstep(t - e, t + e, n) * onTop * ${strength};
+          #ifdef HAS_LAKE
+          // None on the lake's bed under its water.
+          if (lakeQ(sp) < 1.15) s *= smoothstep(-0.01, 0.03, vSnowWorld.y - LAKE_LEVEL);
+          #endif
           vec3 snowCol = snowColour(sp, n);
           #endif
           diffuseColor.rgb = mix(diffuseColor.rgb, snowCol, s);

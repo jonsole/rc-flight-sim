@@ -14,6 +14,7 @@
 // trees and buildings are the baked LIDAR ones.
 
 import { heightAt } from './terrain.js';
+import { lakeQ, LAKE } from './lake.js';
 import { CROWN_SEEDS, crownShape, lumpScale, crownOf } from './treeShapes.js';
 import { trunkThickness, coniferBase, coniferWidth } from '../world/species.js';
 import { LOCATION, clubAngle, clubToWorld, inMown } from './location.js';
@@ -167,7 +168,11 @@ function makeTrees() {
     const h = 9 + rand() * 12;
     const conifer = rand() < 0.3;
     const rot = rand() * Math.PI * 2;
-    trees.push(dressTree({ x, y, z, h, conifer, rot }, rand));
+    const tree = dressTree({ x, y, z, h, conifer, rot }, rand);
+    // None in the lake or on its banks (src/sim/lake.js). (After drawing its
+    // numbers, so the trees elsewhere stay as they were.)
+    if (LAKE && lakeQ(x, z) < 1.45) continue;
+    trees.push(tree);
   }
   return trees;
 }
@@ -219,6 +224,8 @@ function makeBushes() {
       const size = 0.6 + rand() * 0.9;
       add(x, z, size * 1.4, size * 1.3);
     }
+    // None in the lake or on its banks (src/sim/lake.js).
+    if (LAKE) return out.filter((b) => lakeQ(b.x, b.z) >= 1.4);
   }
   return out;
 }
