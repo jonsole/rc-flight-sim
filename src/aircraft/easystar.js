@@ -194,8 +194,9 @@ export function buildEasyStar(o) {
   const [tz, tle, tte, ty] = L.wing[L.wing.length - 1];
   const [bz, ble, bte, by] = L.wing[5]; // where the tip starts to curve up
   const hard = (name, pos, crashSpeed = 4) => ({ name, pos, type: 'hard', k: 1500, c: 10, crashSpeed });
-  // Elapor skids along on its belly.
-  const belly = (name, x, y) => ({ name, pos: [x, y, 0], type: 'skid', k: 350, c: 5, mu: 0.4, crashSpeed: 3.5 });
+  // Elapor skids along on its belly (the fuselage ~7 cm wide: the track it
+  // leaves in snow).
+  const belly = (name, x, y) => ({ name, pos: [x, y, 0], type: 'skid', k: 350, c: 5, mu: 0.4, crashSpeed: 3.5, trackWidth: 0.07 });
   const P = o.prop;
 
   const def = {

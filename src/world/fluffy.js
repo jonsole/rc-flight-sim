@@ -167,6 +167,11 @@ function palmate(g, len, n, deep, spread) {
 }
 
 let leafTex = null;
+let leafSpecies = null;
+/** The leaf pictures needed (species' leaf names: species.js leafName): set before the first leafy tree. */
+export function setLeafSpecies(names) {
+  if (!leafTex) leafSpecies = new Set(names);
+}
 let leafPx = 192;
 /** Pixels per picture in the leaf atlas (set before the first leafy tree: smaller on phones). */
 export function setLeafDetail(px) {
@@ -185,8 +190,10 @@ export function leafTexture() {
   c.width = T * cols;
   c.height = T * rows;
   const g = c.getContext('2d');
-  const rnd = rng(77);
   LEAF_ROWS.forEach((name, row) => {
+    // Only the species at this site (setLeafSpecies): the rest left blank.
+    if (leafSpecies && !leafSpecies.has(name)) return;
+    const rnd = rng(77 + row * 101); // (each its own: the same whichever are drawn)
     const form = LEAF_FORMS[name];
     LEAF_SIZES.forEach((size, col) => {
       const ox = col * T;
@@ -223,10 +230,24 @@ export function leafTexture() {
         // season's leaf fall passes this; see LEAF_FALL). Blue: its own tint,
         // from a little bluer-green (0) to a little yellower (255).
         g.fillStyle = `rgb(${k},${Math.round(5 + rnd() * 250)},${Math.round(rnd() * 255)})`;
+        // Leaves point roughly outwards from the middle of their sprig.
+        const turn = a + Math.PI / 2 + (rnd() - 0.5) * 1.6;
+        if (len < 3) {
+          // Only a few pixels: a plain lozenge looks the same, far quicker.
+          const ux = -Math.sin(turn) * len;
+          const uy = Math.cos(turn) * len;
+          const w = 0.4;
+          g.beginPath();
+          g.moveTo(x - ux, y - uy);
+          g.lineTo(x - uy * w, y + ux * w);
+          g.lineTo(x + ux, y + uy);
+          g.lineTo(x + uy * w, y - ux * w);
+          g.fill();
+          continue;
+        }
         g.save();
         g.translate(x, y);
-        // Leaves point roughly outwards from the middle of their sprig.
-        g.rotate(a + Math.PI / 2 + (rnd() - 0.5) * 1.6);
+        g.rotate(turn);
         form.draw(g, len);
         g.restore();
       }

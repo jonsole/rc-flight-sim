@@ -26,6 +26,7 @@ export const DEFAULT_SETTINGS = {
   sunGlare: true,
   startSpots: {},        // your own start positions per field (main.js savedStart)
   mist: 'seasonal',      // 'seasonal' (spring and autumn mornings) | 'off' | 'light' | 'thick'  (src/world/mist.js)
+  snow: 'seasonal',      // 'seasonal' (some winter days) | 'off' | 'dusting' | 'lying' | 'light' | 'heavy'  (src/world/snow.js)
   lowCloud: 'seasonal',  // 'seasonal' | 'off' | 'broken' | 'overcast'        // looking into the sun washes the picture out (src/view/glare.js)
   cardsFaceCamera: true, // leafy trees: leaf cards face the camera's position (false: the screen, as before)   // trees and bushes: 'fluffy' (leafy cards, src/world/fluffy.js) | 'classic' (solid)
   scenery: 'built',      // real sites: 'built' (from the site data) | 'google' (photorealistic 3D tiles)
@@ -37,6 +38,9 @@ export const DEFAULT_SETTINGS = {
   timeOfDay: 14,         // hours, local solar time
   dayOfYear: 172,        // time of year (21 Jun): the sun, and the trees and grass
   cloudCover: 0.35,      // 0 clear .. 1 overcast
+  godRays: true,
+  clouds3d: true,         // 3D clouds on High graphics (src/world/volclouds.js)         // sunbeams through gaps in the clouds
+  cloudType: 'auto',     // src/world/clouds.js CLOUD_TYPES, or 'auto' (changing with the season and day)
   useClock: false,       // follow the computer's clock (time and date) instead
   // Misc
   volume: 0.6,

@@ -43,12 +43,18 @@ export function fromJson(o) {
 
 /** An aircraft from its JSON file. */
 export function buildAircraft(json) {
-  const { builder, tuning, model: modelFile, ...opts } = json;
+  const { builder, tuning, model: modelFile, sound, ...opts } = json;
   const build = BUILDERS[builder];
   if (!build) throw new Error(`${json.id}: unknown builder "${builder}"`);
   let entry = build(fromJson(opts));
   // Built-in tuning: becomes the model's defaults (a changed prop is drawn too).
   if (tuning && Object.keys(tuning).length) entry = { ...entry, def: tunedDef(entry.def, tuning) };
+  // Its sound (src/audio/engine.js), if it has its own.
+  // (Measured tones are for the prop it came with: forProp, to tell.)
+  if (sound) {
+    const P = entry.def.motor.prop || {};
+    entry = { ...entry, def: { ...entry.def, sound: { ...fromJson(sound), forProp: `${P.blades || entry.def.motor.blades || 2}${P.tip}` } } };
+  }
   // The 3D model: its file (loadModelFiles), with the propeller drawn in code
   // at the file's prop marker, so a prop changed in Tuning shows.
   const withFile = {
@@ -86,7 +92,7 @@ const loads = new Map(); // aircraft id -> promise of its model file
  * Load one aircraft's model file (once; later calls share it). Resolves
  * true once its model is ready, false if it has none or it failed.
  */
-export function loadModelFile(id) {
+export function loadModelFile(id, onProgress) {
   const a = getAircraft(id);
   if (!loads.has(a.id)) {
     loads.set(a.id, (async () => {
@@ -98,7 +104,8 @@ export function loadModelFile(id) {
       }
       try {
         gltf ||= import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) => new GLTFLoader());
-        a.fileScene = (await (await gltf).loadAsync(url)).scene;
+        a.fileScene = (await (await gltf).loadAsync(url, (e) => e.total && onProgress?.(e.loaded / e.total))).scene;
+        sharpenTextures(a.fileScene);
         for (const f of modelListeners) f(a.id);
         return true;
       } catch (e) {
@@ -108,6 +115,22 @@ export function loadModelFile(id) {
     })());
   }
   return loads.get(a.id);
+}
+
+/**
+ * Anisotropic filtering on a model's textures, so printed markings stay sharp
+ * seen edge-on and from a distance (a wing at a shallow angle smears without
+ * it). three.js caps it to what the GPU allows.
+ */
+function sharpenTextures(scene) {
+  scene.traverse((o) => {
+    if (!o.isMesh) return;
+    for (const m of [o.material].flat()) {
+      for (const k of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap']) {
+        if (m?.[k]) m[k].anisotropy = 8;
+      }
+    }
+  });
 }
 
 const modelListeners = new Set();

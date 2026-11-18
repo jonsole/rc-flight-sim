@@ -222,6 +222,7 @@ body.touch #splash .keys-only { display: none; }
 .tune-group[open] > summary::before { transform: rotate(90deg); }
 .tune-count { margin-left: auto; font-size: 12px; font-weight: normal; color: #ffd38a; background: #3a3220; padding: 1px 8px; border-radius: 10px; }
 .tune-group > .tune-row, .tune-group > .hint { margin: 0 12px; }
+.weather-group > .row { margin: 8px 12px; }
 .tune-row { padding: 8px 0; border-top: 1px solid #2b3238; }
 .tune-head { display: flex; align-items: baseline; gap: 8px; }
 .tune-lbl { flex: 1; }
@@ -237,3 +238,6 @@ body.touch #splash .keys-only { display: none; }
 .tune-note { display: block; color: #8a93a0; margin-top: 4px; text-align: right; }
 .tune-group > .hint { padding-bottom: 10px; }
 .tune-files { margin-top: 10px; gap: 8px; }
+/* Start-up progress (src/ui/loading.js). */
+#splash .load-bar { height: 4px; background: rgba(255,255,255,0.12); border-radius: 2px; overflow: hidden; margin: -4px 0 10px; }
+#splash .load-bar > div { height: 100%; width: 0; background: #e0a030; }

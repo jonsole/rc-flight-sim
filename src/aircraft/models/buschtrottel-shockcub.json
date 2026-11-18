@@ -46,5 +46,8 @@
     "hub": "#2a3f8f"
   },
   "model": "buschtrottel-shockcub.glb",
-  "tuning": {}
+  "tuning": {
+    "downThrust": 2,
+    "rightThrust": 0.3
+  }
 }

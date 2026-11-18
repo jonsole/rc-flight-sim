@@ -1,6 +1,6 @@
 import { WebGLRenderer, ACESFilmicToneMapping, PCFSoftShadowMap, SRGBColorSpace, Vector3 } from 'three';
 import { Aircraft } from './sim/aircraft.js';
-import { physicsGround as ground } from './sim/terrain.js';
+import { physicsGround as ground, setSnowCover } from './sim/terrain.js';
 import { Obstacles, setLeafiness } from './sim/obstacles.js';
 import { seasonFor } from './world/seasons.js';
 import { Wind } from './sim/wind.js';
@@ -11,6 +11,7 @@ import { Input } from './input/input.js';
 import { TouchControls, isTouchDevice } from './input/touch.js';
 import { CameraRig, CAMERA_LABELS } from './view/cameras.js';
 import { Debris } from './view/debris.js';
+import { SnowTracks, snowDepth } from './world/snowTracks.js';
 import { Shadows } from './world/shadows.js';
 import { PlaneShadow } from './view/planeShadow.js';
 import { Peers } from './view/peers.js';
@@ -19,6 +20,7 @@ import { Multiplayer } from './net/multiplayer.js';
 import { DEFAULT_MP_SERVER } from './net/config.js';
 import { Chat } from './ui/chat.js';
 import { clockHours, dayOfYear } from './world/sun.js';
+import { cloudTypeFor } from './world/clouds.js';
 import { OSD } from './ui/osd.js';
 import { Panel } from './ui/panel.js';
 import { loadSettings, saveSettings } from './ui/settings.js';
@@ -28,8 +30,10 @@ import { QUALITY, qualityPreset, viewDistance } from './world/quality.js';
 import { tunedDef, loadTuning } from './sim/tuning.js';
 import { GoogleTiles } from './world/googleTiles.js';
 import { cardUniforms } from './world/fluffy.js';
+import { setStage, nextFrame } from './ui/loading.js';
 import { SunGlare } from './view/glare.js';
 import { weatherFor } from './world/mist.js';
+import { snowFor } from './world/snow.js';
 import { loadEdits } from './sim/edits.js';
 import { Editor } from './editor/editor.js';
 
@@ -92,7 +96,9 @@ renderer.shadowMap.type = PCFSoftShadowMap;
 // Scenery edits for this field (src/sim/edits.js), before anything is built.
 loadEdits(LOCATION.id, LOCATION.layout.edits);
 const obstacles = new Obstacles();
-const world = new World(obstacles, { quality, viewDistance: viewDistance(settings), treeStyle: settings.treeStyle, renderer });
+const world = new World(obstacles, { quality, viewDistance: viewDistance(settings), treeStyle: settings.treeStyle, renderer, defer: true });
+// Built a step at a time, the start screen showing how far it's got.
+await world.build((f) => setStage('Building the scenery…', f), nextFrame);
 const wind = new Wind();
 wind.setTrees(obstacles.trees); // trees shelter the field and stir up the air behind them
 const input = new Input();
@@ -100,7 +106,7 @@ const rig = new CameraRig(settings);
 // Scenery shadows (redrawn only when the sun moves; smaller map on phones),
 // and the aeroplane's own shadow, drawn every frame.
 world.attachShadows(new Shadows(world.sun, { mapSize: quality.shadowMap }));
-const planeShadow = new PlaneShadow(world.scene, ground);
+const planeShadow = new PlaneShadow(world.scene, ground, { project: true }); // (onto trees and buildings too)
 // Looking into the sun washes the picture out (src/view/glare.js).
 const glare = new SunGlare();
 
@@ -175,6 +181,9 @@ let model = null; // 3D model
 
 /** Swap in another aircraft: new flight model, 3D model and camera mounts. */
 const debris = new Debris(world.scene, ground);
+// Tracks in lying snow from the wheels, skids and airframe (src/world/snowTracks.js).
+const snowTracks = new SnowTracks();
+world.scene.add(snowTracks.mesh);
 
 /** (Re)build the 3D model, clearing any parts that broke off. */
 function replaceModel() {
@@ -196,6 +205,7 @@ function replaceModel() {
   navLights = addNavLights(model, { shine: true });
   planeShadow.setModel(model, entry.def.wingSpan);
   world.scene.add(model.root);
+  snowTracks.setModel(model);
 }
 let navLights = null;
 
@@ -254,6 +264,14 @@ function applyTime() {
   world.setSeason(day);
   // Mist and low cloud: as set, or spring and autumn mornings (src/world/mist.js).
   world.setWeather(weatherFor(settings, day, hours));
+  // Snow: as set, or some winter days (src/world/snow.js). Lying snow slows
+  // the wheels (src/sim/terrain.js).
+  const snow = snowFor(settings, day, hours);
+  world.setSnow(snow);
+  setSnowCover(snow.cover);
+  // Snowing: the sky is overcast (grey stratocumulus).
+  world.setClouds(Math.max(Number(settings.cloudCover), snow.falling > 0 ? 0.75 + 0.25 * snow.falling : 0));
+  world.setCloudType(snow.falling > 0 ? 'strato' : settings.cloudType && settings.cloudType !== 'auto' ? settings.cloudType : cloudTypeFor(day, hours));
   // Bare trees and bushes catch less (src/sim/obstacles.js).
   setLeafiness(1 - seasonFor(day).bare);
   renderer.toneMappingExposure = world.exposure;
@@ -267,8 +285,9 @@ function applySettings() {
   wind.speed = settings.windSpeed;
   wind.directionDeg = settings.windDir;
   wind.turbulence = settings.turbulence;
-  applyTime();
-  world.setClouds(Number(settings.cloudCover));
+  applyTime(); // (and the cloud cover)
+  world.setGodRays(settings.godRays === false ? 0 : 1);
+  world.setVolumetricClouds(settings.clouds3d !== false);
   sound.volume = settings.volume;
   osd.showHud = settings.showHud;
   const showTouch = settings.touchControls === 'on' || (settings.touchControls === 'auto' && (TOUCH_DEVICE || touchSeen));
@@ -744,6 +763,10 @@ function frame(now) {
       }
     }
     wind.update(dt);
+    // Snow on the ground: drag where the airframe ploughs into it (the same
+    // points on the model as its tracks: src/world/snowTracks.js).
+    if (aircraft.snowSamples !== snowTracks.samples) aircraft.setSnowPoints(snowTracks.samples);
+    aircraft.snowDepth = snowDepth(world.snow.cover);
     const wasHeld = aircraft.held;
     aircraft.update(dt);
     // Thrown: if you'd walked or turned first, start from there next time.
@@ -756,8 +779,10 @@ function frame(now) {
     while (aircraft.breakEvents.length) {
       const ev = aircraft.breakEvents.shift();
       debris.spawn(model.parts?.[ev.part], aircraft, ev.speed);
+      snowTracks.setModel(model); // (without the part that came off)
     }
     debris.update(dt);
+    snowTracks.update(aircraft, dt, world.snow, debris.items);
     osd.update(dt, aircraft);
   }
   // Following the clock: move the sun along every 20 s.
@@ -799,8 +824,9 @@ function frame(now) {
   world.updateLod(rig.camera.position); // leafy crowns near the camera (src/world/lod.js)
   planeShadow.update(renderer, aircraft.position, world.lightDir, shadowDark);
   world.updateWindsock(wind.at(windsockPos, 0, windTmp), dt, now / 1000);
-  if (!paused) world.updateClouds(dt, windTmp);
+  if (!paused) world.updateClouds(dt, wind); // (the steady wind: drift aloft)
   world.updateWeather(rig.camera.position, paused ? 0 : dt, windTmp);
+  world.updateSnowfall(paused ? 0 : dt, windTmp, rig.camera, renderer.domElement.height);
 
   const eye = rig.pilotEye();
   const dist = eye.distanceTo(aircraft.position);
@@ -817,6 +843,7 @@ function frame(now) {
     }
   }
   glare.update(rig.camera, world, obstacles, dt, settings.sunGlare !== false && !editor?.active);
+  world.renderClouds(renderer, rig.camera); // (3D clouds, High graphics)
   renderer.render(world.scene, rig.camera);
   if (editor.active) osd.clear();
   else osd.draw(rig.mode, aircraft, {
@@ -831,7 +858,7 @@ function frame(now) {
     vfov: rig.camera.fov,
     tilt: (settings.fpvTilt * Math.PI) / 180,
   });
-  sound.update(aircraft, dist, fpv);
+  sound.update(aircraft, dist, fpv, eye);
 }
 requestAnimationFrame(frame);
 
