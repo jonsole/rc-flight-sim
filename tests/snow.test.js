@@ -78,6 +78,34 @@ describe('tracks in the snow', async () => {
     expect(t.used).toBe(0);
   });
 
+  it('a belly leaves a track as wide as the fuselage; a hard touchdown a dent', () => {
+    const t = new SnowTracks();
+    const a = plane();
+    a.contacts = [{ type: 'skid', trackWidth: 0.07, pos: new Vector3(0, -0.1, 0), onGround: true, load: 40 }];
+    roll(t, a, { cover: 1, falling: 0 }, 1);
+    // First piece: the dent (touching down at 4x the weight), then the groove.
+    const P = t.pos.array;
+    const width = Math.hypot(P[12 + 0] - P[12 + 3], P[12 + 2] - P[12 + 5]);
+    expect(width).toBeCloseTo(0.07, 3);
+    const T = t.track.array;
+    expect(T[1]).toBe(-1); // the dent's 'along' (a track's is 0)
+    expect(T[16 + 1]).toBe(0);
+  });
+
+  it('wreckage leaves grooves where it slides, and dents where it lands', () => {
+    const t = new SnowTracks();
+    const piece = { touch: null, thud: { x: 1, z: 1 }, markHalf: 0.05 };
+    const snow = { cover: 1, falling: 0 };
+    t.update(null, 1 / 60, snow, [piece]);
+    expect(t.used).toBe(1);
+    expect(piece.thud).toBe(null);
+    for (let i = 0; i < 20; i++) {
+      piece.touch = { x: 1 + i * 0.1, z: 1 };
+      t.update(null, 1 / 60, snow, [piece]);
+    }
+    expect(t.used).toBeGreaterThan(15);
+  });
+
   it('the snow going clears them', () => {
     const t = new SnowTracks();
     const a = plane();

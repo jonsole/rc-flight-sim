@@ -294,14 +294,14 @@ export function buildF22(style) {
     // Thrown from shoulder height once the motor is up to speed.
     handLaunch: { height: 1.5, speed: 7.5, pitch: 12 * deg, throttle: 0.6 },
     contacts: [
-      // Belly-landed on the belly pan and the side plates.
-      { name: 'belly-front', pos: [U.plate[0][0] - 0.02, bottomY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
-      { name: 'belly-rear', pos: [U.plate[2][0] + 0.01, bottomY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
+      // Belly-landed on the belly pan and the side plates (a ~6 cm track in snow).
+      { name: 'belly-front', pos: [U.plate[0][0] - 0.02, bottomY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5, trackWidth: 0.06 },
+      { name: 'belly-rear', pos: [U.plate[2][0] + 0.01, bottomY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5, trackWidth: 0.06 },
       // The pusher prop hangs below the wing in its slot.
       { name: 'prop-low', pos: [propX, propY - radius, 0], type: 'prop', k: 600, c: 5, crashSpeed: 0 },
       hard('nose', [O.nose - 0.002, under + O.fuselage.stations[0][1], 0], 3),
-      { name: 'chin', pos: [O.fuselage.stations[20][0], keelY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
-      { name: 'keel-rear', pos: [O.fuselage.stations[22][0] + 0.005, keelY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
+      { name: 'chin', pos: [O.fuselage.stations[20][0], keelY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5, trackWidth: 0.035 },
+      { name: 'keel-rear', pos: [O.fuselage.stations[22][0] + 0.005, keelY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5, trackWidth: 0.035 },
       hard('wing-tip-L', [tip[0] - 0.02, wingY, -tip[1]]),
       hard('wing-tip-R', [tip[0] - 0.02, wingY, tip[1]]),
       // Trailing corner of each tip too.
