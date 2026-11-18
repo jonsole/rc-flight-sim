@@ -11,7 +11,7 @@ import { Input } from './input/input.js';
 import { TouchControls, isTouchDevice } from './input/touch.js';
 import { CameraRig, CAMERA_LABELS } from './view/cameras.js';
 import { Debris } from './view/debris.js';
-import { SnowTracks } from './world/snowTracks.js';
+import { SnowTracks, snowDepth } from './world/snowTracks.js';
 import { Shadows } from './world/shadows.js';
 import { PlaneShadow } from './view/planeShadow.js';
 import { Peers } from './view/peers.js';
@@ -758,6 +758,10 @@ function frame(now) {
       }
     }
     wind.update(dt);
+    // Snow on the ground: drag where the airframe ploughs into it (the same
+    // points on the model as its tracks: src/world/snowTracks.js).
+    if (aircraft.snowSamples !== snowTracks.samples) aircraft.setSnowPoints(snowTracks.samples);
+    aircraft.snowDepth = snowDepth(world.snow.cover);
     const wasHeld = aircraft.held;
     aircraft.update(dt);
     // Thrown: if you'd walked or turned first, start from there next time.
