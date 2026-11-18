@@ -199,9 +199,12 @@ export function setSnowCover(cover) {
   }
   snowySurfaces = new Map(Object.values(SURFACES).map((s) => [s, {
     name: `${s.name} under snow`,
-    roll: s.roll + 0.2 * cover,
-    stiction: s.stiction,
-    drag: s.drag * (1 - 0.45 * cover),
+    // (Not so much more that a parked taildragger can't break away without
+    // tipping onto its nose: snow lets go once it's moving.)
+    roll: s.roll + 0.1 * cover,
+    stiction: s.stiction * (1 - 0.5 * cover),
+    // Foam sliding on snow: about half the friction it has on grass.
+    drag: s.drag * (1 - 0.55 * cover),
     bump: s.bump * (1 - 0.5 * cover),
   }]));
 }

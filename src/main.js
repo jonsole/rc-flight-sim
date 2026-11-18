@@ -11,6 +11,7 @@ import { Input } from './input/input.js';
 import { TouchControls, isTouchDevice } from './input/touch.js';
 import { CameraRig, CAMERA_LABELS } from './view/cameras.js';
 import { Debris } from './view/debris.js';
+import { SnowTracks } from './world/snowTracks.js';
 import { Shadows } from './world/shadows.js';
 import { PlaneShadow } from './view/planeShadow.js';
 import { Peers } from './view/peers.js';
@@ -179,6 +180,9 @@ let model = null; // 3D model
 
 /** Swap in another aircraft: new flight model, 3D model and camera mounts. */
 const debris = new Debris(world.scene, ground);
+// Tracks in lying snow from the wheels, skids and airframe (src/world/snowTracks.js).
+const snowTracks = new SnowTracks();
+world.scene.add(snowTracks.mesh);
 
 /** (Re)build the 3D model, clearing any parts that broke off. */
 function replaceModel() {
@@ -771,6 +775,7 @@ function frame(now) {
       debris.spawn(model.parts?.[ev.part], aircraft, ev.speed);
     }
     debris.update(dt);
+    snowTracks.update(aircraft, dt, world.snow, debris.items);
     osd.update(dt, aircraft);
   }
   // Following the clock: move the sun along every 20 s.
