@@ -37,6 +37,7 @@ import { weatherFor } from './world/mist.js';
 import { snowFor, snowLineFor, snowAtHeight } from './world/snow.js';
 import { loadEdits } from './sim/edits.js';
 import { Editor } from './editor/editor.js';
+import { Challenges, MODES } from './game/challenges.js';
 
 // The version running: the GitHub commit it was built from, and its date.
 {
@@ -154,6 +155,7 @@ const editor = new Editor({
   onRebuilt: () => {
     wind.setTrees(obstacles.trees);
     windsockPos.set(obstacles.windsock?.x ?? 0, obstacles.windsock?.height ?? 5, obstacles.windsock?.z ?? 0);
+    challenges.relayout();
   },
   setGoogle: googleAvailable() ? (on) => showGoogle(on) : null,
   setGoogleOpacity: (v) => googleTiles?.setOpacity(v),
@@ -236,6 +238,23 @@ function retune() {
 loadAircraft(settings.aircraft);
 const osd = new OSD(document.getElementById('osd'));
 const sound = new EngineSound();
+// Challenges: hoops, balloons, limbo, pylon race, streamer cutting (src/game/).
+const challenges = new Challenges({
+  scene: world.scene,
+  obstacles,
+  ground,
+  wind,
+  sound,
+  root: document.getElementById('challenge'),
+  marker: document.getElementById('challenge-mark'),
+  // The streamer planes: the loaded models, yours last.
+  aircraftTypes: () => {
+    const loaded = AIRCRAFT.filter((a) => a.fileScene && a.id !== entry.id);
+    return loaded.length ? loaded : [entry];
+  },
+  makeProxy: (e) => new Aircraft(e.def, { ground }),
+  aircraftName: () => entry.name,
+});
 const analog = document.getElementById('analog');
 {
   // Static noise tile for the analog-video effect.
@@ -435,6 +454,7 @@ function resetAircraft() {
     aircraft.resetOnGround(gx, gz, heading);
   }
   osd.reset();
+  challenges.restart();
   rig.chaseInit = false;
   rig.losInit = false;
 }
@@ -455,6 +475,7 @@ function selectAircraft(id) {
 
 // --- Multiplayer -------------------------------------------------------------
 const mp = new Multiplayer();
+mp.extra = () => challenges.netState();
 let launchFrom = null; // where this hand launch started (to see if you moved)
 let mpGraceUntil = 0; // no collisions just after a reset
 const peers = new Peers(world.scene, ground);
@@ -493,6 +514,10 @@ function mpConnect() {
 mp.onEvent = (type, p, m) => {
   if (type === 'chat') {
     chat.add(p.name, m.text);
+    return;
+  }
+  if (type === 'cut') {
+    challenges.onCut(p.name, m.side, m.count);
     return;
   }
   if (type === 'hit' && !aircraft.crashed && !paused) {
@@ -577,8 +602,13 @@ const panel = new Panel(document.getElementById('panel'), {
     }
     if (key === 'scenery' || key === 'googleKey') applyScenery();
     if (key === 'startMode') resetAircraft();
+    if (key === 'challenge') {
+      challenges.setMode(value, false);
+      resetAircraft();
+    }
   },
   onReset: resetAircraft,
+  challenges: () => challenges,
   onEditScenery: () => openEditor(),
   onStartHere: () => startHere(),
   onDefaultStart: () => defaultStart(),
@@ -680,6 +710,15 @@ splashField.addEventListener('change', (e) => changeField(e.target.value));
 const splashGraphics = document.getElementById('splash-graphics');
 for (const [k, q] of Object.entries(QUALITY)) splashGraphics.append(new Option(q.name, k));
 splashGraphics.value = settings.graphics;
+const splashChallenge = document.getElementById('splash-challenge');
+for (const [k, m] of Object.entries(MODES)) splashChallenge.append(new Option(m.title, k));
+splashChallenge.value = MODES[settings.challenge] ? settings.challenge : 'none';
+splashChallenge.addEventListener('change', (e) => {
+  settings.challenge = e.target.value;
+  saveSettings(settings);
+  challenges.setMode(settings.challenge, false);
+  resetAircraft();
+});
 splashGraphics.addEventListener('change', (e) => {
   settings.graphics = e.target.value;
   reloadKeepingRoom();
@@ -742,6 +781,7 @@ resize();
 
 applySettings();
 rig.setMode(settings.cameraMode);
+challenges.setMode(settings.challenge, false);
 resetAircraft();
 paused = true; // until the splash is dismissed
 
@@ -842,6 +882,7 @@ function frame(now) {
     aircraft.velocity.lerp(hit.velocity, 0.5);
     mp.sendHit(hit.peer.id, hit.theirPart, hit.relSpeed);
   }
+  challenges.update(dt, { aircraft, entry, camera: rig.camera, paused: paused || editor.active, peers, mp });
   world.updateShadows();
   world.updateTrees(now / 1000, wind.speed + wind.gust.length() * 0.5, wind.directionDeg);
   world.updateLod(rig.camera.position); // leafy crowns near the camera (src/world/lod.js)
@@ -878,6 +919,7 @@ function frame(now) {
     touch: touch.visible,
     cameraLabel: CAMERA_LABELS[rig.mode],
     assist: { off: 'MANUAL', as3x: 'AS3X', safe: 'SAFE' }[settings.assist],
+    challenge: challenges.active,
     assistFlash: (assistFlash = Math.max(0, assistFlash - dt)) > 0,
     vfov: rig.camera.fov,
     tilt: (settings.fpvTilt * Math.PI) / 180,
@@ -900,6 +942,7 @@ window.sim = {
   mp,
   input,
   settings,
+  challenges,
   selectAircraft,
   /** Debug: set the time of day (hours). */
   setTime(h) {
