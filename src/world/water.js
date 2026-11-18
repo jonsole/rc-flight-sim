@@ -22,7 +22,7 @@ const BED_STEP = 1.25; // m between the bed mesh's points
  * water one pixel covers (m): anything smaller than a few pixels is left
  * out (it would only alias into stripes).
  *
- * Two dozen waves spread round the wind's direction (each its own length,
+ * Two dozen waves running with the wind, within ~20° of it (each its own length,
  * angle and phase, at the speed real waves of that length run), each coming
  * and going in its own patches (groups of a few crests, not endless lines),
  * their crests gently bent; stronger in gusty patches carried slowly across
@@ -41,8 +41,9 @@ function rippleGlsl() {
   for (let i = 0; i < N; i++) {
     // Lengths spread (log) from 3 m down to 12 cm, unevenly.
     const len = 3 * Math.pow(0.12 / 3, Math.min(1, (i + rnd() * 1.6) / N));
-    // Mostly with the wind (a bell round it), a quarter well across it.
-    const spread = rnd() < 0.25 ? (rnd() - 0.5) * 3.2 : (rnd() + rnd() + rnd() - 1.5) * 1.1;
+    // With the wind: wind ripples run within ~20° of it (a bell round
+    // it, ~17° typical, none past ~35°). (Waves across it looked wrong.)
+    const spread = (rnd() + rnd() + rnd() - 1.5) * 0.4;
     const k = (2 * Math.PI) / len;
     // Speed: gravity waves, with surface tension for the shortest, at
     // 40% (the eye follows groups of ripples, which run at about half the
