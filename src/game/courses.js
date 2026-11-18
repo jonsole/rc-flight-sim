@@ -15,7 +15,7 @@
 import {
   Group, Mesh, MeshStandardMaterial, MeshBasicMaterial, TorusGeometry, SphereGeometry, CylinderGeometry,
   ConeGeometry, BoxGeometry, PlaneGeometry, Vector3, Quaternion, Matrix4, BufferGeometry, Line, LineBasicMaterial,
-  BufferAttribute, DoubleSide,
+  BufferAttribute, DoubleSide, TubeGeometry, CatmullRomCurve3, Shape, ShapeGeometry,
 } from 'three';
 import { throughHoop, crossPlane, crossSegment2D, toBody, segmentTouches, ballTouches } from './geom.js';
 import { arenaToWorld, blocked } from './arena.js';
@@ -557,7 +557,7 @@ export class Limbo {
 export class Pylons {
   static id = 'pylons';
   static title = 'Pylon race';
-  static about = 'Three laps round the inflatable pylons, on the outside of each: cross the start line either way (that sets which way round you race), then round the lit pylon each time. Cutting inside one means going back round it. Don\'t touch them!';
+  static about = 'Three laps round the inflatable pylons, on the outside of each: cross the start line either way (that sets which way round you race), then round the lit pylon each time, the way its yellow arrows point. Cutting inside one means going back round it. Don\'t touch them!';
 
   constructor(env, laps = 3) {
     this.env = env;
@@ -597,15 +597,17 @@ export class Pylons {
       g.add(top);
       const lamp = new Mesh(new SphereGeometry(0.3, 12, 8), new MeshStandardMaterial({ color: '#ffe060', emissive: '#ffd000', emissiveIntensity: 0 }));
       lamp.position.y = this.h + this.rad * 0.65 + 0.2;
+      lamp.scale.setScalar(0.8);
       g.add(lamp);
       g.position.copy(base);
       this.group.add(g);
-      return { base, dir, lamp, n: k + 1 };
+      return { base, dir, lamp, g, arrows: null };
     });
     // The start line: across the near leg, in the middle, a white line on
     // the grass between two flags, from well in front of the pilot out to
     // the middle of the course. Crossed either way, at any height.
-    this.lineA = at(env, 0, -0.35 * R - 35, 0);
+    // (Its near end at least 15 m in front of the pilot, who stands at v = -d.)
+    this.lineA = at(env, 0, Math.max(-0.35 * R - 35, -(env.arena.d ?? 1e9) + 15), 0);
     this.lineB = at(env, 0, 0, 0);
     this.lineDir = new Vector3(env.arena.across[0], 0, env.arena.across[1]); // left to right, seen by the pilot
     const len = this.lineA.distanceTo(this.lineB);
@@ -624,7 +626,92 @@ export class Pylons {
       pole.add(flag);
       this.group.add(pole);
     }
+    this.#arrows();
     this.#light();
+  }
+
+  /**
+   * Arrows on each pylon showing the way round it, on the outside: a
+   * curved 3D arrow wrapped round the outside (readable from any side and
+   * from the cockpit) and a sign on top (black, with a big yellow arrow)
+   * turned to face out of the course. Redrawn when the race's direction
+   * is set at the start.
+   */
+  #arrows() {
+    const yellow = new MeshStandardMaterial({ color: '#ffd400', emissive: '#806a00', emissiveIntensity: 0.6, roughness: 0.5 });
+    const black = new MeshStandardMaterial({ color: '#141414', roughness: 0.8, side: DoubleSide });
+    const n = this.pylons.length;
+    this.order.forEach((idx, k) => {
+      const p = this.pylons[idx];
+      if (p.arrows) {
+        p.g.remove(p.arrows);
+        p.arrows.traverse((o) => o.geometry?.dispose());
+      }
+      const prev = this.pylons[this.order[(k + n - 1) % n]];
+      const next = this.pylons[this.order[(k + 1) % n]];
+      // The way you're going as you pass it: from the last pylon towards the next.
+      const t = new Vector3().subVectors(next.base, prev.base).setY(0).normalize();
+      const d = p.dir; // out of the course
+      const side = t.clone().addScaledVector(d, -t.dot(d)).normalize(); // along the outside, the way you go
+      p.way = side;
+      const up = new Vector3(0, 1, 0);
+      const a = new Group();
+      // Curved arrow round the outside, about two thirds up.
+      const R = 2.1;
+      const y = this.h * 0.62;
+      const arc = (phi) => new Vector3().addScaledVector(d, Math.cos(phi) * R).addScaledVector(side, Math.sin(phi) * R).setY(y);
+      const pts = [];
+      const end = (95 * Math.PI) / 180;
+      for (let i = 0; i <= 16; i++) pts.push(arc(-end + (i / 16) * 2 * end));
+      const tube = new Mesh(new TubeGeometry(new CatmullRomCurve3(pts), 32, 0.2, 8, false), yellow);
+      tube.castShadow = true;
+      a.add(tube);
+      const tip = arc(end);
+      const tdir = new Vector3().addScaledVector(d, -Math.sin(end)).addScaledVector(side, Math.cos(end)).normalize();
+      const head = new Mesh(new ConeGeometry(0.55, 1.2, 14), yellow);
+      head.position.copy(tip).addScaledVector(tdir, 0.5);
+      head.quaternion.setFromUnitVectors(up, tdir);
+      a.add(head);
+      // A short spoke holding it to the pylon (it's a sign, not to be hit).
+      const spoke = new Mesh(new CylinderGeometry(0.06, 0.06, R, 6), black);
+      spoke.position.copy(d).multiplyScalar(R / 2).setY(y);
+      spoke.quaternion.setFromUnitVectors(up, d);
+      a.add(spoke);
+      // The sign on top: black board, yellow arrow both sides, facing out.
+      const sign = new Group();
+      const W = 3;
+      const H = 1.3;
+      sign.add(new Mesh(new PlaneGeometry(W, H), black));
+      const shape = new Shape();
+      const sh = H * 0.3; // shaft half-height
+      const hh = H * 0.42; // head half-height
+      const hx = W * 0.12; // where the head starts
+      shape.moveTo(-W * 0.42, -sh);
+      shape.lineTo(hx, -sh);
+      shape.lineTo(hx, -hh);
+      shape.lineTo(W * 0.44, 0);
+      shape.lineTo(hx, hh);
+      shape.lineTo(hx, sh);
+      shape.lineTo(-W * 0.42, sh);
+      shape.closePath();
+      const arrowGeo = new ShapeGeometry(shape);
+      for (const z of [0.02, -0.02]) {
+        const m = new Mesh(arrowGeo, yellow);
+        m.position.z = z;
+        if (z < 0) m.rotation.y = Math.PI; // (the back: flipped so it still points the same way)
+        if (z < 0) m.scale.x = -1;
+        sign.add(m);
+      }
+      // Board's x along the way to go, its face out of the course.
+      const zAxis = new Vector3().crossVectors(side, up);
+      sign.quaternion.setFromRotationMatrix(new Matrix4().makeBasis(side, up, zAxis));
+      sign.position.set(0, this.h + this.rad * 0.65 + 0.45 + H / 2 + 0.2, 0);
+      const post = new Mesh(new CylinderGeometry(0.05, 0.05, 0.9, 6), black);
+      post.position.set(0, this.h + this.rad * 0.65 + 0.45, 0);
+      a.add(sign, post);
+      p.g.add(a);
+      p.arrows = a;
+    });
   }
 
   /** The pylon to round next (null: the line). */
@@ -669,6 +756,7 @@ export class Pylons {
           this.sign = way;
           // Left to right: the right pylon first, then the far one, then the left.
           this.order = way > 0 ? [0, 1, 2] : [2, 1, 0];
+          if (way < 0) this.#arrows();
           ctx.say('Go! Round the lit pylon');
           ctx.sfx('ding');
         } else {

@@ -227,6 +227,27 @@ describe('challenge courses', () => {
     expect(pr.state).toBe('done');
   });
 
+  it('pylon race: the arrows on the pylons point the way round, either way', () => {
+    for (const way of [1, -1]) {
+      const pr = new Pylons(env());
+      const pts = raceLaps(way);
+      fly(pr, pts.slice(0, 20), { stepLen: 1 }); // over the line: the direction's set
+      for (const p of pr.pylons) {
+        // Where the race path passes the pylon on the outside, which way is it going?
+        let best = 0;
+        for (let i = 1; i < pts.length; i++) if (pts[i].distanceTo(p.base) < pts[best].distanceTo(p.base)) best = i;
+        const go = pts[best + 1].clone().sub(pts[best - 1]).setY(0).normalize();
+        expect(go.dot(p.way)).toBeGreaterThan(0.5);
+      }
+    }
+  });
+
+  it('pylon race: the start line keeps clear of the pilot', () => {
+    const pr = new Pylons(env());
+    const [px, pz] = [arena.x - arena.away[0] * arena.d, arena.z - arena.away[1] * arena.d];
+    expect(Math.hypot(pr.lineA.x - px, pr.lineA.z - pz)).toBeGreaterThan(14);
+  });
+
   it('pylon race: the line crossed the wrong way after the start says so', () => {
     const pr = new Pylons(env());
     const R = arena.r;
