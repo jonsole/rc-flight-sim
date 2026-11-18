@@ -191,27 +191,55 @@ describe('challenge courses', () => {
     expect(ac.crashed).toMatch(/pole/);
   });
 
-  it('pylon race: three laps round the outside', () => {
-    const pr = new Pylons(env());
+  /** An oval outside all three pylons, three times round from just before the line, then over it once more. */
+  function raceLaps(way) {
     const R = arena.r;
-    // An oval outside all three pylons, anticlockwise from the start line.
     const pts = [];
     for (let lap = 0; lap < 3; lap++) {
       for (let k = 0; k <= 120; k++) {
-        const th = -Math.PI / 2 - 0.3 + (k / 120) * Math.PI * 2;
+        const th = -Math.PI / 2 - way * 0.3 + way * (k / 120) * Math.PI * 2;
         const u = Math.cos(th) * 1.2 * R;
         const v = Math.sin(th) * (Math.sin(th) < 0 ? 0.5 : 0.95) * R;
         const [x, z] = arenaToWorld(arena, u, v);
         pts.push(new Vector3(x, ground.heightAt(x, z) + 12, z));
       }
     }
-    // Then over the line once more.
-    const [x, z] = arenaToWorld(arena, 10, -0.5 * R);
+    const [x, z] = arenaToWorld(arena, way * 10, -0.5 * R);
     pts.push(new Vector3(x, ground.heightAt(x, z) + 12, z));
-    const { ac } = fly(pr, pts, { stepLen: 1 });
+    return pts;
+  }
+
+  it('pylon race: three laps round the outside, left to right', () => {
+    const pr = new Pylons(env());
+    const { ac } = fly(pr, raceLaps(1), { stepLen: 1 });
     expect(ac.crashed).toBe(false);
     expect(pr.cuts).toBe(0);
     expect(pr.state).toBe('done');
+  });
+
+  it('pylon race: crossing the line right to left races the other way round', () => {
+    const pr = new Pylons(env());
+    const { ac, said } = fly(pr, raceLaps(-1), { stepLen: 1 });
+    expect(ac.crashed).toBe(false);
+    expect(pr.order).toEqual([2, 1, 0]);
+    expect(pr.cuts).toBe(0);
+    expect(said.join()).not.toMatch(/Wrong way/);
+    expect(pr.state).toBe('done');
+  });
+
+  it('pylon race: the line crossed the wrong way after the start says so', () => {
+    const pr = new Pylons(env());
+    const R = arena.r;
+    const P = (u, v) => {
+      const [x, z] = arenaToWorld(arena, u, v);
+      return new Vector3(x, ground.heightAt(x, z) + 12, z);
+    };
+    // Started left to right, round all three, then back over the line right to left.
+    const pts = raceLaps(1).slice(0, 118);
+    // (round the far end of the line, through the middle, to come at it from the right)
+    const { said } = fly(pr, [...pts, P(-0.6 * R, -0.5 * R), P(-0.3 * R, 0.3 * R), P(0.3 * R, 0.3 * R), P(10, -0.5 * R), P(-10, -0.5 * R)], { stepLen: 1 });
+    expect(pr.lap).toBe(0);
+    expect(said.join()).toMatch(/Wrong way/);
   });
 
   it('pylon race: cutting inside a pylon does not count it', () => {

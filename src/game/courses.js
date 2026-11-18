@@ -557,7 +557,7 @@ export class Limbo {
 export class Pylons {
   static id = 'pylons';
   static title = 'Pylon race';
-  static about = 'Three laps round the inflatable pylons, on the outside of each, in order: cross the start line (left to right in front of you), then round the lit pylon each time. Cutting inside one means going back round it. Don\'t touch them!';
+  static about = 'Three laps round the inflatable pylons, on the outside of each: cross the start line either way (that sets which way round you race), then round the lit pylon each time. Cutting inside one means going back round it. Don\'t touch them!';
 
   constructor(env, laps = 3) {
     this.env = env;
@@ -565,7 +565,9 @@ export class Pylons {
     this.state = 'ready';
     this.laps = laps;
     this.lap = 0;
-    this.next = -1; // -1: the start line; 0..2 the pylons
+    this.next = -1; // -1: the start line; 0..2 the pylons in racing order
+    this.order = [0, 1, 2]; // which pylons, in the order raced (set at the start)
+    this.sign = 0; // +1 crossed the line left to right, -1 right to left
     this.cuts = 0;
     const R = env.arena.r;
     this.h = 7;
@@ -601,10 +603,11 @@ export class Pylons {
       return { base, dir, lamp, n: k + 1 };
     });
     // The start line: across the near leg, in the middle, a white line on
-    // the grass between two flags.
-    this.lineA = at(env, 0, -0.35 * R - 22, 0);
-    this.lineB = at(env, 0, -0.35 * R + 22, 0);
-    this.lineDir = new Vector3(env.arena.across[0], 0, env.arena.across[1]); // must cross it this way
+    // the grass between two flags, from well in front of the pilot out to
+    // the middle of the course. Crossed either way, at any height.
+    this.lineA = at(env, 0, -0.35 * R - 35, 0);
+    this.lineB = at(env, 0, 0, 0);
+    this.lineDir = new Vector3(env.arena.across[0], 0, env.arena.across[1]); // left to right, seen by the pilot
     const len = this.lineA.distanceTo(this.lineB);
     const stripe = new Mesh(new PlaneGeometry(len, 0.5), new MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.85, depthWrite: false }));
     stripe.position.lerpVectors(this.lineA, this.lineB, 0.5);
@@ -624,12 +627,21 @@ export class Pylons {
     this.#light();
   }
 
+  /** The pylon to round next (null: the line). */
+  get nextPylon() {
+    return this.next < 0 ? null : this.pylons[this.order[this.next]];
+  }
+
   #light() {
-    this.pylons.forEach((p, k) => (p.lamp.material.emissiveIntensity = k === this.next ? 2 : 0));
+    const lit = this.nextPylon;
+    this.pylons.forEach((p) => {
+      p.lamp.material.emissiveIntensity = p === lit ? 2 : 0;
+      p.lamp.visible = true;
+    });
   }
 
   update(ctx) {
-    const lit = this.pylons[this.next];
+    const lit = this.nextPylon;
     if (lit) lit.lamp.visible = Math.sin(ctx.time * 8) > -0.3;
     if (this.state === 'done' || ctx.ac.crashed) return;
     const p0 = ctx.prev;
@@ -642,11 +654,21 @@ export class Pylons {
       }
     }
     if (this.next === -1) {
-      // Over the start line, left to right.
+      // Over the start line: the first crossing, either way, sets the
+      // way round; after that it must be the same way.
       const x = crossSegment2D(p0.x, p0.z, p1.x, p1.z, this.lineA.x, this.lineA.z, this.lineB.x, this.lineB.z);
-      if (x && _a.copy(p1).sub(p0).dot(this.lineDir) > 0) {
+      const way = Math.sign(_a.copy(p1).sub(p0).dot(this.lineDir));
+      if (x && way && this.state !== 'ready' && way !== this.sign) {
+        ctx.say('Wrong way over the line: round the last pylon and back');
+        ctx.sfx('fail');
+        return;
+      }
+      if (x && way) {
         if (this.state === 'ready') {
           this.state = 'running';
+          this.sign = way;
+          // Left to right: the right pylon first, then the far one, then the left.
+          this.order = way > 0 ? [0, 1, 2] : [2, 1, 0];
           ctx.say('Go! Round the lit pylon');
           ctx.sfx('ding');
         } else {
@@ -665,25 +687,26 @@ export class Pylons {
       }
       return;
     }
-    const p = this.pylons[this.next];
+    const p = this.nextPylon;
+    const n = this.next + 1;
     const far = _c.copy(p.base).addScaledVector(p.dir, 200);
     if (crossSegment2D(p0.x, p0.z, p1.x, p1.z, p.base.x, p.base.z, far.x, far.z)) {
       this.next = this.next + 1 >= this.pylons.length ? -1 : this.next + 1;
       ctx.sfx('tick');
-      ctx.say(this.next === -1 ? 'Now over the line' : `Pylon ${p.n} round: on to ${this.next + 1}`);
+      ctx.say(this.next === -1 ? 'Now over the line' : `Pylon ${n} round: on to ${this.next + 1}`);
       this.#light();
       return;
     }
     const centre = at(this.env, 0, 0, 0);
     if (crossSegment2D(p0.x, p0.z, p1.x, p1.z, p.base.x, p.base.z, centre.x, centre.z)) {
       this.cuts++;
-      ctx.say(`Cut pylon ${p.n}! Go back round it`);
+      ctx.say(`Cut pylon ${n}! Go back round it`);
       ctx.sfx('fail');
     }
   }
 
   status() {
-    if (this.state === 'ready') return { line: 'Cross the start line left to right' };
+    if (this.state === 'ready') return { line: 'Cross the start line (either way) to start' };
     if (this.state === 'done') return { line: `${this.laps} laps` };
     return { line: `Lap ${this.lap + 1} of ${this.laps} · ${this.next === -1 ? 'to the line' : `pylon ${this.next + 1}`}` };
   }
@@ -691,7 +714,7 @@ export class Pylons {
   target() {
     if (this.state === 'done') return null;
     if (this.next === -1) return _c.lerpVectors(this.lineA, this.lineB, 0.5).setY(this.lineA.y + 3);
-    const p = this.pylons[this.next];
+    const p = this.nextPylon;
     return _c.copy(p.base).setY(p.base.y + this.h);
   }
 
