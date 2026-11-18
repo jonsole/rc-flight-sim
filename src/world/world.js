@@ -756,7 +756,23 @@ export class World {
     if (!this.lake) return;
     const u = waterUniforms;
     u.uWaterTime.value = (u.uWaterTime.value + dt) % 10000;
-    u.uWaterWind.value.set(wind.x, wind.z);
+    // The wind the water feels: the windsock's, with its gusts and swings
+    // smoothed out over ~15 s (waves build and turn slowly; following every
+    // gust, the ripples flicked back and forth).
+    const ww = u.uWaterWind.value;
+    if (!this.waterWindSet) {
+      ww.set(wind.x, wind.z);
+      this.waterWindSet = true;
+    } else {
+      const k = 1 - Math.exp(-dt / 15);
+      ww.x += (wind.x - ww.x) * k;
+      ww.y += (wind.z - ww.y) * k;
+    }
+    // The surface drifts downwind at ~3% of the wind's speed (wind drift:
+    // 2.5-4%), added up as it goes (kept small for the GPU's precision).
+    const drift = u.uWaterDrift.value;
+    drift.x = (drift.x + ww.x * 0.03 * dt) % 2800;
+    drift.y = (drift.y + ww.y * 0.03 * dt) % 2800;
     // The sky: the haze colour low down, the sky light's colour overhead.
     u.uSkyHorizon.value.copy(this.scene.fog.color);
     u.uSkyZenith.value.copy(this.hemi.color).multiplyScalar(0.55 * this.hemi.intensity).lerp(this.scene.fog.color, 0.25);
