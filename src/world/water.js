@@ -42,8 +42,10 @@ function rippleGlsl() {
     // Mostly with the wind, some well across it.
     const spread = (rnd() - 0.5) * (rnd() < 0.3 ? 2.6 : 1.2);
     const k = (2 * Math.PI) / len;
-    // Speed: gravity waves, with surface tension for the shortest.
-    const speed = Math.sqrt(9.81 / k + 7.3e-5 * k);
+    // Speed: gravity waves, with surface tension for the shortest, at
+    // 40% (the eye follows groups of ripples, which run at about half the
+    // crests' speed; at the full speed it all looked to race).
+    const speed = 0.4 * Math.sqrt(9.81 / k + 7.3e-5 * k);
     // Slope a little steeper for the shorter ones.
     const amp = Math.pow(len / 1.5, -0.15) * (0.7 + rnd() * 0.6);
     waves.push({ len, spread, speed, amp, phase: rnd() * 6.2832 });
@@ -66,8 +68,8 @@ function rippleGlsl() {
     vec2 d = w > 0.05 ? uWaterWind / w : vec2(1.0, 0.0);
     vec2 s = vec2(-d.y, d.x);
     float t = uWaterTime;
-    // Gusts: rougher patches and calm stretches, drifting downwind.
-    vec2 gp = (p - uWaterWind * t * 0.8) / 28.0;
+    // Gusts: rougher patches and calm stretches, drifting slowly downwind.
+    vec2 gp = (p - uWaterWind * t * 0.25) / 28.0;
     float gust = 0.65 * rpNoise(gp) + 0.35 * rpNoise(gp * 2.3 + 4.1);
     float rough = 0.15 + 1.5 * smoothstep(0.3, 0.75, gust);
     // In the lee of the upwind bank: calmer.
@@ -80,10 +82,10 @@ function rippleGlsl() {
     ${lines.join('\n    ')}
     // Noise over it all (drifting downwind, two scales): no repeats.
     {
-      vec2 q = (p - d * t * 0.6) / 0.55;
+      vec2 q = (p - d * t * 0.2) / 0.55;
       float e = 0.15;
       vec2 n1 = vec2(rpNoise(q + vec2(e, 0.0)) - rpNoise(q - vec2(e, 0.0)), rpNoise(q + vec2(0.0, e)) - rpNoise(q - vec2(0.0, e))) / (2.0 * e * 0.55);
-      vec2 q2 = (p - d * t * 0.35 + 17.0) / 1.9;
+      vec2 q2 = (p - d * t * 0.12 + 17.0) / 1.9;
       vec2 n2 = vec2(rpNoise(q2 + vec2(e, 0.0)) - rpNoise(q2 - vec2(e, 0.0)), rpNoise(q2 + vec2(0.0, e)) - rpNoise(q2 - vec2(0.0, e))) / (2.0 * e * 1.9);
       g += n1 * a * 0.4 * (1.0 - smoothstep(0.05, 0.25, pf)) + n2 * a * 1.0 * (1.0 - smoothstep(0.2, 0.8, pf));
     }
