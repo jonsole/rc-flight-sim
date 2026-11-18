@@ -75,6 +75,7 @@ export const LAKE_GLSL = !LAKE ? '' : /* glsl */ `
 #ifndef HAS_LAKE
 #define HAS_LAKE 1
 #define LAKE_LEVEL ${f(L.level)}
+#define LAKE_CENTRE vec2(${f(L.x)}, ${f(L.z)})
 float lakeQ(vec2 p) {
   vec2 d = p - vec2(${f(L.x)}, ${f(L.z)});
   float u = (d.x * ${f(COS)} + d.y * ${f(SIN)}) / ${f(L.rx)};

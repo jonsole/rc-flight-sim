@@ -69,11 +69,15 @@ function rippleGlsl() {
     vec2 d = w > 0.05 ? uWaterWind / w : vec2(1.0, 0.0);
     vec2 s = vec2(-d.y, d.x);
     float t = uWaterTime;
-    // The surface water drifts downwind at ~3% of the wind's speed (the
-    // usual figure for wind drift: 2.5-4%): the rough patches and calm
-    // stretches, and the noise below, are carried with it.
-    vec2 drift = uWaterWind * t * 0.03;
-    vec2 gp = (p - drift) / 28.0;
+    // The surface water drifts downwind (uWaterDrift: ~3% of the wind's
+    // speed, the usual figure for wind drift, added up as it goes): the
+    // rough patches and calm stretches, and the noise below, go with it.
+    vec2 drift = uWaterDrift;
+    // From the lake's middle: the waves' phases hardly move as the wind
+    // slowly turns (from the world's middle, 150 m off, a hair's turn would
+    // shift them by whole wavelengths).
+    vec2 pl = p - LAKE_CENTRE;
+    vec2 gp = (pl - drift) / 28.0;
     float gust = 0.65 * rpNoise(gp) + 0.35 * rpNoise(gp * 2.3 + 4.1);
     float rough = 0.15 + 1.5 * smoothstep(0.3, 0.75, gust);
     // In the lee of the upwind bank: calmer.
@@ -82,14 +86,14 @@ function rippleGlsl() {
     // of them at random phases add up to ~3.5 times one).
     float a = (0.002 + 0.018 * min(w / 6.0, 1.0)) * rough * lee;
     vec2 g = vec2(0.0);
-    #define WAVE(c, sn, len, spd, amp, ph0) { vec2 dir = d * (c) + s * (sn); float kk = 6.2832 / (len); float ph = kk * (dot(dir, p) - (spd) * t) + (ph0); g += dir * cos(ph) * a * (amp) * (1.0 - smoothstep(0.08 * (len), 0.3 * (len), pf)); }
+    #define WAVE(c, sn, len, spd, amp, ph0) { vec2 dir = d * (c) + s * (sn); float kk = 6.2832 / (len); float ph = kk * (dot(dir, pl) - (spd) * t) + (ph0); g += dir * cos(ph) * a * (amp) * (1.0 - smoothstep(0.08 * (len), 0.3 * (len), pf)); }
     ${lines.join('\n    ')}
     // Noise over it all (two scales, carried with the water): no repeats.
     {
-      vec2 q = (p - drift) / 0.55;
+      vec2 q = (pl - drift) / 0.55;
       float e = 0.15;
       vec2 n1 = vec2(rpNoise(q + vec2(e, 0.0)) - rpNoise(q - vec2(e, 0.0)), rpNoise(q + vec2(0.0, e)) - rpNoise(q - vec2(0.0, e))) / (2.0 * e * 0.55);
-      vec2 q2 = (p - drift + 17.0) / 1.9;
+      vec2 q2 = (pl - drift + 17.0) / 1.9;
       vec2 n2 = vec2(rpNoise(q2 + vec2(e, 0.0)) - rpNoise(q2 - vec2(e, 0.0)), rpNoise(q2 + vec2(0.0, e)) - rpNoise(q2 - vec2(0.0, e))) / (2.0 * e * 1.9);
       g += n1 * a * 0.4 * (1.0 - smoothstep(0.05, 0.25, pf)) + n2 * a * 1.0 * (1.0 - smoothstep(0.2, 0.8, pf));
     }
@@ -100,7 +104,8 @@ function rippleGlsl() {
 /** Shared by the water's shader: set every frame (World.updateWater). */
 export const waterUniforms = {
   uWaterTime: { value: 0 },
-  uWaterWind: { value: new Vector2(1, 0) }, // where the ripples run (m/s, world x, z)
+  uWaterWind: { value: new Vector2(1, 0) }, // the wind over the water (m/s, world x, z), smoothed: World.updateWater
+  uWaterDrift: { value: new Vector2() }, // how far the surface has drifted with the wind (m)
   uSkyHorizon: { value: new Color(0.7, 0.78, 0.88) }, // (linear)
   uSkyZenith: { value: new Color(0.25, 0.4, 0.7) },
   uSunDir: { value: new Vector3(0, 1, 0) },
@@ -151,6 +156,7 @@ export function makeLake(groundTexture) {
         varying vec3 vWaterWorld;
         uniform float uWaterTime;
         uniform vec2 uWaterWind;
+        uniform vec2 uWaterDrift;
         uniform vec3 uSkyHorizon;
         uniform vec3 uSkyZenith;
         uniform vec3 uSunDir;
