@@ -771,7 +771,7 @@ function frame(now) {
       debris.spawn(model.parts?.[ev.part], aircraft, ev.speed);
     }
     debris.update(dt);
-    snowTracks.update(aircraft, dt, world.snow);
+    snowTracks.update(aircraft, dt, world.snow, debris.items);
     osd.update(dt, aircraft);
   }
   // Following the clock: move the sun along every 20 s.
