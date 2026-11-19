@@ -140,6 +140,25 @@ export class Challenges {
     this.msg = document.createElement('div');
     this.msg.id = 'challenge-msg';
     root.after(this.msg);
+    // The steps to do, for challenges that have them (spot landing).
+    this.stepsEl = document.createElement('ol');
+    this.stepsEl.id = 'challenge-steps';
+    this.stepsEl.style.display = 'none';
+    root.after(this.stepsEl);
+  }
+
+  /** The checklist: each step ticked off, the one to do now highlighted. */
+  #steps() {
+    const el = this.stepsEl;
+    if (!el) return;
+    const list = this.course?.steps?.();
+    el.style.display = list ? '' : 'none';
+    if (!list) return;
+    const html = list.map((x) => `<li class="${x.state}"><span class="tick">${{ done: '✓', failed: '✗', now: '▶', todo: '' }[x.state]}</span><span class="t">${x.text}${x.detail ? `<small>${x.detail}</small>` : ''}</span></li>`).join('');
+    if (html !== this.stepsHtml) {
+      el.innerHTML = html;
+      this.stepsHtml = html;
+    }
   }
 
   get active() {
@@ -194,6 +213,7 @@ export class Challenges {
     if (!M.Course) {
       if (this.o.root) this.o.root.style.display = 'none';
       if (this.o.marker) this.o.marker.style.display = 'none';
+      if (this.stepsEl) this.stepsEl.style.display = 'none';
       return;
     }
     this.arena ||= findArena(this.o.obstacles, this.o.ground);
@@ -424,6 +444,7 @@ export class Challenges {
     this.hud.big.textContent = big;
     this.hud.line.textContent = line;
     this.hud.best.textContent = best ? `Best ${best.text}${best.aircraft ? ` (${best.aircraft})` : ''}` : '';
+    this.#steps();
     this.#marker(camera, ac);
   }
 
