@@ -224,6 +224,29 @@ describe('challenge courses', () => {
     expect(knocked.moved).toBeGreaterThan(still + 1);
   });
 
+  it('a balloon\'s string runs to the knot under it, with a slight curve in it', () => {
+    const c = new Balloons(env());
+    const ctx = { dt: 1 / 30, time: 0, ac: { crashed: false, held: null, onGround: true, velocity: new Vector3() }, pose: { p: new Vector3(0, -100, 0), q: new Quaternion() }, prev: new Vector3(0, -100, 0), span: 1, shape: bodyShape(1), sweep: 0, wind: (p, o) => o.set(4, 0, 0), floor, say: () => {}, sfx: () => {} };
+    for (let i = 0; i < 400; i++) c.update(ctx);
+    for (const b of c.balloons) {
+      b.mesh.updateMatrixWorld(true);
+      // Leaning over in the wind...
+      expect(b.axis.x).toBeGreaterThan(0.1);
+      // ...and the string's end is still at the knot (the little cone under it).
+      const knot = b.mesh.children[0].getWorldPosition(new Vector3());
+      const a = b.line.geometry.attributes.position.array;
+      const n = a.length / 3;
+      const end = new Vector3().fromArray(a, (n - 1) * 3);
+      expect(end.distanceTo(knot)).toBeLessThan(0.1);
+      // Not dead straight: its middle is off the line from peg to knot.
+      const mid = new Vector3().fromArray(a, Math.floor(n / 2) * 3);
+      const line = end.clone().sub(b.peg).normalize();
+      const off = mid.clone().sub(b.peg);
+      off.addScaledVector(line, -off.dot(line));
+      expect(off.length()).toBeGreaterThan(0.015 * b.len);
+    }
+  });
+
   it('balloons: flying through a string cuts it, and the balloon gets away', () => {
     const bs = new Balloons(env());
     fly(bs, [new Vector3(arena.x, arena.g + 60, arena.z), new Vector3(arena.x + 1, arena.g + 60, arena.z)]);

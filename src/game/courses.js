@@ -207,6 +207,7 @@ export class Balloon {
     this.len = len;
     this.radius = radius;
     this.pos = peg.clone().setY(peg.y + len);
+    this.axis = new Vector3(0, 1, 0); // which way is up for the balloon (it tilts)
     this.vel = new Vector3();
     this.free = false; // the string's been cut
     this.popped = false;
@@ -217,7 +218,8 @@ export class Balloon {
 
   /** Where the string meets the balloon. */
   knot(out) {
-    return out.copy(this.pos).setY(this.pos.y - this.radius * 1.18 - 0.08);
+    // (Below the balloon along its tilt: it leans along its string.)
+    return out.copy(this.pos).addScaledVector(this.axis, -(this.radius * 1.18 + 0.08));
   }
 
   step(dt, wind, floor) {
@@ -282,7 +284,7 @@ export class Balloons {
     this.up = lv(env, 15, 12, 9); // balloons up at once
     this.strings = lv(env, [8, 11], [4, 18], [2, 25]); // string lengths (m): how high they fly, and how much that varies
     this.rand = rng(1234 + Math.round(env.arena.r));
-    this.geo = new SphereGeometry(this.radius, 18, 14);
+    this.geo = new SphereGeometry(this.radius, 32, 22);
     this.geo.scale(1, 1.18, 1);
     this.knot = new ConeGeometry(0.06, 0.1, 8);
     this.balloons = [];
@@ -402,20 +404,29 @@ export class Balloons {
       b.mesh.position.copy(b.pos);
       const lean = b.free ? _a.copy(b.vel).multiplyScalar(-0.15).add(_b.set(0, 1, 0)) : _a.copy(b.pos).sub(b.peg);
       b.mesh.quaternion.setFromUnitVectors(_b.set(0, 1, 0), lean.normalize());
+      b.axis.copy(lean);
       b.spin += ctx.dt * b.spinRate;
       b.mesh.rotateY(b.spin);
       const top = b.knot(_c);
       if (!b.free) {
-        // The string: straight when it's pulled tight, drooping when a gust
-        // pushes the balloon down or back towards its peg.
+        // The string, from the peg to the knot: never quite straight (its
+        // own weight, and the wind blowing a belly into it, which shifts
+        // with the gusts), and drooping when a gust pushes the balloon down
+        // or back towards its peg.
         const arr = b.line.geometry.attributes.position.array;
         const d = b.peg.distanceTo(top);
         const len = Math.max(d, b.len - b.radius * 1.18 - 0.08);
-        const sag = Math.sqrt(Math.max(0, len * len - d * d)) * 0.5;
+        const sag = Math.sqrt(Math.max(0, len * len - d * d)) * 0.5 + 0.025 * len;
+        _bw.lerpVectors(b.peg, top, 0.5);
+        this.ctxWind(_bw, _bd);
+        _bd.y = 0;
+        const blow = (0.012 * len * Math.min(6, _bd.length())) * (1 + 0.35 * Math.sin(this.time * 2.3 + b.gust[0].ph));
+        if (_bd.lengthSq() > 1e-6) _bd.normalize();
         for (let i = 0; i < STRING_PTS; i++) {
           const k = i / (STRING_PTS - 1);
-          _b.lerpVectors(b.peg, top, k);
-          _b.y = Math.max(ctx.floor(_b.x, _b.z) + 0.02, _b.y - sag * 4 * k * (1 - k));
+          const bow = 4 * k * (1 - k);
+          _b.lerpVectors(b.peg, top, k).addScaledVector(_bd, blow * bow);
+          _b.y = Math.max(ctx.floor(_b.x, _b.z) + 0.02, _b.y - sag * bow);
           _b.toArray(arr, i * 3);
         }
         b.line.geometry.attributes.position.needsUpdate = true;
