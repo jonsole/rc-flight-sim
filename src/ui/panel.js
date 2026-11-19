@@ -149,7 +149,7 @@ export class Panel {
           MINUTES.map((n) => el('option', { value: n, selected: n === minutes }, `${n} minutes`)))) : null,
       mode === 'none' ? null : el('p', { class: 'hint' }, {
         hoops: 'Easy: big hoops, gentle height changes. Hard: small hoops, big climbs and dives.',
-        balloons: 'Easy: lots of big balloons on short strings. Hard: fewer, smaller ones on long strings that swing about.',
+        balloons: 'Easy: lots of big balloons (1.6 m), all about 8 to 11 m up. Normal: 1 m balloons, 4 to 18 m up. Hard: fewer, small ones (0.6 m), from just off the grass to 25 m up.',
         limbo: 'Easy: 14 m between the poles. Hard: 7 m.',
         pylons: 'Easy: 2 laps. Normal: 3. Hard: 5.',
         streamers: 'Easy: slow planes, long streamers. Hard: fast planes, short streamers.',

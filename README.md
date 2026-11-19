@@ -246,7 +246,7 @@ next to the challenge on the start screen or in the Challenges tab:
 | Challenge | Easy | Normal | Hard |
 | --- | --- | --- | --- |
 | Hoops | 7 m hoops, gentle height changes | 5 m | 3.2 m, big climbs and dives |
-| Balloon burst | 15 big balloons up at once, short strings | 12 | 9 small ones on long strings |
+| Balloon burst | 15 big balloons (1.6 m) up at once, all 8–11 m up | 12, 1 m across, 4–18 m up | 9 small ones (0.6 m), 2–25 m up |
 | Limbo | 14 m between the poles | 10 m | 7 m |
 | Pylon race | 2 laps | 3 | 5 |
 | Streamer cutting | planes at ~7 m/s, 12 m streamers | 8–9 m/s, 8 m | 11–12 m/s, 6 m |
