@@ -457,7 +457,7 @@ describe('spot landing', () => {
     expect(now()).toBe(0); // take off
     f.at(x - 39, z, 3);
     expect(now()).toBe(1); // climb
-    expect(c.steps()[1].detail).toMatch(/3 m now/);
+    expect(c.steps()[1].detail).toBe(''); // (the height's the big number in the box)
     for (let h = 4; h <= 12; h++) f.at(x - 40 + h, z, h);
     expect(now()).toBe(2); // circuit
     f.at(x - 5, z, 12); // too close in
