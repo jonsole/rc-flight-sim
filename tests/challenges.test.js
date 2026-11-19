@@ -183,6 +183,47 @@ describe('challenge courses', () => {
     expect(b.trail.count).toBeGreaterThan(0);
   });
 
+  it('balloons dance about in the wind, and an aeroplane flying close past knocks them about', () => {
+    const run = (W, flyby) => {
+      const c = new Balloons(env());
+      const ac = { crashed: false, held: null, onGround: true, velocity: new Vector3() };
+      const pose = { p: new Vector3(0, -100, 0), q: new Quaternion() };
+      const ctx = { dt: 1 / 30, time: 0, ac, pose, prev: pose.p.clone(), span: 1, shape: bodyShape(1), sweep: 0, wind: (p, o) => o.set(W, 0, 0), floor, say: () => {}, sfx: () => {} };
+      for (let i = 0; i < 300; i++) c.update(ctx); // settle
+      const b = c.balloons[2];
+      const lo = b.pos.clone();
+      const hi = b.pos.clone();
+      const start = b.pos.clone();
+      let moved = 0;
+      for (let i = 0; i < 90; i++) {
+        if (flyby) {
+          // Past it 2 m to the side at 15 m/s.
+          ctx.prev.copy(pose.p);
+          pose.p.copy(start).add(new Vector3(-20 + Math.min(40, i * 0.5), 0, 2));
+          ac.velocity.set(15, 0, 0);
+          ac.onGround = false;
+        }
+        c.update(ctx);
+        lo.min(b.pos);
+        hi.max(b.pos);
+        moved = Math.max(moved, b.pos.distanceTo(start));
+      }
+      for (let i = 0; i < 1500; i++) {
+        c.update(ctx);
+        lo.min(b.pos);
+        hi.max(b.pos);
+      }
+      return { moved, wander: hi.sub(lo).length(), popped: b.popped };
+    };
+    // In a steady 3 m/s wind it wanders about, not just leaning still.
+    expect(run(3, false).wander).toBeGreaterThan(2);
+    // In calm air, a close pass shoves it a lot more than it drifts on its own.
+    const still = run(0, false).moved;
+    const knocked = run(0, true);
+    expect(knocked.popped).toBe(false);
+    expect(knocked.moved).toBeGreaterThan(still + 1);
+  });
+
   it('balloons: flying through a string cuts it, and the balloon gets away', () => {
     const bs = new Balloons(env());
     fly(bs, [new Vector3(arena.x, arena.g + 60, arena.z), new Vector3(arena.x + 1, arena.g + 60, arena.z)]);
