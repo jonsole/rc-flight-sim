@@ -1131,6 +1131,7 @@ export class SpotLanding {
     const p = ctx.pose.p;
     const agl = p.y - this.env.ground.heightAt(p.x, p.z);
     const stick = ac.controls?.throttle ?? ac.throttleActual ?? 0;
+    this.stick = stick;
     if (this.state === 'ready' && !ac.held && !ac.onGround && ac.velocity.length() > 3) this.state = 'running';
     if (this.state !== 'running') return;
     if (ac.crashed) {
@@ -1229,6 +1230,34 @@ export class SpotLanding {
     if (dist <= SPOT_RINGS[1]) return 'Good';
     if (dist <= SPOT_RINGS[2]) return 'On the spot';
     return 'Missed the spot';
+  }
+
+  /**
+   * The steps, for the checklist on screen: [{ text, detail?, state:
+   * 'done' | 'now' | 'todo' | 'failed' }].
+   */
+  steps() {
+    const p = this.env.me?.position;
+    const agl = p ? Math.max(0, p.y - this.env.ground.heightAt(p.x, p.z)) : 0;
+    const out = p ? Math.hypot(p.x - this.spot.x, p.z - this.spot.z) : 0;
+    const order = ['takeoff', 'climb', 'circuit', 'cut', 'glide', 'landed'];
+    const at = this.state === 'ready' ? 0 : this.stage === 'rolling' ? 4 : order.indexOf(this.stage);
+    const st = (i) => (i < at ? 'done' : i === at ? 'now' : 'todo');
+    let why = `${Math.min(360, Math.round(Math.abs(this.turned)))}° of 360°`;
+    if (at === 2 && agl < this.climb) why += ` · too low: back up to ${this.climb} m`;
+    else if (at === 2 && out < this.minR) why += ` · too close: go wider than ${this.minR} m`;
+    const list = [
+      { text: 'Take off', detail: at === 0 ? 'throttle up' : '' },
+      { text: `Climb to ${this.climb} m`, detail: at === 1 ? `${Math.round(agl)} m now` : '' },
+      { text: 'Fly a full circuit round the spot', detail: at === 2 ? why : '' },
+      { text: 'Cut the throttle right back', detail: at === 3 ? `throttle at ${Math.round((this.stick ?? 0) * 100)}%` : at > 3 ? 'keep it off!' : '' },
+      { text: 'Glide in and land on the spot', detail: at === 4 ? `${Math.round(out)} m to go` : '' },
+    ].map((x, i) => ({ ...x, state: st(i) }));
+    if (this.stage === 'landed') {
+      for (const x of list) x.state = 'done';
+      if (this.result?.void) list[list.length - 1].state = 'failed';
+    }
+    return list;
   }
 
   status() {

@@ -448,6 +448,32 @@ describe('spot landing', () => {
     }
   });
 
+  it('the on-screen steps tick off as you go, and say why the circuit isn\'t counting', () => {
+    const c = new SpotLanding(env());
+    const { x, z } = c.spot;
+    const f = pilot(c);
+    const now = () => c.steps().findIndex((st) => st.state === 'now');
+    f.at(x - 40, z, 0, { ground: true, speed: 0 });
+    expect(now()).toBe(0); // take off
+    f.at(x - 39, z, 3);
+    expect(now()).toBe(1); // climb
+    expect(c.steps()[1].detail).toMatch(/3 m now/);
+    for (let h = 4; h <= 12; h++) f.at(x - 40 + h, z, h);
+    expect(now()).toBe(2); // circuit
+    f.at(x - 5, z, 12); // too close in
+    expect(c.steps()[2].detail).toMatch(/too close/);
+    f.at(x - 30, z, 5); // too low
+    expect(c.steps()[2].detail).toMatch(/too low/);
+    f.circle(30, 12);
+    expect(now()).toBe(3); // cut
+    expect(c.steps().slice(0, 3).every((st) => st.state === 'done')).toBe(true);
+    f.at(x - 30, z, 10, { throttle: 0 });
+    expect(now()).toBe(4); // land
+    f.at(x - 1, z, 0, { ground: true, throttle: 0, speed: 0.2 });
+    f.at(x - 1, z, 0, { ground: true, throttle: 0, speed: 0.2 });
+    expect(c.steps().every((st) => st.state === 'done')).toBe(true);
+  });
+
   it('hard means higher and wider', () => {
     const e = new SpotLanding({ ...env(), level: 'easy' });
     const h = new SpotLanding({ ...env(), level: 'hard' });
