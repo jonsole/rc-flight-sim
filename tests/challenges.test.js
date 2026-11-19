@@ -242,6 +242,17 @@ describe('challenge courses', () => {
     }
   });
 
+  it('pylon race: each pylon\'s flag sticks out on the side to fly past (out of the course)', () => {
+    const pr = new Pylons(env());
+    const [cx, cz] = arenaToWorld(arena, 0, 0);
+    for (const p of pr.pylons) {
+      p.g.updateMatrixWorld(true);
+      // The flag's point, in the world.
+      const tip = new Vector3(p.flagLength, 0, 0).applyMatrix4(p.flag.matrixWorld);
+      expect(Math.hypot(tip.x - cx, tip.z - cz)).toBeGreaterThan(Math.hypot(p.base.x - cx, p.base.z - cz) + 3.5);
+    }
+  });
+
   it('pylon race: the start line keeps clear of the pilot', () => {
     const pr = new Pylons(env());
     const [px, pz] = [arena.x - arena.away[0] * arena.d, arena.z - arena.away[1] * arena.d];
