@@ -250,6 +250,7 @@ next to the challenge on the start screen or in the Challenges tab:
 | Limbo | 14 m between the poles | 10 m | 7 m |
 | Pylon race | 2 laps | 3 | 5 |
 | Streamer cutting | planes at ~7 m/s, 12 m streamers | 8–9 m/s, 8 m | 11–12 m/s, 6 m |
+| Spot landing | climb to 10 m, circuit at least 10 m out from the spot | 10 m up, 20 m out | 20 m up, 30 m out |
 
 | Challenge | What to do |
 | --- | --- |
@@ -258,6 +259,7 @@ next to the challenge on the start screen or in the Challenges tab:
 | **Limbo** | A bar between two poles, starting at 8 m. Fly under it (either way) and it drops, down to 32 cm. Over the top doesn't count; touch it and it falls, ending the run; the poles are solid. Scored by passes. |
 | **Pylon race** | Three laps round three inflatable pylons: cross the start line (the white line between two black flags) either way, which sets which way round you race, then round the lit pylon each time, on the outside, on the side its yellow flag sticks out, the way the curved yellow arrow round it points. Later laps must cross the line the same way. Cutting inside one means going back round it, and hitting one is a crash. |
 | **Streamer cutting** | Three model aeroplanes fly loops towing a crepe-paper streamer from each wing tip. Cut them with your wings, prop or fuselage, again and again, until only stubs are left; don't hit the aeroplanes. In multiplayer you tow streamers too, and everyone can cut everyone's (the streamer aeroplanes are your own, not shared). |
+| **Spot landing** | Take off and climb to 10 m, fly a full 360° circuit round the spot (a red bullseye with white rings at 2, 5 and 10 m and orange cones, painted on the runway), then cut the throttle right back and glide in. Scored by how far from the middle you first touch down (a blue flag marks it): within 1 m is a bullseye. Opening the throttle again after cutting it, or crashing on landing, means no score. |
 
 The code is in `src/game/`: `courses.js` (the courses), `challenges.js`
 (clock, scores, HUD, sounds, multiplayer streamers), `ribbon.js` (the
@@ -317,7 +319,7 @@ src/world/     sky, terrain, runway, trees, windsock
 src/view/      camera rig (LOS / FPV / chase)
 src/input/     transmitter (Gamepad API) + keyboard, expo & rates
 src/ui/        OSD/HUD, settings panel
-src/game/      challenges: hoops, balloons, limbo, pylon race, streamer cutting
+src/game/      challenges: hoops, balloons, limbo, pylon race, streamer cutting, spot landing
 src/audio/     synthesised motor and prop sound
 tests/         vitest flight-model tests
 ```
