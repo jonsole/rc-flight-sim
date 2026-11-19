@@ -557,7 +557,7 @@ export class Limbo {
 export class Pylons {
   static id = 'pylons';
   static title = 'Pylon race';
-  static about = 'Three laps round the inflatable pylons, on the outside of each: cross the start line either way (that sets which way round you race), then round the lit pylon each time, the way its yellow arrows point. Cutting inside one means going back round it. Don\'t touch them!';
+  static about = 'Three laps round the inflatable pylons, on the outside of each: cross the start line either way (that sets which way round you race), then round the lit pylon each time on the side its yellow flag sticks out, the way its curved arrow points. Cutting inside one means going back round it. Don\'t touch them!';
 
   constructor(env, laps = 3) {
     this.env = env;
@@ -631,11 +631,10 @@ export class Pylons {
   }
 
   /**
-   * Arrows on each pylon showing the way round it, on the outside: a
-   * curved 3D arrow wrapped round the outside (readable from any side and
-   * from the cockpit) and a sign on top (black, with a big yellow arrow)
-   * turned to face out of the course. Redrawn when the race's direction
-   * is set at the start.
+   * Markers on each pylon: a curved 3D arrow wrapped round the outside
+   * showing the way round (readable from any side and from the cockpit),
+   * and a yellow pennant on top sticking out to the side to fly past.
+   * Redrawn when the race's direction is set at the start.
    */
   #arrows() {
     const yellow = new MeshStandardMaterial({ color: '#ffd400', emissive: '#806a00', emissiveIntensity: 0.6, roughness: 0.5 });
@@ -677,38 +676,41 @@ export class Pylons {
       spoke.position.copy(d).multiplyScalar(R / 2).setY(y);
       spoke.quaternion.setFromUnitVectors(up, d);
       a.add(spoke);
-      // The sign on top: black board, yellow arrow both sides, facing out.
-      const sign = new Group();
-      const W = 3;
-      const H = 1.3;
-      sign.add(new Mesh(new PlaneGeometry(W, H), black));
-      const shape = new Shape();
-      const sh = H * 0.3; // shaft half-height
-      const hh = H * 0.42; // head half-height
-      const hx = W * 0.12; // where the head starts
-      shape.moveTo(-W * 0.42, -sh);
-      shape.lineTo(hx, -sh);
-      shape.lineTo(hx, -hh);
-      shape.lineTo(W * 0.44, 0);
-      shape.lineTo(hx, hh);
-      shape.lineTo(hx, sh);
-      shape.lineTo(-W * 0.42, sh);
-      shape.closePath();
-      const arrowGeo = new ShapeGeometry(shape);
-      for (const z of [0.02, -0.02]) {
-        const m = new Mesh(arrowGeo, yellow);
-        m.position.z = z;
-        if (z < 0) m.rotation.y = Math.PI; // (the back: flipped so it still points the same way)
-        if (z < 0) m.scale.x = -1;
-        sign.add(m);
-      }
-      // Board's x along the way to go, its face out of the course.
-      const zAxis = new Vector3().crossVectors(side, up);
-      sign.quaternion.setFromRotationMatrix(new Matrix4().makeBasis(side, up, zAxis));
-      sign.position.set(0, this.h + this.rad * 0.65 + 0.45 + H / 2 + 0.2, 0);
-      const post = new Mesh(new CylinderGeometry(0.05, 0.05, 0.9, 6), black);
-      post.position.set(0, this.h + this.rad * 0.65 + 0.45, 0);
-      a.add(sign, post);
+      // A pennant on a pole on top, sticking out to the side you fly past:
+      // keep the flag's side. Yellow, with a black chevron pointing out too.
+      const top = this.h + this.rad * 0.65;
+      const poleH = 3;
+      const pole = new Mesh(new CylinderGeometry(0.05, 0.05, poleH, 6), black);
+      pole.position.set(0, top + poleH / 2, 0);
+      a.add(pole);
+      const L = 4.5; // pennant length
+      const H = 2; // and its height at the pole
+      const pen = new Shape();
+      pen.moveTo(0, -H / 2);
+      pen.lineTo(L, 0);
+      pen.lineTo(0, H / 2);
+      pen.closePath();
+      const flagMat = new MeshStandardMaterial({ color: '#ffd400', emissive: '#806a00', emissiveIntensity: 0.6, roughness: 0.6, side: DoubleSide });
+      const chevMat = new MeshBasicMaterial({ color: '#141414', side: DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      const chev = new Shape();
+      const cx = L * 0.32;
+      const cw = L * 0.13;
+      const ch = H * 0.3;
+      chev.moveTo(cx - cw, -ch);
+      chev.lineTo(cx, -ch);
+      chev.lineTo(cx + cw, 0);
+      chev.lineTo(cx, ch);
+      chev.lineTo(cx - cw, ch);
+      chev.lineTo(cx, 0);
+      chev.closePath();
+      const flag = new Group();
+      flag.add(new Mesh(new ShapeGeometry(pen), flagMat), new Mesh(new ShapeGeometry(chev), chevMat));
+      // Its length along the outward direction, upright.
+      flag.quaternion.setFromRotationMatrix(new Matrix4().makeBasis(d, up, new Vector3().crossVectors(d, up)));
+      flag.position.set(0, top + poleH - H / 2 - 0.05, 0);
+      a.add(flag);
+      p.flag = flag;
+      p.flagLength = L;
       p.g.add(a);
       p.arrows = a;
     });
