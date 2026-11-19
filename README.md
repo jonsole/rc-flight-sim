@@ -261,10 +261,12 @@ next to the challenge on the start screen or in the Challenges tab:
 | **Streamer cutting** | Three model aeroplanes fly loops towing a crepe-paper streamer from each wing tip. Cut them with your wings, prop or fuselage, again and again, until only stubs are left; don't hit the aeroplanes. In multiplayer you tow streamers too, and everyone can cut everyone's (the streamer aeroplanes are your own, not shared). |
 | **Spot landing** | Take off and climb to 10 m, fly a nice gentle 360° turn anywhere (it only counts while the turn is wide enough: a quick spin round doesn't), then cut the throttle right back and glide in to the spot (a red bullseye with white rings at 2, 5 and 10 m and orange cones, painted on the runway). A checklist on the left of the screen ticks off each step and shows the one to do now (with the throttle setting, and why the turn isn't counting when it isn't: too low, too tight), while the box at the top shows the height, degrees flown (of 360°) or distance to go; phones and small windows show just the current step. Scored by how far from the middle you first touch down (a blue flag marks it): within 1 m is a bullseye. Opening the throttle again after cutting it, or crashing on landing, means no score. |
 
+Everything in a course casts a shadow: what stays put (pylons, hoops, poles, cones, flags) through one sharp shadow for the course, laid over the ground and redrawn only when something in it moves or the sun does; the streamer planes like your own aeroplane; and each balloon a soft round shadow, fainter the higher it is.
+
 The code is in `src/game/`: `courses.js` (the courses), `challenges.js`
 (clock, scores, HUD, sounds, multiplayer streamers), `ribbon.js` (the
 streamers: light paper that drifts with the air, flutters and is towed),
-`arena.js` (finding open sky) and `geom.js` (through a hoop, touching a
+`arena.js` (finding open sky), `shadow.js` (the courses' shadows) and `geom.js` (through a hoop, touching a
 streamer or a ball).
 
 ## Views

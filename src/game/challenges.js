@@ -14,6 +14,8 @@ import { findArena } from './arena.js';
 import { COURSES, Streamers, formatTime, LEVELS } from './courses.js';
 import { Ribbon, RibbonMesh } from './ribbon.js';
 import { bodyShape } from './geom.js';
+import { CourseShadow } from './shadow.js';
+import { PlaneShadow } from '../view/planeShadow.js';
 import { LOCATION } from '../sim/location.js';
 import { getAircraft } from '../aircraft/index.js';
 
@@ -228,12 +230,22 @@ export class Challenges {
     };
     this.course = new M.Course(env);
     this.o.scene.add(this.course.group);
+    // Shadows: one for everything that stays put, and the streamer planes'
+    // own (src/game/shadow.js).
+    this.courseShadow ||= new CourseShadow(this.o.scene, this.o.ground);
+    this.courseShadow.setObjects(this.course.group);
+    for (const d of this.course.drones ?? []) {
+      d.shadow = new PlaneShadow(this.o.scene, this.o.ground);
+      d.shadow.setModel(d.model, d.span);
+    }
     if (M.Course === Streamers) this.#towMine();
     if (this.o.root) this.o.root.style.display = '';
     this.say(M.title);
   }
 
   #clear() {
+    this.courseShadow?.setObjects(null);
+    for (const d of this.course?.drones ?? []) d.shadow?.dispose();
     if (this.course) {
       this.o.scene.remove(this.course.group);
       this.course.dispose?.();
@@ -332,6 +344,8 @@ export class Challenges {
       floor,
       say: (t) => this.say(t),
       sfx: (k) => this.sfx(k),
+      sun: c.shadow?.lightDir ?? null, // (for balloons' shadows)
+      shade: c.shadow?.strength ?? 0,
     };
     this.course.env.me = ac;
     if (!c.paused) {
@@ -348,8 +362,26 @@ export class Challenges {
       if (was !== 'done' && this.course.state === 'done') this.#finish();
       this.#streamers(ctx, c);
     }
+    this.#shadows(c.shadow);
     this.prev.copy(ac.position);
     this.#hud(ac, c.camera);
+  }
+
+  /** The course's shadows (c.shadow: { renderer, lightDir, strength }, or none). */
+  #shadows(sh) {
+    const cs = this.courseShadow;
+    if (!cs || !this.course) return;
+    if (this.course.shadowRebuild) {
+      this.course.shadowRebuild = false;
+      cs.setObjects(this.course.group);
+    }
+    if (this.course.shadowDirty) {
+      this.course.shadowDirty = false;
+      cs.markDirty();
+    }
+    if (!sh) return;
+    cs.update(sh.renderer, sh.lightDir, sh.strength);
+    for (const d of this.course.drones ?? []) d.shadow?.update(sh.renderer, d.pose.p, sh.lightDir, sh.strength);
   }
 
   /** Your streamers, other players' streamers, and cutting theirs. */

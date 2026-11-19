@@ -68,6 +68,27 @@ describe('challenge geometry', () => {
   });
 });
 
+describe('challenge shadows', () => {
+  it('a balloon\'s shadow lands on the ground away from the sun, softer and fainter the higher it is', async () => {
+    const { Mesh } = await import('three');
+    const { blobMaterial, blobGeometry, placeBlob } = await import('../src/game/shadow.js');
+    const sun = new Vector3(-1, 1, 0).normalize(); // 45 degrees up, in the -x
+    const g = ground.heightAt(0, 0);
+    const low = new Mesh(blobGeometry(), blobMaterial());
+    const high = new Mesh(blobGeometry(), blobMaterial());
+    placeBlob(low, new Vector3(0, g + 5, 0), 0.5, ground, sun, 0.6);
+    placeBlob(high, new Vector3(0, g + 25, 0), 0.5, ground, sun, 0.6);
+    expect(low.visible).toBe(true);
+    expect(low.position.x).toBeCloseTo(5, 0); // 5 m up at 45 degrees: 5 m away from the sun
+    expect(high.position.x).toBeCloseTo(25, 0);
+    expect(high.material.uniforms.opacity.value).toBeLessThan(low.material.uniforms.opacity.value);
+    expect(high.material.uniforms.soft.value).toBeGreaterThan(low.material.uniforms.soft.value);
+    // No sun (night, or overcast): no shadow.
+    placeBlob(low, new Vector3(0, g + 5, 0), 0.5, ground, sun, 0);
+    expect(low.visible).toBe(false);
+  });
+});
+
 describe('streamers', () => {
   it('trails out behind a model flying along, keeping its length', () => {
     const r = new Ribbon({ length: 8 });

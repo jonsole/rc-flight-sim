@@ -19,6 +19,12 @@ const RES = 256;
 const SUN_TAN = Math.tan((0.53 * Math.PI) / 180);
 const SOFTEN = 2.2; // a little softer than strict geometry, as in haze
 let nextLayer = 2;
+/** A render layer of its own for a shadow's silhouette (layers 2-31, shared round). */
+export function takeLayer() {
+  const l = nextLayer++;
+  if (nextLayer > 31) nextLayer = 2;
+  return l;
+}
 
 const blurMat = () => new ShaderMaterial({
   uniforms: { src: { value: null }, dir: { value: new Vector2() } },
@@ -49,8 +55,7 @@ export class PlaneShadow {
     this.scene = scene;
     this.project = project;
     this.ground = ground;
-    this.layer = nextLayer++;
-    if (nextLayer > 31) nextLayer = 2;
+    this.layer = takeLayer();
     this.cam = new OrthographicCamera(-1, 1, 1, -1, 0.1, 50);
     this.cam.layers.set(this.layer);
     const opts = { magFilter: LinearFilter, minFilter: LinearFilter, depthBuffer: true };
