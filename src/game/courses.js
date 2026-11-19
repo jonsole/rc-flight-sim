@@ -1072,7 +1072,7 @@ const SPOT_BULL = 1; // m: the red bullseye's radius
 export class SpotLanding {
   static id = 'spot';
   static title = 'Spot landing';
-  static about = 'Take off and climb to 10 m, fly a full 360° circuit round the spot (on the runway), then cut the throttle right back and glide in to land as close to the middle of the spot as you can. Scored by where you first touch down. Touch the throttle again after cutting it, or crash on landing, and there\'s no score.';
+  static about = 'Take off and climb to 10 m, fly a nice gentle 360° turn (anywhere: a quick spin round doesn\'t count), then cut the throttle right back and glide in to land as close to the middle of the spot as you can. Scored by where you first touch down. Touch the throttle again after cutting it, or crash on landing, and there\'s no score.';
 
   constructor(env) {
     this.env = env;
@@ -1080,9 +1080,11 @@ export class SpotLanding {
     this.state = 'ready';
     this.stage = 'climb'; // climb | circuit | glide | rolling | landed
     this.climb = lv(env, 10, 10, 20); // m above the ground to reach
-    this.minR = lv(env, 10, 20, 30); // the circuit must go round at least this far out
+    this.minR = lv(env, 10, 15, 20); // m: the 360 only counts while the turn is at least this wide
+    this.lastTrack = null; // the way it was flying last frame (radians)
+    this.rate = 0; // how fast it's turning, smoothed (rad/s)
+    this.radius = Infinity; // and so how wide the turn is (m)
     this.turned = 0; // degrees round the spot so far
-    this.lastAngle = null;
     this.result = null; // { dist, void?, why? }
     // The spot: the middle of the runway (or the course's middle if
     // something stands there).
@@ -1142,26 +1144,34 @@ export class SpotLanding {
       case 'climb':
         if (agl >= this.climb) {
           this.stage = 'circuit';
-          ctx.say(`${this.climb} m! Now a full circuit round the spot`);
+          ctx.say(`${this.climb} m! Now a nice gentle 360° turn`);
           ctx.sfx('ding');
         }
         break;
       case 'circuit': {
-        // Degrees flown round the spot, while high enough and far enough out.
-        const dx = p.x - this.spot.x;
-        const dz = p.z - this.spot.z;
-        const a = Math.atan2(dz, dx);
-        const ok = agl >= this.climb && Math.hypot(dx, dz) >= this.minR;
-        if (ok && this.lastAngle !== null) {
-          let d = a - this.lastAngle;
-          d = Math.atan2(Math.sin(d), Math.cos(d));
-          this.turned += (d * 180) / Math.PI;
+        // A gentle 360: the way it's flying (its track over the ground)
+        // swings right round, while high enough, in a turn at least minR
+        // wide (a quick spin round doesn't count). Anywhere on the field.
+        const dx = p.x - ctx.prev.x;
+        const dz = p.z - ctx.prev.z;
+        const step = Math.hypot(dx, dz);
+        if (step > 1e-3 && ctx.dt > 0) {
+          const track = Math.atan2(dz, dx);
+          if (this.lastTrack !== null) {
+            const d = Math.atan2(Math.sin(track - this.lastTrack), Math.cos(track - this.lastTrack));
+            // Turn rate smoothed over about half a second; width = speed / rate.
+            this.rate += (d / ctx.dt - this.rate) * Math.min(1, ctx.dt / 0.5);
+            this.radius = Math.abs(this.rate) > 1e-3 ? step / ctx.dt / Math.abs(this.rate) : Infinity;
+            this.high = agl >= this.climb;
+            this.wide = this.radius >= this.minR;
+            if (this.high && this.wide) this.turned += (d * 180) / Math.PI;
+          }
+          this.lastTrack = track;
         }
-        this.lastAngle = ok ? a : null;
-        if (!ok && ac.onGround) this.#nag(ctx, 'Landed before finishing the circuit: take off again');
+        if (ac.onGround) this.#nag(ctx, 'Landed before finishing the 360: take off again');
         if (Math.abs(this.turned) >= 360) {
           this.stage = 'cut';
-          ctx.say('Circuit done! Cut the throttle and land on the spot');
+          ctx.say('360° done! Cut the throttle and land on the spot');
           ctx.sfx('ding');
         }
         break;
@@ -1239,7 +1249,6 @@ export class SpotLanding {
   steps() {
     const p = this.env.me?.position;
     const agl = p ? Math.max(0, p.y - this.env.ground.heightAt(p.x, p.z)) : 0;
-    const out = p ? Math.hypot(p.x - this.spot.x, p.z - this.spot.z) : 0;
     const order = ['takeoff', 'climb', 'circuit', 'cut', 'glide', 'landed'];
     const at = this.state === 'ready' ? 0 : this.stage === 'rolling' ? 4 : order.indexOf(this.stage);
     const st = (i) => (i < at ? 'done' : i === at ? 'now' : 'todo');
@@ -1247,11 +1256,11 @@ export class SpotLanding {
     // top: here only what that doesn't say.)
     let why = '';
     if (at === 2 && agl < this.climb) why = `too low: back up to ${this.climb} m`;
-    else if (at === 2 && out < this.minR) why = `too close: go wider than ${this.minR} m`;
+    else if (at === 2 && this.wide === false) why = 'too tight: turn more gently';
     const list = [
       { text: 'Take off', detail: at === 0 ? 'throttle up' : '' },
       { text: `Climb to ${this.climb} m`, detail: '' },
-      { text: 'Fly a full circuit round the spot', detail: at === 2 ? why : '' },
+      { text: 'Fly a gentle 360° turn', detail: at === 2 ? why : '' },
       { text: 'Cut the throttle right back', detail: at === 3 ? `throttle at ${Math.round((this.stick ?? 0) * 100)}%` : at > 3 ? 'keep it off!' : '' },
       { text: 'Glide in and land on the spot', detail: '' },
     ].map((x, i) => ({ ...x, state: st(i) }));
@@ -1270,7 +1279,7 @@ export class SpotLanding {
         return { line: `Take off and climb to ${this.climb} m`, big: `${Math.round(agl)} m` };
       }
       case 'circuit':
-        return { line: `Full circuit round the spot, ${this.climb} m up, ${this.minR} m out`, big: `${Math.min(360, Math.round(Math.abs(this.turned)))}° / 360°` };
+        return { line: `A gentle 360° turn, ${this.climb} m up or more`, big: `${Math.min(360, Math.round(Math.abs(this.turned)))}° / 360°` };
       case 'cut':
         return { line: 'Cut the throttle right back', big: 'CUT' };
       case 'glide':

@@ -153,7 +153,7 @@ export class Panel {
         limbo: 'Easy: 14 m between the poles. Hard: 7 m.',
         pylons: 'Easy: 2 laps. Normal: 3. Hard: 5.',
         streamers: 'Easy: slow planes, long streamers. Hard: fast planes, short streamers.',
-        spot: 'Easy: climb to 10 m, circuit at least 10 m out from the spot. Normal: 10 m up, 20 m out. Hard: 20 m up, 30 m out.',
+        spot: 'The 360° only counts while the turn is gentle: wider than 10 m on easy, 15 m on normal, 20 m on hard. Climb to 10 m (20 m on hard).',
       }[mode]),
       el('div', { class: 'row' }, mode === 'none'
         ? el('button', { onclick: () => { this.opts.onReset(); this.opts.onClose(); } }, 'Reset aircraft (R)')

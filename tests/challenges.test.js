@@ -416,17 +416,24 @@ describe('spot landing', () => {
     expect(c.score().text).toMatch(/Good|Superb/);
   });
 
-  it('a circuit flown too close round the spot, or too low, does not count', () => {
+  it('a quick spin round, or a turn too low, does not count; a gentle one anywhere does', () => {
     const c = new SpotLanding(env());
     const { x, z } = c.spot;
     const f = pilot(c);
     for (let h = 1; h <= 12; h++) f.at(x - 40 + h, z, h);
-    f.circle(8, 12); // inside the 20 m minimum
+    f.circle(8, 12); // tighter than the 15 m minimum
     expect(c.stage).toBe('circuit');
     f.circle(30, 6); // below 10 m
     expect(c.stage).toBe('circuit');
     f.circle(30, 15);
     expect(c.stage).toBe('cut');
+    // Not round the spot: a gentle turn well away from it counts just the same.
+    const c2 = new SpotLanding(env());
+    const f2 = pilot(c2);
+    const { x: x2, z: z2 } = c2.spot;
+    for (let h = 1; h <= 12; h++) f2.at(x2 - 100 + h, z2 + 60, h);
+    for (let a = 0; a <= 380; a += 3) f2.at(x2 - 70 - Math.cos((a * Math.PI) / 180) * 20, z2 + 60 + Math.sin((a * Math.PI) / 180) * 20, 12);
+    expect(c2.stage).toBe('cut');
   });
 
   it('throttle after the cut, or a crash landing, means no score', () => {
@@ -448,7 +455,7 @@ describe('spot landing', () => {
     }
   });
 
-  it('the on-screen steps tick off as you go, and say why the circuit isn\'t counting', () => {
+  it('the on-screen steps tick off as you go, and say why the turn isn\'t counting', () => {
     const c = new SpotLanding(env());
     const { x, z } = c.spot;
     const f = pilot(c);
@@ -460,11 +467,11 @@ describe('spot landing', () => {
     expect(c.steps()[1].detail).toBe(''); // (the height's the big number in the box)
     for (let h = 4; h <= 12; h++) f.at(x - 40 + h, z, h);
     expect(now()).toBe(2); // circuit
-    f.at(x - 5, z, 12); // too close in
-    expect(c.steps()[2].detail).toMatch(/too close/);
+    f.circle(6, 12, 90); // a quick spin round
+    expect(c.steps()[2].detail).toMatch(/too tight/);
     f.at(x - 30, z, 5); // too low
     expect(c.steps()[2].detail).toMatch(/too low/);
-    f.circle(30, 12);
+    f.circle(30, 12, 420); // (a bit more: the first moments after the spin still read as tight)
     expect(now()).toBe(3); // cut
     expect(c.steps().slice(0, 3).every((st) => st.state === 'done')).toBe(true);
     f.at(x - 30, z, 10, { throttle: 0 });
