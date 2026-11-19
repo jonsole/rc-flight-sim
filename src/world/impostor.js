@@ -16,7 +16,7 @@ import {
   WebGLRenderTarget, OrthographicCamera, Scene, Mesh, ShaderMaterial, BufferGeometry,
   Float32BufferAttribute, LinearFilter, LinearMipmapLinearFilter, DoubleSide, Color, SRGBColorSpace,
 } from 'three';
-import { leafTexture, LEAF_ROWS } from './fluffy.js';
+import { leafTexture, LEAF_ROWS, LEAF_BRIGHT } from './fluffy.js';
 import { SPECIES, BARK } from './species.js';
 import { leafUniforms } from './trees.js';
 
@@ -85,11 +85,11 @@ const BAKE_FRAG = /* glsl */ `
       // (uBare) at which it has gone (fluffy.js LEAF_FALL, solved for it).
       vec4 t = texture2D(uLeaf, (vUv + vec2(1.0, uLeafRow)) / LEAF_GRID); // (its leaves, the second size: typical crowns, far off)
       if (t.a < 0.5) discard;
-      float kk = pow(t.r / t.a, 2.2);
+      float kk = pow(t.r / t.a / ${LEAF_BRIGHT.toFixed(3)}, 2.2);
       c *= vec3(kk, kk, kk * 0.83);
       c *= mix(0.86, 1.06, vUp);
       float tint = t.b / t.a - 0.5; // each leaf's own tint (as on the leafy cards)
-      c *= vec3(1.0 + tint * 0.25, 1.0 + tint * 0.05, 1.0 - tint * 0.35) * (1.0 + tint * 0.06);
+      c *= vec3(1.0 + tint * 0.36, 1.0 + tint * 0.07, 1.0 - tint * 0.45) * (1.0 + tint * 0.06);
       fallAt = clamp((t.g / t.a) / 1.02 / (1.0 + 0.8 * (1.0 - vWhen)), 0.0, 1.0);
     }
     // (Bark is drawn at half brightness: its colours go over 1.)
