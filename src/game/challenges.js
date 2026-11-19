@@ -1,5 +1,5 @@
-// Challenges (Menu → Challenges): hoops, balloon burst, limbo, a pylon race
-// and streamer cutting, laid out in the most open part of the field
+// Challenges (Menu → Challenges): hoops, balloon burst, limbo, a pylon race,
+// streamer cutting and spot landing, laid out in the most open part of the field
 // (src/game/arena.js). This runs the chosen course (src/game/courses.js):
 // its clock, best scores (kept in this browser per field), the HUD, the
 // marker pointing at what's next, and the sounds. Pressing R (reset)
@@ -391,6 +391,11 @@ export class Challenges {
 
   #finish() {
     const s = this.course.score(this.time);
+    if (s.void) {
+      // (Disqualified: nothing to save.)
+      this.finished = { text: s.text, void: true };
+      return;
+    }
     const Course = MODES[this.mode].Course;
     const all = loadBest();
     const old = all[this.key];
@@ -414,7 +419,7 @@ export class Challenges {
     let big = st.big ?? formatTime(limit ? Math.max(0, limit - this.time) : this.time);
     let line = st.line;
     if (ac.crashed && this.course.state !== 'done') line = limit && this.course.state === 'running' ? 'Crashed: R to fly on (the clock\'s running)' : 'Crashed: R to try again';
-    if (this.finished) line = `${this.finished.record ? 'New best! ' : 'Done! '}${this.finished.text} · R to go again`;
+    if (this.finished) line = this.finished.void ? `${this.finished.text} · R to go again` : `${this.finished.record ? 'New best! ' : 'Done! '}${this.finished.text} · R to go again`;
     if (this.mode === 'limbo' && this.course.state === 'done') big = `${this.course.passes} under`;
     this.hud.big.textContent = big;
     this.hud.line.textContent = line;

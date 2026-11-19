@@ -3,7 +3,7 @@ import { Vector3, Quaternion } from 'three';
 import { throughHoop, segmentTouches, bodyShape, crossSegment2D } from '../src/game/geom.js';
 import { Ribbon, SEG } from '../src/game/ribbon.js';
 import { findArena, arenaToWorld } from '../src/game/arena.js';
-import { Hoops, Balloons, Balloon, Limbo, Pylons, Streamers, LIMBO_HEIGHTS } from '../src/game/courses.js';
+import { Hoops, Balloons, Balloon, Limbo, Pylons, Streamers, SpotLanding, LIMBO_HEIGHTS } from '../src/game/courses.js';
 import { Obstacles } from '../src/sim/obstacles.js';
 import { physicsGround as ground } from '../src/sim/terrain.js';
 import { Aircraft } from '../src/sim/aircraft.js';
@@ -364,5 +364,95 @@ describe('challenge courses', () => {
     expect(s.tryCut(r, ctx)).toBe(true);
     expect(r.count).toBeLessThan(before);
     expect(s.loose.length).toBe(1);
+  });
+});
+
+describe('spot landing', () => {
+  /** A stand-in aeroplane and a way to move it, with the throttle and ground contact as given. */
+  function pilot(course) {
+    const ac = { crashed: false, held: null, onGround: true, velocity: new Vector3(12, 0, 0), controls: { throttle: 0.7 }, crash(r) { this.crashed = r; } };
+    const pose = { p: new Vector3(), q: new Quaternion() };
+    const prev = new Vector3();
+    const said = [];
+    let time = 0;
+    const at = (x, z, h, { ground = false, throttle = ac.controls.throttle, speed = 12 } = {}) => {
+      prev.copy(pose.p);
+      pose.p.set(x, ground ? course.env.ground.heightAt(x, z) : course.env.ground.heightAt(x, z) + h, z);
+      ac.onGround = ground;
+      ac.controls.throttle = throttle;
+      ac.velocity.set(speed, 0, 0);
+      time += 0.05;
+      course.env.me = { position: pose.p };
+      course.update({ dt: 0.05, time, ac, pose, prev, span: 1, shape: bodyShape(1), sweep: 0, wind: still, floor, say: (t) => said.push(t), sfx: () => {} });
+    };
+    /** Fly round the spot at radius r, h up, through `deg` degrees, from its -x side. */
+    const circle = (r, h, deg = 380) => {
+      const { x, z } = course.spot;
+      // (Starting on the side the climb ended, the pilot's way, -x.)
+      for (let a = 180; a <= 180 + deg; a += 3) at(x + Math.cos((a * Math.PI) / 180) * r, z + Math.sin((a * Math.PI) / 180) * r, h);
+    };
+    return { ac, at, circle, said };
+  }
+
+  it('climb, circuit, cut the throttle, land: scored by the touchdown point', () => {
+    const c = new SpotLanding(env());
+    const { x, z } = c.spot;
+    const f = pilot(c);
+    f.at(x - 40, z, 0, { ground: true, speed: 0 });
+    expect(c.state).toBe('ready');
+    for (let h = 1; h <= 12; h++) f.at(x - 40 + h, z, h);
+    expect(c.stage).toBe('circuit');
+    f.circle(25, 12);
+    expect(c.stage).toBe('cut');
+    f.at(x - 25, z, 10, { throttle: 0 });
+    expect(c.stage).toBe('glide');
+    for (let k = 0; k < 20; k++) f.at(x - 25 + k, z + 1.5, 10 - k * 0.5, { throttle: 0 });
+    f.at(x - 3, z + 1.5, 0, { ground: true, throttle: 0, speed: 6 });
+    expect(c.stage).toBe('rolling');
+    f.at(x - 1, z + 1.5, 0, { ground: true, throttle: 0, speed: 0.2 }); // stopped
+    expect(c.state).toBe('done');
+    // Measured from where it first touched, not where it stopped.
+    expect(c.score().value).toBeCloseTo(Math.hypot(3, 1.5), 1);
+    expect(c.score().text).toMatch(/Good|Superb/);
+  });
+
+  it('a circuit flown too close round the spot, or too low, does not count', () => {
+    const c = new SpotLanding(env());
+    const { x, z } = c.spot;
+    const f = pilot(c);
+    for (let h = 1; h <= 12; h++) f.at(x - 40 + h, z, h);
+    f.circle(8, 12); // inside the 20 m minimum
+    expect(c.stage).toBe('circuit');
+    f.circle(30, 6); // below 10 m
+    expect(c.stage).toBe('circuit');
+    f.circle(30, 15);
+    expect(c.stage).toBe('cut');
+  });
+
+  it('throttle after the cut, or a crash landing, means no score', () => {
+    for (const how of ['throttle', 'crash']) {
+      const c = new SpotLanding(env());
+      const { x, z } = c.spot;
+      const f = pilot(c);
+      for (let h = 1; h <= 12; h++) f.at(x - 40 + h, z, h);
+      f.circle(25, 12);
+      f.at(x - 25, z, 10, { throttle: 0 });
+      if (how === 'throttle') f.at(x - 20, z, 8, { throttle: 0.3 });
+      else {
+        f.at(x - 2, z, 0, { ground: true, throttle: 0, speed: 8 });
+        f.ac.crashed = 'Crashed';
+        f.at(x - 1, z, 0, { ground: true, throttle: 0, speed: 2 });
+      }
+      expect(c.state).toBe('done');
+      expect(c.score().void).toBe(true);
+    }
+  });
+
+  it('hard means higher and wider', () => {
+    const e = new SpotLanding({ ...env(), level: 'easy' });
+    const h = new SpotLanding({ ...env(), level: 'hard' });
+    expect(h.climb).toBeGreaterThan(e.climb);
+    expect(h.minR).toBeGreaterThan(e.minR);
+    expect(new SpotLanding(env()).climb).toBe(10);
   });
 });

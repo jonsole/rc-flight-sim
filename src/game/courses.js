@@ -1,5 +1,5 @@
 // The challenges' courses: hoops, balloons, limbo, a pylon race round
-// inflatable posts, and streamer cutting. Each builds its things in the
+// inflatable posts, streamer cutting and spot landing. Each builds its things in the
 // arena (src/game/arena.js), and each frame checks the aeroplane against
 // them. The manager (src/game/challenges.js) runs the clock, the scores and
 // the HUD.
@@ -15,8 +15,9 @@
 import {
   Group, Mesh, MeshStandardMaterial, MeshBasicMaterial, TorusGeometry, SphereGeometry, CylinderGeometry,
   ConeGeometry, BoxGeometry, PlaneGeometry, Vector3, Quaternion, Matrix4, BufferGeometry, Line, LineBasicMaterial,
-  BufferAttribute, DoubleSide, TubeGeometry, CatmullRomCurve3, Shape, ShapeGeometry,
+  BufferAttribute, DoubleSide, TubeGeometry, CatmullRomCurve3, Shape, ShapeGeometry, RingGeometry, CircleGeometry,
 } from 'three';
+import { LOCATION, clubToWorld } from '../sim/location.js';
 import { throughHoop, crossPlane, crossSegment2D, toBody, segmentTouches, ballTouches } from './geom.js';
 import { arenaToWorld, blocked } from './arena.js';
 import { Ribbon, RibbonMesh } from './ribbon.js';
@@ -1058,4 +1059,209 @@ export class Streamers {
   }
 }
 
-export const COURSES = [Hoops, Balloons, Limbo, Pylons, Streamers];
+// --- Spot landing ------------------------------------------------------------
+
+export const SPOT_RINGS = [2, 5, 10]; // m: the white rings round the bullseye
+const SPOT_BULL = 1; // m: the red bullseye's radius
+
+/**
+ * Take off, climb to the height, fly a full circuit round the spot, then
+ * cut the throttle and land as close to the spot as you can. Scored by how
+ * far from its centre you touch down.
+ */
+export class SpotLanding {
+  static id = 'spot';
+  static title = 'Spot landing';
+  static about = 'Take off and climb to 10 m, fly a full 360° circuit round the spot (on the runway), then cut the throttle right back and glide in to land as close to the middle of the spot as you can. Scored by where you first touch down. Touch the throttle again after cutting it, or crash on landing, and there\'s no score.';
+
+  constructor(env) {
+    this.env = env;
+    this.group = new Group();
+    this.state = 'ready';
+    this.stage = 'climb'; // climb | circuit | glide | rolling | landed
+    this.climb = lv(env, 10, 10, 20); // m above the ground to reach
+    this.minR = lv(env, 10, 20, 30); // the circuit must go round at least this far out
+    this.turned = 0; // degrees round the spot so far
+    this.lastAngle = null;
+    this.result = null; // { dist, void?, why? }
+    // The spot: the middle of the runway (or the course's middle if
+    // something stands there).
+    const rw = LOCATION.layout.runway;
+    let [x, z] = clubToWorld(rw.x, rw.z);
+    if (blocked(env.obstacles, env.ground, x, env.ground.heightAt(x, z) + 1, z)) [x, z] = [env.arena.x, env.arena.z];
+    this.spot = new Vector3(x, env.ground.heightAt(x, z), z);
+    // Painted on the grass: a red bullseye, white rings, orange cones round the outside.
+    const paint = (geo, color) => {
+      const m = new Mesh(geo, new MeshBasicMaterial({ color, transparent: true, opacity: 0.92, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+      m.rotation.x = -Math.PI / 2;
+      m.position.copy(this.spot).setY(this.spot.y + 0.04);
+      m.renderOrder = 2;
+      this.group.add(m);
+      return m;
+    };
+    paint(new CircleGeometry(SPOT_BULL, 40), '#e02020');
+    for (const r of SPOT_RINGS) paint(new RingGeometry(r - 0.12, r + 0.12, 72), '#ffffff');
+    paint(new RingGeometry(0.02, 0.18, 16), '#ffffff'); // centre dot
+    const cone = new ConeGeometry(0.22, 0.6, 12);
+    const coneMat = new MeshStandardMaterial({ color: '#ff6a10', roughness: 0.6 });
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      const r = SPOT_RINGS[SPOT_RINGS.length - 1] + 1;
+      const cx = x + Math.cos(a) * r;
+      const cz = z + Math.sin(a) * r;
+      const c = new Mesh(cone, coneMat);
+      c.position.set(cx, env.ground.heightAt(cx, cz) + 0.3, cz);
+      c.castShadow = true;
+      this.group.add(c);
+    }
+    // Where you touched down: a little flag, shown once you have.
+    this.mark = new Group();
+    const pole = new Mesh(new CylinderGeometry(0.02, 0.02, 1.2, 6), new MeshStandardMaterial({ color: '#eeeeee' }));
+    pole.position.y = 0.6;
+    const flag = new Mesh(new PlaneGeometry(0.5, 0.32), new MeshStandardMaterial({ color: '#1a5cff', side: DoubleSide }));
+    flag.position.set(0.25, 1.04, 0);
+    this.mark.add(pole, flag);
+    this.mark.visible = false;
+    this.group.add(this.mark);
+  }
+
+  update(ctx) {
+    const ac = ctx.ac;
+    if (this.state === 'done') return;
+    const p = ctx.pose.p;
+    const agl = p.y - this.env.ground.heightAt(p.x, p.z);
+    const stick = ac.controls?.throttle ?? ac.throttleActual ?? 0;
+    if (this.state === 'ready' && !ac.held && !ac.onGround && ac.velocity.length() > 3) this.state = 'running';
+    if (this.state !== 'running') return;
+    if (ac.crashed) {
+      if (this.stage === 'glide' || this.stage === 'rolling') this.#void(ctx, 'Crashed landing: no score');
+      return;
+    }
+    switch (this.stage) {
+      case 'climb':
+        if (agl >= this.climb) {
+          this.stage = 'circuit';
+          ctx.say(`${this.climb} m! Now a full circuit round the spot`);
+          ctx.sfx('ding');
+        }
+        break;
+      case 'circuit': {
+        // Degrees flown round the spot, while high enough and far enough out.
+        const dx = p.x - this.spot.x;
+        const dz = p.z - this.spot.z;
+        const a = Math.atan2(dz, dx);
+        const ok = agl >= this.climb && Math.hypot(dx, dz) >= this.minR;
+        if (ok && this.lastAngle !== null) {
+          let d = a - this.lastAngle;
+          d = Math.atan2(Math.sin(d), Math.cos(d));
+          this.turned += (d * 180) / Math.PI;
+        }
+        this.lastAngle = ok ? a : null;
+        if (!ok && ac.onGround) this.#nag(ctx, 'Landed before finishing the circuit: take off again');
+        if (Math.abs(this.turned) >= 360) {
+          this.stage = 'cut';
+          ctx.say('Circuit done! Cut the throttle and land on the spot');
+          ctx.sfx('ding');
+        }
+        break;
+      }
+      case 'cut':
+        // Waiting for the throttle to be cut right back.
+        if (stick <= 0.02) {
+          this.stage = 'glide';
+          ctx.say('Power off: glide in to the spot');
+          ctx.sfx('tick');
+        } else if (ac.onGround) this.#nag(ctx, 'Cut the throttle first!');
+        break;
+      case 'glide':
+        if (stick > 0.05) {
+          this.#void(ctx, 'Throttle opened after the cut: no score');
+          return;
+        }
+        if (ac.onGround) {
+          // Touched down: this is where it's measured from.
+          this.touch = new Vector3(p.x, this.env.ground.heightAt(p.x, p.z), p.z);
+          this.mark.position.copy(this.touch);
+          this.mark.visible = true;
+          this.stage = 'rolling';
+          this.rollTime = 0;
+        }
+        break;
+      case 'rolling':
+        // A moment to be sure it was a landing, not a crash.
+        if (stick > 0.05) {
+          this.#void(ctx, 'Throttle opened after the cut: no score');
+          return;
+        }
+        this.rollTime += ctx.dt;
+        if (this.rollTime > 1.5 || ac.velocity.length() < 0.5) {
+          const dist = Math.hypot(this.touch.x - this.spot.x, this.touch.z - this.spot.z);
+          this.result = { dist };
+          this.stage = 'landed';
+          this.state = 'done';
+          ctx.sfx(dist <= SPOT_BULL ? 'finish' : 'ding');
+        }
+        break;
+      default:
+    }
+  }
+
+  /** A reminder, but not every frame. */
+  #nag(ctx, text) {
+    if (this.nagged === text && ctx.time - this.naggedAt < 4) return;
+    this.nagged = text;
+    this.naggedAt = ctx.time;
+    ctx.say(text);
+  }
+
+  #void(ctx, why) {
+    this.result = { void: true, why };
+    this.stage = 'landed';
+    this.state = 'done';
+    ctx.say(why);
+    ctx.sfx('fail');
+  }
+
+  /** How good a landing at `dist` metres was. */
+  static grade(dist) {
+    if (dist <= SPOT_BULL) return 'Bullseye!';
+    if (dist <= SPOT_RINGS[0]) return 'Superb';
+    if (dist <= SPOT_RINGS[1]) return 'Good';
+    if (dist <= SPOT_RINGS[2]) return 'On the spot';
+    return 'Missed the spot';
+  }
+
+  status() {
+    const p = this.env.me?.position;
+    switch (this.stage) {
+      case 'climb': {
+        const agl = p ? Math.max(0, p.y - this.env.ground.heightAt(p.x, p.z)) : 0;
+        return { line: `Take off and climb to ${this.climb} m`, big: `${Math.round(agl)} m` };
+      }
+      case 'circuit':
+        return { line: `Full circuit round the spot, ${this.climb} m up, ${this.minR} m out`, big: `${Math.min(360, Math.round(Math.abs(this.turned)))}°` };
+      case 'cut':
+        return { line: 'Cut the throttle right back', big: 'CUT' };
+      case 'glide':
+      case 'rolling': {
+        const d = p ? Math.hypot(p.x - this.spot.x, p.z - this.spot.z) : 0;
+        return { line: 'Glide in and land on the spot', big: `${Math.round(d)} m` };
+      }
+      default:
+        if (this.result?.void) return { line: this.result.why, big: '–' };
+        return { line: SpotLanding.grade(this.result.dist), big: `${this.result.dist.toFixed(1)} m` };
+    }
+  }
+
+  target() {
+    return this.stage === 'glide' || this.stage === 'cut' ? this.spot : null;
+  }
+
+  score() {
+    if (this.result?.void) return { void: true, text: this.result.why };
+    const d = this.result.dist;
+    return { value: Math.round(d * 10) / 10, text: `${d.toFixed(1)} m from the spot (${SpotLanding.grade(d)})` };
+  }
+}
+
+export const COURSES = [Hoops, Balloons, Limbo, Pylons, Streamers, SpotLanding];
