@@ -869,7 +869,10 @@ export class Drone {
     const lift = ac.add(new Vector3(0, 9.81, 0));
     const y = lift.sub(x.clone().multiplyScalar(lift.dot(x))).normalize();
     const z = new Vector3().crossVectors(x, y);
-    this.pose.q.setFromRotationMatrix(new Matrix4().makeBasis(x, y, z));
+    // Rolling smoothly into and out of the turns, as a pilot would.
+    const want = new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(x, y, z));
+    if (dt > 0) this.pose.q.slerp(want, 1 - Math.exp(-dt / 0.5));
+    else this.pose.q.copy(want);
     this.pose.p.copy(p);
     this.vel.copy(v);
   }
@@ -891,7 +894,7 @@ export class Drone {
 export class Streamers {
   static id = 'streamers';
   static title = 'Streamer cutting';
-  static about = 'Three model aeroplanes fly round towing a crepe-paper streamer from each wing tip. Cut them with your wings or prop, again and again, down to the stubs. Don\'t hit the aeroplanes! In multiplayer you tow streamers too, and everyone can cut everyone\'s.';
+  static about = 'Three model aeroplanes fly slowly round towing a crepe-paper streamer from each wing tip. Cut them with your wings or prop, again and again, down to the stubs. Don\'t hit the aeroplanes! In multiplayer you tow streamers too, and everyone can cut everyone\'s.';
 
   constructor(env) {
     this.env = env;
@@ -901,19 +904,24 @@ export class Streamers {
     this.loose = []; // cut-off pieces falling
     const a = env.arena;
     const R = a.r;
-    const P = (u, v, h) => at(env, u, v, h);
+    // At steady heights above the course's middle (not following every
+    // bump in the ground below, which made them twitch about).
+    const P = (u, v, h) => {
+      const [x, z] = arenaToWorld(a, u, v);
+      return new Vector3(x, a.g + h, z);
+    };
     const paths = [
       // A wide oval, anticlockwise.
-      (s) => { const t = s * Math.PI * 2; return P(Math.cos(t) * 0.65 * R, Math.sin(t) * 0.45 * R, 24); },
-      // A figure of eight, a little higher.
-      (s) => { const t = s * Math.PI * 2; return P(Math.sin(t) * 0.7 * R, Math.sin(t) * Math.cos(t) * 0.9 * R, 32 + 4 * Math.sin(t * 2)); },
-      // A tighter oval the other way round, swooping.
-      (s) => { const t = -s * Math.PI * 2; return P(Math.cos(t) * 0.4 * R, 0.1 * R + Math.sin(t) * 0.55 * R, 17 + 5 * Math.sin(t)); },
+      (s) => { const t = s * Math.PI * 2; return P(Math.cos(t) * 0.65 * R, Math.sin(t) * 0.45 * R, 22); },
+      // A big, lazy figure of eight, a little higher, gently up and down.
+      (s) => { const t = s * Math.PI * 2; return P(Math.sin(t) * 0.75 * R, Math.sin(t) * Math.cos(t) * 1.0 * R, 28 + 1.5 * Math.sin(t)); },
+      // An oval the other way round, lower.
+      (s) => { const t = -s * Math.PI * 2; return P(Math.cos(t) * 0.5 * R, 0.1 * R + Math.sin(t) * 0.55 * R, 16); },
     ];
     const colours = ['#ff2a2a', '#ffd400', '#2a8cff'];
     this.drones = paths.map((path, k) => {
       const entry = env.droneTypes[k % env.droneTypes.length];
-      const d = new Drone({ path, speed: 12 + k * 1.5, span: entry.def.wingSpan || 1, colour: colours[k], seed: k * 11.3, start: k * 0.31 }, env);
+      const d = new Drone({ path, speed: 8 + k * 0.5, span: entry.def.wingSpan || 1, colour: colours[k], seed: k * 11.3, start: k * 0.31 }, env);
       d.entry = entry;
       d.model = entry.createModel();
       d.proxy = env.makeProxy(entry);

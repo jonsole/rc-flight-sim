@@ -296,6 +296,25 @@ describe('challenge courses', () => {
     expect(ac.crashed).toMatch(/pylon/);
   });
 
+  it('streamers: the planes fly slowly and smoothly, at steady heights clear of the ground', () => {
+    const s = new Streamers(env());
+    const ctx = { dt: 1 / 60, time: 0, ac: { crashed: false, held: null, onGround: true, velocity: new Vector3() }, pose: { p: new Vector3(0, -50, 0), q: new Quaternion() }, prev: new Vector3(0, -50, 0), span: 1, shape: bodyShape(1), sweep: 0, wind: still, floor, say: () => {}, sfx: () => {} };
+    const last = s.drones.map((d) => d.pose.q.clone());
+    const ys = s.drones.map(() => []);
+    for (let i = 0; i < 60 * 40; i++) {
+      s.update(ctx);
+      s.drones.forEach((d, k) => {
+        expect(d.vel.length()).toBeLessThan(9.5);
+        // No sudden twitches: at most ~60 degrees a second of attitude change.
+        expect(d.pose.q.angleTo(last[k])).toBeLessThan((60 * Math.PI) / 180 / 60);
+        last[k].copy(d.pose.q);
+        ys[k].push(d.pose.p.y);
+        expect(d.pose.p.y).toBeGreaterThan(ground.heightAt(d.pose.p.x, d.pose.p.z) + 10);
+      });
+    }
+    for (const y of ys) expect(Math.max(...y) - Math.min(...y)).toBeLessThan(3.5);
+  });
+
   it('streamers: the planes fly their loops, and a streamer flown through is cut', () => {
     const s = new Streamers(env());
     const ctx = { dt: 1 / 60, time: 0, ac: { crashed: false, held: null, onGround: true, velocity: new Vector3() }, pose: { p: new Vector3(0, -50, 0), q: new Quaternion() }, prev: new Vector3(0, -50, 0), span: 1, shape: bodyShape(1), sweep: 0, wind: still, floor, say: () => {}, sfx: () => {} };
