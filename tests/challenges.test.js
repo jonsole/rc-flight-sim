@@ -148,7 +148,14 @@ describe('challenge courses', () => {
     const e = new Balloons({ ...env(), level: 'easy' });
     const h = new Balloons({ ...env(), level: 'hard' });
     expect(e.left).toBeGreaterThan(h.left);
-    expect(e.radius).toBeGreaterThan(h.radius);
+    expect(e.radius).toBeGreaterThan(h.radius * 2);
+    // Easy ones all about the same height; hard ones anywhere from low down to high up.
+    const spread = (c) => {
+      const hs = c.balloons.map((b) => b.len);
+      return Math.max(...hs) - Math.min(...hs);
+    };
+    expect(spread(e)).toBeLessThan(4);
+    expect(spread(h)).toBeGreaterThan(12);
     expect(new Balloons({ ...env(), minutes: 2 }).limit).toBe(120);
     expect(new Balloons(env()).limit).toBe(300);
   });

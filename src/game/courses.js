@@ -275,9 +275,9 @@ export class Balloons {
     this.group = new Group();
     this.state = 'ready';
     this.limit = (env.minutes ?? 5) * 60; // seconds to burst as many as you can
-    this.radius = lv(env, 0.6, 0.45, 0.32);
+    this.radius = lv(env, 0.8, 0.5, 0.3); // 1.6 m, 1 m, 0.6 m across
     this.up = lv(env, 15, 12, 9); // balloons up at once
-    this.strings = lv(env, [3, 12], [3, 20], [5, 25]); // string lengths (m)
+    this.strings = lv(env, [8, 11], [4, 18], [2, 25]); // string lengths (m): how high they fly, and how much that varies
     this.rand = rng(1234 + Math.round(env.arena.r));
     this.geo = new SphereGeometry(this.radius, 18, 14);
     this.geo.scale(1, 1.18, 1);
