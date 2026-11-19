@@ -238,12 +238,23 @@ none). The course is set out in the most open part of the field, in front of
 you, worked out from the trees and buildings there (your scenery edits too).
 A box at the top shows the clock and progress, a yellow ring or edge arrow
 points to what's next, and **R** starts it again. Your best for each
-challenge is kept in this browser, per field.
+challenge is kept in this browser, per field and difficulty.
+
+Each challenge has three difficulty levels (*Easy*, *Normal*, *Hard*), set
+next to the challenge on the start screen or in the Challenges tab:
+
+| Challenge | Easy | Normal | Hard |
+| --- | --- | --- | --- |
+| Hoops | 7 m hoops, gentle height changes | 5 m | 3.2 m, big climbs and dives |
+| Balloon burst | 15 big balloons up at once, short strings | 12 | 9 small ones on long strings |
+| Limbo | 14 m between the poles | 10 m | 7 m |
+| Pylon race | 2 laps | 3 | 5 |
+| Streamer cutting | planes at ~7 m/s, 12 m streamers | 8–9 m/s, 8 m | 11–12 m/s, 6 m |
 
 | Challenge | What to do |
 | --- | --- |
 | **Hoops** | Eight floating hoops round a loop at different heights. Fly through them in order, either way through; the next one is lit. The clock runs from the first to the last. |
-| **Balloon burst** | Fifteen helium balloons tied to pegs on strings, blown about by the wind and its gusts. Burst them all (any part of the model will do). Clip a string instead and the balloon rises away downwind trailing its string: chase it and burst it before it gets out of reach (120 m up or 350 m away), or it costs 15 s. The clock starts when you take off. |
+| **Balloon burst** | Against the clock (2, 5 or 10 minutes; 5 to start with): burst as many helium balloons as you can. They're tied to pegs on strings, blown about by the wind and its gusts, and a new one is tied up a couple of seconds after each one goes. Clip a string and the balloon rises away downwind trailing its string: chase it and burst it before it gets out of reach (120 m up or 350 m away). The clock starts when you take off; if you crash, R puts you back in the air and the clock keeps running (*Start again* in the menu starts a new game). |
 | **Limbo** | A bar between two poles, starting at 8 m. Fly under it (either way) and it drops, down to 32 cm. Over the top doesn't count; touch it and it falls, ending the run; the poles are solid. Scored by passes. |
 | **Pylon race** | Three laps round three inflatable pylons: cross the start line (the white line between two black flags) either way, which sets which way round you race, then round the lit pylon each time, on the outside, on the side its yellow flag sticks out, the way the curved yellow arrow round it points. Later laps must cross the line the same way. Cutting inside one means going back round it, and hitting one is a crash. |
 | **Streamer cutting** | Three model aeroplanes fly loops towing a crepe-paper streamer from each wing tip. Cut them with your wings, prop or fuselage, again and again, until only stubs are left; don't hit the aeroplanes. In multiplayer you tow streamers too, and everyone can cut everyone's (the streamer aeroplanes are your own, not shared). |

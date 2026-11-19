@@ -37,7 +37,7 @@ import { weatherFor } from './world/mist.js';
 import { snowFor, snowLineFor, snowAtHeight } from './world/snow.js';
 import { loadEdits } from './sim/edits.js';
 import { Editor } from './editor/editor.js';
-import { Challenges, MODES } from './game/challenges.js';
+import { Challenges, MODES, LEVELS } from './game/challenges.js';
 
 // The version running: the GitHub commit it was built from, and its date.
 {
@@ -454,7 +454,7 @@ function resetAircraft() {
     aircraft.resetOnGround(gx, gz, heading);
   }
   osd.reset();
-  challenges.restart();
+  challenges.onReset();
   rig.chaseInit = false;
   rig.losInit = false;
 }
@@ -602,12 +602,19 @@ const panel = new Panel(document.getElementById('panel'), {
     }
     if (key === 'scenery' || key === 'googleKey') applyScenery();
     if (key === 'startMode') resetAircraft();
-    if (key === 'challenge') {
-      challenges.setMode(value, false);
+    if (key === 'challenge' || key === 'challengeLevel' || key === 'balloonMinutes') {
+      challenges.setMode(settings.challenge, false);
+      challenges.setLevel(settings.challengeLevel, settings.balloonMinutes);
+      challenges.restart();
       resetAircraft();
+      panel?.render(); // (the tab's options and description depend on the challenge)
     }
   },
   onReset: resetAircraft,
+  onRestartChallenge: () => {
+    challenges.restart();
+    resetAircraft();
+  },
   challenges: () => challenges,
   onEditScenery: () => openEditor(),
   onStartHere: () => startHere(),
@@ -717,6 +724,21 @@ splashChallenge.addEventListener('change', (e) => {
   settings.challenge = e.target.value;
   saveSettings(settings);
   challenges.setMode(settings.challenge, false);
+  challenges.restart();
+  resetAircraft();
+});
+const splashLevel = document.getElementById('splash-level');
+for (const [k, t] of Object.entries(LEVELS)) splashLevel.append(new Option(t, k));
+splashLevel.value = LEVELS[settings.challengeLevel] ? settings.challengeLevel : 'normal';
+// (No difficulty for free flying.)
+const showLevel = () => (splashLevel.style.display = splashChallenge.value === 'none' ? 'none' : '');
+showLevel();
+splashChallenge.addEventListener('change', showLevel);
+splashLevel.addEventListener('change', (e) => {
+  settings.challengeLevel = e.target.value;
+  saveSettings(settings);
+  challenges.setLevel(settings.challengeLevel, settings.balloonMinutes);
+  challenges.restart();
   resetAircraft();
 });
 splashGraphics.addEventListener('change', (e) => {
@@ -782,6 +804,7 @@ resize();
 applySettings();
 rig.setMode(settings.cameraMode);
 challenges.setMode(settings.challenge, false);
+challenges.setLevel(settings.challengeLevel, settings.balloonMinutes);
 resetAircraft();
 paused = true; // until the splash is dismissed
 
