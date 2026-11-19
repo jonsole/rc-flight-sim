@@ -62,6 +62,11 @@ function clearOf(env, p, r = 2) {
   return p;
 }
 
+/** Difficulty levels (Menu → Challenges). */
+export const LEVELS = { easy: 'Easy', normal: 'Normal', hard: 'Hard' };
+/** The value for this course's difficulty. */
+const lv = (env, easy, normal, hard) => ({ easy, normal, hard })[env.level] ?? normal;
+
 const fmt = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
 export const formatTime = fmt;
 
@@ -77,9 +82,9 @@ export class Hoops {
     this.group = new Group();
     this.state = 'ready';
     this.next = 0;
-    this.radius = 2.5;
+    this.radius = lv(env, 3.5, 2.5, 1.6);
     const R = env.arena.r;
-    const heights = [6, 9, 13, 8, 5, 11, 15, 7];
+    const heights = lv(env, [6, 7, 9, 8, 6, 8, 10, 7], [6, 9, 13, 8, 5, 11, 15, 7], [5, 11, 17, 7, 4, 13, 19, 6]);
     const n = heights.length;
     this.hoops = [];
     const geo = new TorusGeometry(this.radius + 0.14, 0.14, 10, 48);
@@ -262,46 +267,71 @@ export class Balloon {
 export class Balloons {
   static id = 'balloons';
   static title = 'Balloon burst';
-  static about = 'Burst all the helium balloons. They are tied to pegs on strings and blown about by the wind. Clip a string and the balloon floats away: chase it and burst it before it gets out of reach. The clock starts when you take off.';
+  static about = 'How many helium balloons can you burst before the time\'s up? They are tied to pegs on strings and blown about by the wind, and new ones keep being tied up. Clip a string and the balloon floats away: chase it and burst it before it gets out of reach. The clock starts when you take off; crash and R puts you back in the air with the clock still running.';
+  static higher = true;
 
   constructor(env) {
     this.env = env;
     this.group = new Group();
     this.state = 'ready';
-    this.radius = 0.45;
-    const R = env.arena.r;
-    const rand = rng(1234 + Math.round(R));
-    const geo = new SphereGeometry(this.radius, 18, 14);
-    geo.scale(1, 1.18, 1);
-    const knot = new ConeGeometry(0.06, 0.1, 8);
+    this.limit = (env.minutes ?? 5) * 60; // seconds to burst as many as you can
+    this.radius = lv(env, 0.6, 0.45, 0.32);
+    this.up = lv(env, 15, 12, 9); // balloons up at once
+    this.strings = lv(env, [3, 12], [3, 20], [5, 25]); // string lengths (m)
+    this.rand = rng(1234 + Math.round(env.arena.r));
+    this.geo = new SphereGeometry(this.radius, 18, 14);
+    this.geo.scale(1, 1.18, 1);
+    this.knot = new ConeGeometry(0.06, 0.1, 8);
     this.balloons = [];
     this.bits = [];
     this.burst = 0;
     this.lost = 0;
-    for (let k = 0; k < 15; k++) {
-      const a = rand() * Math.PI * 2;
-      const d = Math.sqrt(rand()) * 0.85 * R;
-      const h = 3 + rand() * 17;
-      const peg = at(env, Math.cos(a) * d, Math.sin(a) * d, 0);
-      const top = clearOf(env, peg.clone().setY(peg.y + h), 1.2);
-      const mat = new MeshStandardMaterial({ color: BALLOON_COLOURS[k % BALLOON_COLOURS.length], roughness: 0.25, metalness: 0.05 });
-      const mesh = new Mesh(geo, mat);
-      mesh.castShadow = true;
-      const k2 = new Mesh(knot, mat);
-      k2.position.y = -this.radius * 1.18 - 0.03;
-      k2.rotation.x = Math.PI;
-      mesh.add(k2);
-      const line = new Line(new BufferGeometry().setAttribute('position', new BufferAttribute(new Float32Array(6), 3)), new LineBasicMaterial({ color: '#dddddd' }));
-      line.frustumCulled = false;
-      this.group.add(mesh, line);
-      const b = new Balloon(peg, top.y - peg.y, this.radius);
-      Object.assign(b, { mesh, line, strings: [] });
-      this.balloons.push(b);
-    }
+    this.made = 0;
+    this.waiting = []; // seconds until each replacement is tied up
+    for (let k = 0; k < this.up; k++) this.#spawn();
   }
 
+  /** Tie up a new balloon somewhere in the course. */
+  #spawn() {
+    const env = this.env;
+    const R = env.arena.r;
+    const rand = this.rand;
+    const a = rand() * Math.PI * 2;
+    const d = Math.sqrt(rand()) * 0.85 * R;
+    const [lo, hi] = this.strings;
+    const h = lo + rand() * (hi - lo);
+    const peg = at(env, Math.cos(a) * d, Math.sin(a) * d, 0);
+    const top = clearOf(env, peg.clone().setY(peg.y + h), 1.2);
+    const mat = new MeshStandardMaterial({ color: BALLOON_COLOURS[this.made++ % BALLOON_COLOURS.length], roughness: 0.25, metalness: 0.05 });
+    const mesh = new Mesh(this.geo, mat);
+    mesh.castShadow = true;
+    const k2 = new Mesh(this.knot, mat);
+    k2.position.y = -this.radius * 1.18 - 0.03;
+    k2.rotation.x = Math.PI;
+    mesh.add(k2);
+    const line = new Line(new BufferGeometry().setAttribute('position', new BufferAttribute(new Float32Array(6), 3)), new LineBasicMaterial({ color: '#dddddd' }));
+    line.frustumCulled = false;
+    this.group.add(mesh, line);
+    const b = new Balloon(peg, top.y - peg.y, this.radius);
+    Object.assign(b, { mesh, line, strings: [] });
+    this.balloons.push(b);
+    return b;
+  }
+
+  /** One's gone (burst or away): tidy it up and tie up another shortly. */
+  #replace(b) {
+    this.group.remove(b.mesh, b.line);
+    b.line.geometry.dispose();
+    for (const s of b.strings) {
+      this.group.remove(s.line);
+      s.line.geometry.dispose();
+    }
+    this.waiting.push(2);
+  }
+
+  /** Balloons up now. */
   get left() {
-    return this.balloons.length - this.burst - this.lost;
+    return this.balloons.filter((b) => !b.popped && !b.gone).length;
   }
 
   update(ctx) {
@@ -329,8 +359,8 @@ export class Balloons {
           b.mesh.visible = false;
           for (const s of b.strings) s.line.visible = false;
           this.lost++;
-          if (live) ctx.say(`One got away! ${this.left} left`);
-          this.#check(ctx);
+          if (live) ctx.say('One got away!');
+          this.#replace(b);
           continue;
         }
       }
@@ -370,6 +400,13 @@ export class Balloons {
       s.m.geometry.dispose();
     }
     this.bits = this.bits.filter((x) => x.life > 0);
+    // New balloons to replace the ones gone.
+    this.waiting = this.waiting.map((t) => t - ctx.dt);
+    while (this.waiting.length && this.waiting[0] <= 0) {
+      this.waiting.shift();
+      if (this.state !== 'done') this.#spawn();
+    }
+    this.balloons = this.balloons.filter((b) => !b.gone && !b.popped);
     if (this.state === 'ready' && !ctx.ac.held && !ctx.ac.onGround && ctx.ac.velocity.length() > 3) this.state = 'running';
   }
 
@@ -387,22 +424,12 @@ export class Balloons {
       this.group.add(m);
       this.bits.push({ m, v, spin: 5 + Math.random() * 10, life: 6 });
     }
-    // A free one's string drops.
-    if (b.trail) b.trail.attached = false;
-    if (!this.#check(ctx)) ctx.say(`Pop! ${this.left} to go`);
-  }
-
-  /** All burst or gone: finished. */
-  #check(ctx) {
-    if (this.left > 0 || this.state === 'done') return false;
-    this.state = 'done';
-    ctx.sfx('finish');
-    return true;
+    this.#replace(b);
+    ctx.say(`Pop! ${this.burst}`);
   }
 
   status() {
-    const n = this.balloons.length;
-    return { line: `${this.burst} of ${n} burst${this.lost ? ` · ${this.lost} got away` : ''}` };
+    return { line: `${this.burst} burst${this.lost ? ` · ${this.lost} got away` : ''}` };
   }
 
   target() {
@@ -412,8 +439,8 @@ export class Balloons {
     return best;
   }
 
-  score(time) {
-    return { value: time + 15 * this.lost, text: `${fmt(time + 15 * this.lost)}${this.lost ? ` (${this.lost} got away: +${15 * this.lost} s)` : ''}` };
+  score() {
+    return { value: this.burst, text: `${this.burst} balloon${this.burst === 1 ? '' : 's'}` };
   }
 }
 
@@ -433,7 +460,7 @@ export class Limbo {
     this.state = 'ready';
     this.level = 0;
     this.passes = 0;
-    this.width = 10;
+    this.width = lv(env, 14, 10, 7);
     const a = env.arena;
     // About 35 m in front of the pilot, the bar running away from you, so you
     // fly across your view under it and see the gap side on.
@@ -557,13 +584,13 @@ export class Limbo {
 export class Pylons {
   static id = 'pylons';
   static title = 'Pylon race';
-  static about = 'Three laps round the inflatable pylons, on the outside of each: cross the start line either way (that sets which way round you race), then round the lit pylon each time on the side its yellow flag sticks out, the way its curved arrow points. Cutting inside one means going back round it. Don\'t touch them!';
+  static about = 'Laps round the inflatable pylons (2 easy, 3 normal, 5 hard), on the outside of each: cross the start line either way (that sets which way round you race), then round the lit pylon each time on the side its yellow flag sticks out, the way its curved arrow points. Cutting inside one means going back round it. Don\'t touch them!';
 
-  constructor(env, laps = 3) {
+  constructor(env) {
     this.env = env;
     this.group = new Group();
     this.state = 'ready';
-    this.laps = laps;
+    this.laps = lv(env, 2, 3, 5);
     this.lap = 0;
     this.next = -1; // -1: the start line; 0..2 the pylons in racing order
     this.order = [0, 1, 2]; // which pylons, in the order raced (set at the start)
@@ -837,7 +864,7 @@ export class Drone {
     this.pose = { p: new Vector3(), q: new Quaternion() };
     this.vel = new Vector3();
     this.down = null; // crashed: { v, spin }
-    this.ribbons = [new Ribbon({ color: o.colour, seed: o.seed }), new Ribbon({ color: o.colour, seed: o.seed + 1.7 })];
+    this.ribbons = [new Ribbon({ length: o.length, color: o.colour, seed: o.seed }), new Ribbon({ length: o.length, color: o.colour, seed: o.seed + 1.7 })];
     this.meshes = this.ribbons.map((r) => new RibbonMesh(r));
     this.#place(0);
     for (const [i, r] of this.ribbons.entries()) r.place(this.tip(i, _a), _b.copy(this.vel).normalize().negate());
@@ -921,7 +948,7 @@ export class Streamers {
     const colours = ['#ff2a2a', '#ffd400', '#2a8cff'];
     this.drones = paths.map((path, k) => {
       const entry = env.droneTypes[k % env.droneTypes.length];
-      const d = new Drone({ path, speed: 8 + k * 0.5, span: entry.def.wingSpan || 1, colour: colours[k], seed: k * 11.3, start: k * 0.31 }, env);
+      const d = new Drone({ path, speed: lv(env, 6.5, 8, 11) + k * 0.5, length: lv(env, 12, 8, 6), span: entry.def.wingSpan || 1, colour: colours[k], seed: k * 11.3, start: k * 0.31 }, env);
       d.entry = entry;
       d.model = entry.createModel();
       d.proxy = env.makeProxy(entry);

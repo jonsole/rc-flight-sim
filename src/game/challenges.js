@@ -11,11 +11,24 @@
 // the owner shortens theirs when told.
 import { Vector3 } from 'three';
 import { findArena } from './arena.js';
-import { COURSES, Streamers, formatTime } from './courses.js';
+import { COURSES, Streamers, formatTime, LEVELS } from './courses.js';
 import { Ribbon, RibbonMesh } from './ribbon.js';
 import { bodyShape } from './geom.js';
 import { LOCATION } from '../sim/location.js';
 import { getAircraft } from '../aircraft/index.js';
+
+export { LEVELS };
+export const MINUTES = [2, 5, 10]; // balloon burst time limits
+
+/**
+ * Best-score key: per challenge, difficulty and field (and the balloon
+ * burst's time limit). Normal keeps the key used before there were
+ * levels, so earlier bests still count.
+ */
+export function bestKey(mode, level, field, minutes) {
+  if (mode === 'balloons') return `balloons:${level}:${minutes}min:${field}`;
+  return level === 'normal' ? `${mode}:${field}` : `${mode}:${level}:${field}`;
+}
 
 export const MODES = { none: { title: 'Free flying', about: 'No challenge: just fly.' } };
 for (const C of COURSES) MODES[C.id] = { title: C.title, about: C.about, Course: C };
@@ -98,6 +111,8 @@ export class Challenges {
   constructor(o) {
     this.o = o;
     this.mode = 'none';
+    this.level = 'normal'; // LEVELS
+    this.minutes = 5; // balloon burst time limit
     this.course = null;
     this.arena = null;
     this.time = 0; // the clock (s)
@@ -133,7 +148,26 @@ export class Challenges {
 
   /** Best-score key: per challenge and field. */
   get key() {
-    return `${this.mode}:${LOCATION.id}`;
+    return bestKey(this.mode, this.level, LOCATION.id, this.minutes);
+  }
+
+  /** Difficulty and the balloon burst's time limit; take effect at the next restart. */
+  setLevel(level, minutes = this.minutes) {
+    this.level = LEVELS[level] ? level : 'normal';
+    this.minutes = MINUTES.includes(Number(minutes)) ? Number(minutes) : 5;
+  }
+
+  /**
+   * The aircraft was reset (R): start the challenge again, except in the
+   * middle of a timed one (balloon burst), where you just fly on with the
+   * clock still running.
+   */
+  onReset() {
+    if (this.course?.limit && this.course.state === 'running') {
+      this.hasPrev = false;
+      return;
+    }
+    this.restart();
   }
 
   /** Choose the challenge ('none' for free flying); `restart` false leaves it for the next reset. */
@@ -167,6 +201,8 @@ export class Challenges {
       arena: this.arena,
       ground: this.o.ground,
       obstacles: this.o.obstacles,
+      level: this.level,
+      minutes: this.minutes,
       droneTypes: this.o.aircraftTypes?.() ?? [],
       makeProxy: this.o.makeProxy,
     };
@@ -281,7 +317,14 @@ export class Challenges {
     if (!c.paused) {
       const was = this.course.state;
       this.course.update(ctx);
-      if (this.course.state === 'running' && !ac.crashed) this.time += dt;
+      const limit = this.course.limit;
+      // (A timed challenge's clock keeps going through a crash.)
+      if (this.course.state === 'running' && (!ac.crashed || limit)) this.time += dt;
+      if (limit && this.course.state === 'running' && this.time >= limit) {
+        this.time = limit;
+        this.course.state = 'done';
+        this.sfx('finish');
+      }
       if (was !== 'done' && this.course.state === 'done') this.#finish();
       this.#streamers(ctx, c);
     }
@@ -357,7 +400,8 @@ export class Challenges {
       saveBest(all);
     }
     this.finished = { text: s.text, record: better && !!old };
-    this.say(better && old ? `New best! ${s.text}` : `Finished: ${s.text}`);
+    const end = this.course.limit ? 'Time\'s up' : 'Finished';
+    this.say(better && old ? `New best! ${s.text}` : `${end}: ${s.text}`);
   }
 
   #hud(ac, camera) {
@@ -365,10 +409,11 @@ export class Challenges {
     const M = MODES[this.mode];
     const st = this.course.status();
     const best = loadBest()[this.key];
-    this.hud.title.textContent = M.title;
-    let big = st.big ?? formatTime(this.time);
+    this.hud.title.textContent = `${M.title} · ${LEVELS[this.level]}`;
+    const limit = this.course.limit;
+    let big = st.big ?? formatTime(limit ? Math.max(0, limit - this.time) : this.time);
     let line = st.line;
-    if (ac.crashed && this.course.state !== 'done') line = 'Crashed: R to try again';
+    if (ac.crashed && this.course.state !== 'done') line = limit && this.course.state === 'running' ? 'Crashed: R to fly on (the clock\'s running)' : 'Crashed: R to try again';
     if (this.finished) line = `${this.finished.record ? 'New best! ' : 'Done! '}${this.finished.text} · R to go again`;
     if (this.mode === 'limbo' && this.course.state === 'done') big = `${this.course.passes} under`;
     this.hud.big.textContent = big;

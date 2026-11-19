@@ -9,7 +9,7 @@ import { formatDay } from '../world/seasons.js';
 import { LOCATIONS, LOCATION } from '../sim/location.js';
 import { QUALITY, DISTANCES } from '../world/quality.js';
 import { googleSessions } from '../world/googleTiles.js';
-import { MODES, loadBest } from '../game/challenges.js';
+import { MODES, LEVELS, MINUTES, loadBest, bestKey } from '../game/challenges.js';
 import { tunablesFor, loadTuning, saveTuning, tunedDef, powerSummary } from '../sim/tuning.js';
 
 const CH_LABEL = { roll: 'Aileron (roll)', pitch: 'Elevator (pitch)', yaw: 'Rudder (yaw)', throttle: 'Throttle' };
@@ -127,18 +127,39 @@ export class Panel {
   /** Challenges (src/game/challenges.js): pick one, start again, best scores here. */
   tab_game() {
     const mode = MODES[this.settings.challenge] ? this.settings.challenge : 'none';
+    const level = LEVELS[this.settings.challengeLevel] ? this.settings.challengeLevel : 'normal';
+    const minutes = Number(this.settings.balloonMinutes) || 5;
     const best = loadBest();
-    const rows = Object.entries(MODES).filter(([k]) => k !== 'none').map(([k, m]) => {
-      const b = best[`${k}:${LOCATION.id}`];
-      return el('tr', {}, el('td', {}, m.title), el('td', {}, b ? b.text : '–'), el('td', {}, b?.aircraft ?? ''));
-    });
+    const rows = Object.entries(MODES).filter(([k]) => k !== 'none').map(([k, m]) =>
+      el('tr', {}, el('td', {}, k === 'balloons' ? `${m.title} (${minutes} min)` : m.title),
+        Object.keys(LEVELS).map((l) => {
+          const b = best[bestKey(k, l, LOCATION.id, minutes)];
+          return el('td', { title: b?.aircraft ?? '' }, b ? b.text : '–');
+        })));
+    const restart = () => {
+      this.opts.onRestartChallenge();
+      this.opts.onClose();
+    };
     return [
       this.#select('Challenge', 'challenge', Object.fromEntries(Object.entries(MODES).map(([k, m]) => [k, m.title]))),
       el('p', { class: 'hint' }, MODES[mode].about),
-      el('div', { class: 'row' }, el('button', { onclick: () => { this.opts.onReset(); this.opts.onClose(); } }, mode === 'none' ? 'Reset aircraft (R)' : 'Start again (R)')),
-      el('p', { class: 'hint' }, 'The course is set out in the most open part of the field, in front of you. R starts it again (and resets the aircraft). The arrow on screen points to what\'s next.'),
+      mode === 'none' ? null : this.#select('Difficulty', 'challengeLevel', LEVELS),
+      mode === 'balloons' ? el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Time limit'),
+        el('select', { onchange: (e) => this.#set('balloonMinutes', Number(e.target.value)) },
+          MINUTES.map((n) => el('option', { value: n, selected: n === minutes }, `${n} minutes`)))) : null,
+      mode === 'none' ? null : el('p', { class: 'hint' }, {
+        hoops: 'Easy: big hoops, gentle height changes. Hard: small hoops, big climbs and dives.',
+        balloons: 'Easy: lots of big balloons on short strings. Hard: fewer, smaller ones on long strings that swing about.',
+        limbo: 'Easy: 14 m between the poles. Hard: 7 m.',
+        pylons: 'Easy: 2 laps. Normal: 3. Hard: 5.',
+        streamers: 'Easy: slow planes, long streamers. Hard: fast planes, short streamers.',
+      }[mode]),
+      el('div', { class: 'row' }, mode === 'none'
+        ? el('button', { onclick: () => { this.opts.onReset(); this.opts.onClose(); } }, 'Reset aircraft (R)')
+        : el('button', { onclick: restart }, 'Start again')),
+      el('p', { class: 'hint' }, `The course is set out in the most open part of the field, in front of you. R starts it again (and resets the aircraft)${mode === 'balloons' ? ', except during a balloon burst, where it just puts you back in the air with the clock running' : ''}. The arrow on screen points to what's next.`),
       el('h3', {}, `Your best here (${LOCATION.name})`),
-      el('table', { class: 'best' }, el('tr', {}, el('th', {}, 'Challenge'), el('th', {}, 'Best'), el('th', {}, 'Aircraft')), rows),
+      el('table', { class: 'best' }, el('tr', {}, el('th', {}, 'Challenge'), Object.values(LEVELS).map((t) => el('th', {}, t))), rows),
     ];
   }
 

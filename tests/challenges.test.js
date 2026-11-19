@@ -131,11 +131,34 @@ describe('challenge courses', () => {
   it('balloons burst when flown into', () => {
     const b = new Balloons(env());
     fly(b, [new Vector3(arena.x, arena.g + 40, arena.z), new Vector3(arena.x + 1, arena.g + 40, arena.z)]); // to sway them into place
-    expect(b.left).toBe(15);
-    const t = b.balloons[3].pos.clone();
+    expect(b.left).toBe(12); // normal: 12 up at once
+    const one = b.balloons[3];
+    const t = one.pos.clone();
     fly(b, [t.clone().add(new Vector3(-4, 0, 0)), t.clone().add(new Vector3(4, 0, 0))]);
-    expect(b.balloons[3].popped).toBe(true);
-    expect(b.left).toBe(14);
+    expect(one.popped).toBe(true);
+    expect(b.burst).toBe(1);
+    expect(b.left).toBe(11);
+    // Another is tied up a couple of seconds later.
+    fly(b, [new Vector3(arena.x, arena.g + 60, arena.z), new Vector3(arena.x + 30, arena.g + 60, arena.z)]);
+    expect(b.left).toBe(12);
+    expect(b.score().value).toBe(1);
+  });
+
+  it('balloons: easy has more, bigger balloons; hard fewer, smaller ones', () => {
+    const e = new Balloons({ ...env(), level: 'easy' });
+    const h = new Balloons({ ...env(), level: 'hard' });
+    expect(e.left).toBeGreaterThan(h.left);
+    expect(e.radius).toBeGreaterThan(h.radius);
+    expect(new Balloons({ ...env(), minutes: 2 }).limit).toBe(120);
+    expect(new Balloons(env()).limit).toBe(300);
+  });
+
+  it('difficulty changes the other courses too', () => {
+    expect(new Hoops({ ...env(), level: 'easy' }).radius).toBeGreaterThan(new Hoops({ ...env(), level: 'hard' }).radius);
+    expect(new Limbo({ ...env(), level: 'easy' }).width).toBeGreaterThan(new Limbo({ ...env(), level: 'hard' }).width);
+    expect([new Pylons({ ...env(), level: 'easy' }).laps, new Pylons(env()).laps, new Pylons({ ...env(), level: 'hard' }).laps]).toEqual([2, 3, 5]);
+    const speeds = (level) => new Streamers({ ...env(), level }).drones.map((d) => d.o.speed);
+    expect(Math.max(...speeds('easy'))).toBeLessThan(Math.min(...speeds('hard')));
   });
 
   it('a balloon on its string leans downwind and holds its length; cut free it floats up and away', () => {
@@ -166,7 +189,7 @@ describe('challenge courses', () => {
     fly(bs, [new Vector3(arena.x, arena.g + 200, arena.z), new Vector3(arena.x + 200, arena.g + 200, arena.z)], { stepLen: 0.05 });
     expect(b.gone).toBe(true);
     expect(bs.lost).toBe(1);
-    expect(bs.left).toBe(14);
+    expect(bs.left).toBe(12); // (replaced)
   });
 
   it('limbo: under lowers the bar, over does not count, touching it ends it', () => {

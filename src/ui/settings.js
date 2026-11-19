@@ -8,6 +8,8 @@ export const DEFAULT_SETTINGS = {
   location: 'home',    // flying field, see src/sim/location.js
   assist: 'as3x',      // 'off' | 'as3x' | 'safe'
   challenge: 'none',   // src/game/challenges.js MODES
+  challengeLevel: 'normal', // 'easy' | 'normal' | 'hard'
+  balloonMinutes: 5,   // balloon burst time limit (2, 5 or 10)
   // FPV
   fpvMount: 'cockpit', // 'cockpit' | 'wing'
   fpvTilt: 4,          // degrees of camera uptilt
