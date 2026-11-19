@@ -173,6 +173,8 @@ export const BALLOON = {
   drag: 1.6, // 1/s: how hard the air drags it along (free, it rises at lift / drag ≈ 3 m/s)
 };
 const _bw = new Vector3();
+const _wk = new Vector3();
+const STRING_PTS = 12; // points along a tethered balloon's string, as drawn
 const _bd = new Vector3();
 
 /** A string drawn from a ribbon's points (strings fall and trail like streamers). */
@@ -289,6 +291,9 @@ export class Balloons {
     this.lost = 0;
     this.made = 0;
     this.waiting = []; // seconds until each replacement is tied up
+    this.time = 0;
+    this.wake = []; // the air the aeroplane has stirred up: [{ p, v, t, span }]
+    this.wakeTimer = 0;
     for (let k = 0; k < this.up; k++) this.#spawn();
   }
 
@@ -310,11 +315,13 @@ export class Balloons {
     k2.position.y = -this.radius * 1.18 - 0.03;
     k2.rotation.x = Math.PI;
     mesh.add(k2);
-    const line = new Line(new BufferGeometry().setAttribute('position', new BufferAttribute(new Float32Array(6), 3)), new LineBasicMaterial({ color: '#dddddd' }));
+    const line = new Line(new BufferGeometry().setAttribute('position', new BufferAttribute(new Float32Array(STRING_PTS * 3), 3)), new LineBasicMaterial({ color: '#dddddd' }));
     line.frustumCulled = false;
     this.group.add(mesh, line);
     const b = new Balloon(peg, top.y - peg.y, this.radius);
-    Object.assign(b, { mesh, line, strings: [] });
+    // Its own gusts: a few slow waves at random rates and phases.
+    const gust = Array.from({ length: 4 }, () => ({ f: 0.06 + rand() * 0.45, ph: rand() * 100 }));
+    Object.assign(b, { mesh, line, strings: [], gust, spin: rand() * 6, spinRate: (rand() - 0.5) * 0.6 });
     this.balloons.push(b);
     return b;
   }
@@ -335,20 +342,82 @@ export class Balloons {
     return this.balloons.filter((b) => !b.popped && !b.gone).length;
   }
 
+  /**
+   * The air a balloon feels at `pos`: the wind, plus its own gusts and
+   * swirls (stronger in a stronger wind), a side-to-side sway across the
+   * wind (as a tethered balloon sheds eddies), and the wake of the
+   * aeroplane if it flew past lately.
+   */
+  #air(b, pos, out) {
+    this.ctxWind(pos, out);
+    const W = Math.hypot(out.x, out.z);
+    const t = this.time;
+    const g = 0.35 + 0.3 * W; // m/s of gusting
+    const [a, c, d, e] = b.gust;
+    out.x += g * (Math.sin(t * 2 * Math.PI * a.f + a.ph) + 0.6 * Math.sin(t * 2 * Math.PI * c.f * 1.7 + c.ph));
+    out.z += g * (Math.sin(t * 2 * Math.PI * c.f + c.ph) + 0.6 * Math.sin(t * 2 * Math.PI * d.f * 1.3 + d.ph));
+    out.y += g * 0.7 * Math.sin(t * 2 * Math.PI * e.f + e.ph);
+    if (W > 0.3) {
+      // Swaying across the wind.
+      const sway = 0.45 * W * Math.sin(t * 2 * Math.PI * (0.35 + 0.1 * a.f) + d.ph);
+      const sx = -out.z / W;
+      const sz = out.x / W;
+      out.x += sx * sway;
+      out.z += sz * sway;
+    }
+    // The aeroplane's wake: air dragged along behind it, pushed down off
+    // the wings and swirled by the tip vortices and prop, spreading out and
+    // dying away over a couple of seconds.
+    for (const w of this.wake) {
+      const age = t - w.t;
+      const r = 0.8 * w.span + 1.2 + 0.8 * age; // (it reaches a span or two out)
+      const d2 = pos.distanceToSquared(w.p);
+      if (d2 > 9 * r * r) continue;
+      const f = Math.exp(-d2 / (r * r)) * Math.exp(-age / 1.1);
+      out.addScaledVector(w.v, 0.35 * f);
+      out.y -= 2.2 * f;
+      _wk.copy(pos).sub(w.p).cross(w.dir); // round the line it flew
+      const l = _wk.length();
+      if (l > 1e-3) out.addScaledVector(_wk, (2.5 * f) / l);
+    }
+    return out;
+  }
+
   update(ctx) {
     const live = !ctx.ac.crashed && this.state !== 'done';
+    this.time += ctx.dt;
+    this.ctxWind = ctx.wind;
+    // Where the aeroplane has just been, for its wake.
+    const ac = ctx.ac;
+    if ((this.wakeTimer -= ctx.dt) <= 0 && !ac.held && !ac.crashed && ac.velocity.length() > 3) {
+      this.wakeTimer = 0.05;
+      this.wake.push({ p: ctx.pose.p.clone(), v: ac.velocity.clone(), dir: ac.velocity.clone().normalize(), t: this.time, span: ctx.span });
+    }
+    while (this.wake.length && this.time - this.wake[0].t > 3) this.wake.shift();
     for (const b of this.balloons) {
       if (b.popped || b.gone) continue;
-      b.step(ctx.dt, ctx.wind, ctx.floor);
-      // Leaning along its string (or, free, along the way it's going).
+      b.step(ctx.dt, (pos, out) => this.#air(b, pos, out), ctx.floor);
+      // Leaning along its string (or, free, along the way it's going), and
+      // turning slowly as it goes.
       b.mesh.position.copy(b.pos);
       const lean = b.free ? _a.copy(b.vel).multiplyScalar(-0.15).add(_b.set(0, 1, 0)) : _a.copy(b.pos).sub(b.peg);
       b.mesh.quaternion.setFromUnitVectors(_b.set(0, 1, 0), lean.normalize());
+      b.spin += ctx.dt * b.spinRate;
+      b.mesh.rotateY(b.spin);
       const top = b.knot(_c);
       if (!b.free) {
+        // The string: straight when it's pulled tight, drooping when a gust
+        // pushes the balloon down or back towards its peg.
         const arr = b.line.geometry.attributes.position.array;
-        b.peg.toArray(arr, 0);
-        top.toArray(arr, 3);
+        const d = b.peg.distanceTo(top);
+        const len = Math.max(d, b.len - b.radius * 1.18 - 0.08);
+        const sag = Math.sqrt(Math.max(0, len * len - d * d)) * 0.5;
+        for (let i = 0; i < STRING_PTS; i++) {
+          const k = i / (STRING_PTS - 1);
+          _b.lerpVectors(b.peg, top, k);
+          _b.y = Math.max(ctx.floor(_b.x, _b.z) + 0.02, _b.y - sag * 4 * k * (1 - k));
+          _b.toArray(arr, i * 3);
+        }
         b.line.geometry.attributes.position.needsUpdate = true;
       } else {
         b.trail.step(ctx.dt, top, ctx.wind, ctx.floor);
