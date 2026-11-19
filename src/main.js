@@ -905,7 +905,7 @@ function frame(now) {
     aircraft.velocity.lerp(hit.velocity, 0.5);
     mp.sendHit(hit.peer.id, hit.theirPart, hit.relSpeed);
   }
-  challenges.update(dt, { aircraft, entry, camera: rig.camera, paused: paused || editor.active, peers, mp });
+  challenges.update(dt, { aircraft, entry, camera: rig.camera, paused: paused || editor.active, peers, mp, shadow: { renderer, lightDir: world.lightDir, strength: shadowDark } });
   world.updateShadows();
   world.updateTrees(now / 1000, wind.speed + wind.gust.length() * 0.5, wind.directionDeg);
   world.updateLod(rig.camera.position); // leafy crowns near the camera (src/world/lod.js)

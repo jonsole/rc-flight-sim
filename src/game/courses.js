@@ -21,6 +21,7 @@ import { LOCATION, clubToWorld } from '../sim/location.js';
 import { throughHoop, crossPlane, crossSegment2D, toBody, segmentTouches, ballTouches } from './geom.js';
 import { arenaToWorld, blocked } from './arena.js';
 import { Ribbon, RibbonMesh } from './ribbon.js';
+import { blobMaterial, blobGeometry, placeBlob } from './shadow.js';
 
 const _a = new Vector3();
 const _b = new Vector3();
@@ -104,7 +105,6 @@ export class Hoops {
       const mesh = new Mesh(geo, mat);
       mesh.position.copy(c);
       mesh.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), n3);
-      mesh.castShadow = true;
       this.group.add(mesh);
       this.hoops.push({ c, n: n3, mesh, mat });
     }
@@ -287,6 +287,7 @@ export class Balloons {
     this.geo = new SphereGeometry(this.radius, 32, 22);
     this.geo.scale(1, 1.18, 1);
     this.knot = new ConeGeometry(0.06, 0.1, 8);
+    this.blobGeo = blobGeometry();
     this.balloons = [];
     this.bits = [];
     this.burst = 0;
@@ -312,15 +313,20 @@ export class Balloons {
     const top = clearOf(env, peg.clone().setY(peg.y + h), 1.2);
     const mat = new MeshStandardMaterial({ color: BALLOON_COLOURS[this.made++ % BALLOON_COLOURS.length], roughness: 0.25, metalness: 0.05 });
     const mesh = new Mesh(this.geo, mat);
-    mesh.castShadow = true;
+    mesh.userData.mover = true; // (its shadow is a blob: it moves)
     const k2 = new Mesh(this.knot, mat);
     k2.position.y = -this.radius * 1.18 - 0.03;
     k2.rotation.x = Math.PI;
     mesh.add(k2);
     const line = new Line(new BufferGeometry().setAttribute('position', new BufferAttribute(new Float32Array(STRING_PTS * 3), 3)), new LineBasicMaterial({ color: '#dddddd' }));
     line.frustumCulled = false;
-    this.group.add(mesh, line);
+    const blob = new Mesh(this.blobGeo, blobMaterial());
+    blob.userData.mover = true;
+    blob.renderOrder = 3;
+    blob.visible = false;
+    this.group.add(mesh, line, blob);
     const b = new Balloon(peg, top.y - peg.y, this.radius);
+    b.blob = blob;
     // Its own gusts: a few slow waves at random rates and phases.
     const gust = Array.from({ length: 4 }, () => ({ f: 0.06 + rand() * 0.45, ph: rand() * 100 }));
     Object.assign(b, { mesh, line, strings: [], gust, spin: rand() * 6, spinRate: (rand() - 0.5) * 0.6 });
@@ -330,8 +336,9 @@ export class Balloons {
 
   /** One's gone (burst or away): tidy it up and tie up another shortly. */
   #replace(b) {
-    this.group.remove(b.mesh, b.line);
+    this.group.remove(b.mesh, b.line, b.blob);
     b.line.geometry.dispose();
+    b.blob.material.dispose();
     for (const s of b.strings) {
       this.group.remove(s.line);
       s.line.geometry.dispose();
@@ -407,6 +414,7 @@ export class Balloons {
       b.axis.copy(lean);
       b.spin += ctx.dt * b.spinRate;
       b.mesh.rotateY(b.spin);
+      placeBlob(b.blob, b.pos, this.radius, this.env.ground, ctx.sun, ctx.shade ?? 0);
       const top = b.knot(_c);
       if (!b.free) {
         // The string, from the peg to the knot: never quite straight (its
@@ -500,6 +508,7 @@ export class Balloons {
     ctx.sfx('pop');
     for (let i = 0; i < 9; i++) {
       const m = new Mesh(new PlaneGeometry(0.12, 0.08), new MeshBasicMaterial({ color: b.mesh.material.color, side: DoubleSide }));
+      m.userData.mover = true;
       m.position.copy(b.pos);
       const v = new Vector3(Math.random() - 0.5, Math.random() - 0.3, Math.random() - 0.5).multiplyScalar(6).addScaledVector(ctx.ac.velocity, 0.3);
       this.group.add(m);
@@ -559,7 +568,6 @@ export class Limbo {
       for (let i = 0; i < n; i++) {
         const s = new Mesh(geo, i % 2 ? m2 : m1);
         s.position.y = (i + 0.5) * (len / n);
-        s.castShadow = true;
         g.add(s);
       }
       return g;
@@ -590,6 +598,7 @@ export class Limbo {
   #setBar() {
     this.barY = this.centre.y + this.barHeight;
     this.bar.position.y = this.barY;
+    this.shadowDirty = true; // (its shadow moves with it)
   }
 
   update(ctx) {
@@ -598,6 +607,7 @@ export class Limbo {
       this.fall.v -= 9.81 * ctx.dt;
       this.bar.position.y = Math.max(this.centre.y + 0.05, this.bar.position.y + this.fall.v * ctx.dt);
       this.bar.rotateZ(ctx.dt * this.fall.spin);
+      if (this.bar.position.y > this.centre.y + 0.06) this.shadowDirty = true;
     }
     if (this.state === 'done' || ctx.ac.crashed) return;
     // Lowered once you're well clear of it.
@@ -697,7 +707,6 @@ export class Pylons {
         const r1 = this.rad * (1 - 0.35 * ((i + 1) / bands));
         const m = new Mesh(new CylinderGeometry(r1, r0, this.h / bands, 20), mats[i % 2]);
         m.position.y = (i + 0.5) * (this.h / bands);
-        m.castShadow = true;
         g.add(m);
       }
       const top = new Mesh(new SphereGeometry(this.rad * 0.65, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), mats[0]);
@@ -706,6 +715,7 @@ export class Pylons {
       const lamp = new Mesh(new SphereGeometry(0.3, 12, 8), new MeshStandardMaterial({ color: '#ffe060', emissive: '#ffd000', emissiveIntensity: 0 }));
       lamp.position.y = this.h + this.rad * 0.65 + 0.2;
       lamp.scale.setScalar(0.8);
+      lamp.userData.mover = true; // (it blinks)
       g.add(lamp);
       g.position.copy(base);
       this.group.add(g);
@@ -725,6 +735,7 @@ export class Pylons {
     stripe.rotation.x = -Math.PI / 2;
     stripe.rotation.z = -Math.atan2(-(this.lineB.z - this.lineA.z), this.lineB.x - this.lineA.x);
     stripe.renderOrder = 2;
+    stripe.userData.noShadow = true;
     this.group.add(stripe);
     for (const p of [this.lineA, this.lineB]) {
       const pole = new Mesh(new CylinderGeometry(0.04, 0.04, 3, 6), new MeshStandardMaterial({ color: '#ddd' }));
@@ -771,7 +782,6 @@ export class Pylons {
       const end = (95 * Math.PI) / 180;
       for (let i = 0; i <= 16; i++) pts.push(arc(-end + (i / 16) * 2 * end));
       const tube = new Mesh(new TubeGeometry(new CatmullRomCurve3(pts), 32, 0.2, 8, false), yellow);
-      tube.castShadow = true;
       a.add(tube);
       const tip = arc(end);
       const tdir = new Vector3().addScaledVector(d, -Math.sin(end)).addScaledVector(side, Math.cos(end)).normalize();
@@ -822,6 +832,7 @@ export class Pylons {
       p.g.add(a);
       p.arrows = a;
     });
+    this.shadowRebuild = true; // (new things to shade with)
   }
 
   /** The pylon to round next (null: the line). */
@@ -1034,8 +1045,12 @@ export class Streamers {
       d.model = entry.createModel();
       d.proxy = env.makeProxy(entry);
       d.model.setPilotVisible?.(true);
+      d.model.root.userData.mover = true; // (it has its own shadow)
       this.group.add(d.model.root);
-      for (const m of d.meshes) this.group.add(m.mesh);
+      for (const m of d.meshes) {
+        m.mesh.userData.mover = true;
+        this.group.add(m.mesh);
+      }
       return d;
     });
   }
@@ -1105,6 +1120,7 @@ export class Streamers {
   drop(piece) {
     if (!piece) return;
     const mesh = new RibbonMesh(piece);
+    mesh.mesh.userData.mover = true;
     this.group.add(mesh.mesh);
     this.loose.push({ ribbon: piece, mesh });
   }
@@ -1178,6 +1194,7 @@ export class SpotLanding {
       m.rotation.x = -Math.PI / 2;
       m.position.copy(this.spot).setY(this.spot.y + 0.04);
       m.renderOrder = 2;
+      m.userData.noShadow = true;
       this.group.add(m);
       return m;
     };
@@ -1193,7 +1210,6 @@ export class SpotLanding {
       const cz = z + Math.sin(a) * r;
       const c = new Mesh(cone, coneMat);
       c.position.set(cx, env.ground.heightAt(cx, cz) + 0.3, cz);
-      c.castShadow = true;
       this.group.add(c);
     }
     // Where you touched down: a little flag, shown once you have.
@@ -1274,6 +1290,7 @@ export class SpotLanding {
           this.touch = new Vector3(p.x, this.env.ground.heightAt(p.x, p.z), p.z);
           this.mark.position.copy(this.touch);
           this.mark.visible = true;
+          this.shadowDirty = true;
           this.stage = 'rolling';
           this.rollTime = 0;
         }
