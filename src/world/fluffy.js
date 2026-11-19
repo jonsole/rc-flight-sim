@@ -185,7 +185,7 @@ const LEAF_K = 0.72;
 const SPRITE = 160;
 const SPRITE_LEN = 32;
 /** Leaves shorter than this (half-length, pixels) are left plain: the detail wouldn't show. */
-const DETAIL_PX = 6;
+const DETAIL_PX = 3;
 /** Drawing a sprite (detail on, in the sprite's colours) or the atlas's plain leaves. */
 let sprite = false;
 let hashN = 1;
@@ -325,12 +325,12 @@ function leafSprite(form, seed) {
 
 /**
  * Put the detail (dg, the sprites, drawn for one row of pictures) into the
- * atlas (canvas c's brightness and tint), at the row starting y (w x h).
+ * atlas (canvas c's brightness and tint): the picture at x, y (w x h).
  */
-function applyDetail(c, dg, y, w, h) {
+function applyDetail(c, dg, x, y, w, h) {
   const g = c.getContext('2d');
-  const a = g.getImageData(0, y, w, h);
-  const b = dg.getImageData(0, 0, w, h).data;
+  const a = g.getImageData(x, y, w, h);
+  const b = dg.getImageData(x, 0, w, h).data;
   const p = a.data;
   for (let i = 0; i < p.length; i += 4) {
     if (p[i + 3] === 0 || b[i + 3] === 0) continue;
@@ -338,7 +338,7 @@ function applyDetail(c, dg, y, w, h) {
     p[i] = clampByte(p[i] * (1 + (b[i] / 128 - 1) * k));
     p[i + 2] = clampByte(p[i + 2] + (b[i + 2] - 128) * k);
   }
-  g.putImageData(a, 0, y);
+  g.putImageData(a, x, y);
 }
 
 let leafTex = null;
@@ -458,30 +458,24 @@ function addDetail(tex, stamps) {
   const c = tex.image;
   const T = leafPx;
   const rows = LEAF_ROWS.length;
-  const todo = [...new Set(stamps.map((s) => s[0]))];
+  // (A picture at a time: a short pause each, not one long one.)
+  const todo = [...new Set(stamps.map((s) => s[0] * 16 + s[1]))].map((k) => [Math.floor(k / 16), k % 16]);
   if (!todo.length) return;
   const d = document.createElement('canvas');
   d.width = c.width;
   d.height = T;
   const dg = d.getContext('2d', { willReadFrequently: true });
-  const later = (f) => (globalThis.requestIdleCallback ? requestIdleCallback(f, { timeout: 300 }) : setTimeout(f, 50));
+  const sprites = [];
+  const later = (f) => (globalThis.requestIdleCallback ? requestIdleCallback(f, { timeout: 100 }) : setTimeout(f, 50));
   const next = () => {
-    const row = todo.shift();
-    const spr = leafSprite(LEAF_FORMS[LEAF_ROWS[row]], 1 + row * 7919);
+    const [row, col] = todo.shift();
+    if (!sprites[row]) sprites[row] = leafSprite(LEAF_FORMS[LEAF_ROWS[row]], 1 + row * 7919);
+    const spr = sprites[row];
+    dg.setTransform(1, 0, 0, 1, 0, 0);
     dg.clearRect(0, 0, d.width, d.height);
     const oy = (rows - 1 - row) * T;
-    let col = -1;
     for (const [r, cl, x, y, turn, len] of stamps) {
-      if (r !== row) continue;
-      if (cl !== col) {
-        // (Each picture's leaves stay in it.)
-        if (col >= 0) dg.restore();
-        col = cl;
-        dg.save();
-        dg.beginPath();
-        dg.rect(col * T, 0, T, T);
-        dg.clip();
-      }
+      if (r !== row || cl !== col) continue;
       dg.setTransform(1, 0, 0, 1, 0, 0);
       dg.translate(x, y - oy);
       dg.rotate(turn);
@@ -492,8 +486,8 @@ function addDetail(tex, stamps) {
       dg.scale(k, k);
       dg.drawImage(copy, -copy.width / 2, -copy.width / 2);
     }
-    if (col >= 0) dg.restore();
-    applyDetail(c, dg, oy, d.width, T);
+    // (Only this picture's part: each picture's leaves stay in it.)
+    applyDetail(c, dg, col * T, oy, T, T);
     if (todo.length) later(next);
     else {
       d.width = d.height = 0; // (done with)
