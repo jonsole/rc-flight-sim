@@ -111,6 +111,7 @@ const LEAF_FORMS = {
 
 /** A needle from (x, y), pointing at angle a (0 up), l long, w wide. */
 function needle(g, x, y, a, l, w) {
+  if (sprite) g.fillStyle = leafStyle(0.82 + hash() * 0.36, (hash() - 0.5) * 50);
   g.save();
   g.translate(x, y);
   g.rotate(a);
@@ -131,7 +132,7 @@ function outline(g, len, half) {
   for (let i = 1; i <= N; i++) g.lineTo(half(i / N) * len * 2, -len + (2 * len * i) / N);
   for (let i = N - 1; i >= 1; i--) g.lineTo(-half(i / N) * len * 2, -len + (2 * len * i) / N);
   g.closePath();
-  g.fill();
+  leafDetail(g, len, 'pinnate', half);
 }
 
 /** A small pointed oval at (x, y), half-length l, half-width w, turned by a. */
@@ -143,7 +144,7 @@ function leaflet(g, x, y, l, w, a) {
   g.moveTo(0, -l);
   g.quadraticCurveTo(w * 2, 0, 0, l);
   g.quadraticCurveTo(-w * 2, 0, 0, -l);
-  g.fill();
+  leafDetail(g, l, 'pinnate', (t) => (w / l) * 2 * t * (1 - t));
   g.restore();
 }
 
@@ -163,7 +164,181 @@ function palmate(g, len, n, deep, spread) {
   }
   g.lineTo(0, len);
   g.closePath();
+  leafDetail(g, len, 'palmate', null, n, spread);
+}
+
+// --- Leaf detail -------------------------------------------------------------
+// Close up a leaf is more than a flat patch of colour: it's folded a little
+// along its midrib (one half catching more light than the other), lighter
+// towards its tip, with a paler midrib and veins and a darker rim. Each
+// species' leaf is drawn once like that, big, as a sprite (leafSprite) of how
+// much lighter or darker (red, 128 its own brightness) and yellower or bluer
+// (blue, 128 its own tint) each part of it is. The atlas's leaves are drawn
+// plain, as ever, and the sprite on a second canvas at the same place,
+// size and turn; then the two are combined, pixel by pixel (far quicker than
+// drawing the detail leaf by leaf). Only the brightness and tint change, never
+// the fall time (green), so a leaf still falls as one. The brightness is
+// stored scaled down by LEAF_K, leaving room for the highlights above the
+// leaf's own (LEAF_FRAGMENT scales it back).
+const LEAF_K = 0.72;
+/** Leaf sprites: pixels across, and the leaf's half-length in them. */
+const SPRITE = 160;
+const SPRITE_LEN = 32;
+/** Leaves shorter than this (half-length, pixels) are left plain: the detail wouldn't show. */
+const DETAIL_PX = 3;
+/** Drawing a sprite (detail on, in the sprite's colours) or the atlas's plain leaves. */
+let sprite = false;
+let hashN = 1;
+/** A quick repeatable random number (leaf detail: the same on every load). */
+function hash() {
+  hashN = (hashN * 16807) % 2147483647;
+  return (hashN - 1) / 2147483646;
+}
+const clampByte = (v) => Math.max(0, Math.min(255, Math.round(v)));
+/** A sprite's colour: brightness x `dk`, tint + `dt` (alpha `a`). */
+function leafStyle(dk, dt = 0, a = 1) {
+  return `rgba(${clampByte(128 * dk)},0,${clampByte(128 + dt)},${a})`;
+}
+
+/**
+ * Fill the leaf (its outline the current path); in a sprite, with its detail:
+ * len its half-length (tip at y -len, stalk at +len).
+ * @param {'pinnate'|'palmate'} veins  along a midrib, or fanned from the stalk
+ * @param {(t: number) => number} half  half-width along it (pinnate), as `outline`
+ */
+function leafDetail(g, len, veins, half, lobes = 5, spread = 1) {
+  if (!sprite) {
+    g.fill();
+    return;
+  }
+  // Lighter and yellower towards the tip, darker and bluer at the stalk.
+  const grad = g.createLinearGradient(0, -len, 0, len);
+  grad.addColorStop(0, leafStyle(1.18, 25));
+  grad.addColorStop(1, leafStyle(0.94, -25));
+  g.fillStyle = grad;
   g.fill();
+  g.save();
+  g.clip();
+  const L = len * 1.3;
+  // (Line widths: at least about a pixel once the leaf is drawn in the
+  // atlas, whose leaves are a few to some 20 pixels long.)
+  const w = (k, min) => Math.max(min * SPRITE_LEN / 8, len * k);
+  // Folded along the midrib: one half in its own shade.
+  if (veins === 'pinnate') {
+    g.fillStyle = leafStyle(0.86, -10, 0.65);
+    g.fillRect(0, -L, L, 2 * L);
+  }
+  // A darker rim (the clip keeps the inner half of the stroke).
+  g.strokeStyle = leafStyle(0.72, -20, 0.7);
+  g.lineWidth = w(0.18, 1.6);
+  g.stroke();
+  // Veins: paler and yellower.
+  g.lineCap = 'round';
+  if (veins === 'pinnate') {
+    g.strokeStyle = leafStyle(1.3, 70, 0.9);
+    g.lineWidth = w(0.07, 0.8);
+    g.beginPath();
+    g.moveTo(0, len);
+    g.lineTo(0, -len * 0.85);
+    g.stroke();
+    if (len >= SPRITE_LEN * 0.4) {
+      g.strokeStyle = leafStyle(1.18, 45, 0.6);
+      g.lineWidth = w(0.035, 0.5);
+      g.beginPath();
+      const pairs = 5;
+      for (let i = 0; i < pairs; i++) {
+        const t = 0.2 + (0.65 * (i + 0.5)) / pairs; // along from the tip
+        const y = -len + 2 * len * t;
+        const reach = (half ? half(Math.max(0, t - 0.15)) : 0.3) * len * 2 * 0.85;
+        for (const sd of [-1, 1]) {
+          g.moveTo(0, y);
+          g.quadraticCurveTo(sd * reach * 0.5, y - len * 0.08, sd * reach, y - len * 0.3);
+        }
+      }
+      g.stroke();
+    }
+  } else {
+    // Fanned from the stalk out to each lobe's tip.
+    const y0 = len * 0.35;
+    g.strokeStyle = leafStyle(1.28, 65, 0.9);
+    g.lineWidth = w(0.06, 0.8);
+    g.beginPath();
+    for (let i = 0; i < lobes; i++) {
+      const a = ((i + 0.5) / lobes - 0.5) * Math.PI * spread * 1.6;
+      g.moveTo(0, y0);
+      g.lineTo(Math.sin(a) * len * 0.85, y0 - Math.cos(a) * len * 0.85);
+    }
+    g.moveTo(0, y0);
+    g.lineTo(0, len);
+    g.stroke();
+  }
+  g.restore();
+  g.fillStyle = leafStyle(1);
+}
+
+/**
+ * A species' leaf, big, with its detail (see above): a canvas SPRITE across,
+ * and smaller copies (halving), as quick to shrink to a leaf's size.
+ */
+function leafSprite(form, seed) {
+  const c = document.createElement('canvas');
+  c.width = c.height = SPRITE;
+  const g = c.getContext('2d');
+  g.translate(SPRITE / 2, SPRITE / 2);
+  g.fillStyle = leafStyle(1);
+  sprite = true;
+  hashN = seed;
+  form.draw(g, SPRITE_LEN);
+  sprite = false;
+  // On average neither lighter nor darker, yellower nor bluer than the leaf
+  // drawn plain (as the smallest leaves are): the same tree whichever
+  // leaf size its cards show.
+  const im = g.getImageData(0, 0, SPRITE, SPRITE);
+  const p = im.data;
+  let sk = 0;
+  let st = 0;
+  let sa = 0;
+  for (let i = 0; i < p.length; i += 4) {
+    const a = p[i + 3] / 255;
+    sk += (p[i] / 128) * a;
+    st += (p[i + 2] - 128) * a;
+    sa += a;
+  }
+  const mk = sk / sa;
+  const mt = st / sa;
+  for (let i = 0; i < p.length; i += 4) {
+    p[i] = clampByte(p[i] / mk);
+    p[i + 2] = clampByte(p[i + 2] - mt);
+  }
+  g.putImageData(im, 0, 0);
+  const copies = [c];
+  for (let n = SPRITE / 2; n >= SPRITE / 8; n /= 2) {
+    const s = document.createElement('canvas');
+    s.width = s.height = n;
+    const sg = s.getContext('2d');
+    sg.imageSmoothingQuality = 'high';
+    sg.drawImage(copies[copies.length - 1], 0, 0, n, n);
+    copies.push(s);
+  }
+  return copies;
+}
+
+/**
+ * Put the detail (dg, the sprites, drawn for one row of pictures) into the
+ * atlas (canvas c's brightness and tint): the picture at x, y (w x h).
+ */
+function applyDetail(c, dg, x, y, w, h) {
+  const g = c.getContext('2d');
+  const a = g.getImageData(x, y, w, h);
+  const b = dg.getImageData(x, 0, w, h).data;
+  const p = a.data;
+  for (let i = 0; i < p.length; i += 4) {
+    if (p[i + 3] === 0 || b[i + 3] === 0) continue;
+    const k = b[i + 3] / 255;
+    p[i] = clampByte(p[i] * (1 + (b[i] / 128 - 1) * k));
+    p[i + 2] = clampByte(p[i + 2] + (b[i + 2] - 128) * k);
+  }
+  g.putImageData(a, x, y);
 }
 
 let leafTex = null;
@@ -190,6 +365,9 @@ export function leafTexture() {
   c.width = T * cols;
   c.height = T * rows;
   const g = c.getContext('2d');
+  // Where each leaf big enough for its detail went (see addDetail): its
+  // species (row), picture (col), place, turn and size.
+  const stamps = [];
   LEAF_ROWS.forEach((name, row) => {
     // Only the species at this site (setLeafSpecies): the rest left blank.
     if (leafSpecies && !leafSpecies.has(name)) return;
@@ -226,10 +404,13 @@ export function leafTexture() {
         // Half the length (tip to stalk), varying a little.
         const len = (T * LEAF_FRAC * sz * (0.88 + rnd() * 0.24)) / 2;
         const k = Math.round(Math.min(255, 170 + (i / count) * 35 + rnd() * 30 + sk * 0.6)); // (brightness, leaf to leaf and sprig to sprig)
-        // Red: the leaf's brightness. Green: when it falls (it's gone once the
-        // season's leaf fall passes this; see LEAF_FALL). Blue: its own tint,
-        // from a little bluer-green (0) to a little yellower (255).
-        g.fillStyle = `rgb(${k},${Math.round(5 + rnd() * 250)},${Math.round(rnd() * 255)})`;
+        // Red: the leaf's brightness (x LEAF_K). Green: when it falls (it's
+        // gone once the season's leaf fall passes this; see LEAF_FALL). Blue:
+        // its own tint, from bluer-green (0) to yellower (255), leaf to leaf
+        // and a little sprig to sprig (some sprigs fresher than others).
+        const fall = Math.round(5 + rnd() * 250);
+        const tint = clampByte(rnd() * 255 * 0.8 + 25 + sk * 2.5);
+        g.fillStyle = `rgb(${clampByte(k * LEAF_K)},${fall},${tint})`;
         // Leaves point roughly outwards from the middle of their sprig.
         const turn = a + Math.PI / 2 + (rnd() - 0.5) * 1.6;
         if (len < 3) {
@@ -250,6 +431,8 @@ export function leafTexture() {
         g.rotate(turn);
         form.draw(g, len);
         g.restore();
+        // (Detail only where it would show: not on leaves a few pixels long.)
+        if (len >= DETAIL_PX) stamps.push([row, col, x, y, turn, len]);
       }
       g.restore();
     });
@@ -261,8 +444,61 @@ export function leafTexture() {
   t.premultiplyAlpha = true;
   t.anisotropy = 4;
   leafTex = t;
+  addDetail(t, stamps);
   return t;
 }
+
+/**
+ * Put the leaves' detail into the leaf pictures (see Leaf detail), a
+ * species at a time when the browser has a moment to spare: after the
+ * scenery is up, not keeping it waiting (it takes a while). Till then the
+ * leaves are plain, and on average they look the same, just flat.
+ */
+function addDetail(tex, stamps) {
+  const c = tex.image;
+  const T = leafPx;
+  const rows = LEAF_ROWS.length;
+  // (A picture at a time: a short pause each, not one long one.)
+  const todo = [...new Set(stamps.map((s) => s[0] * 16 + s[1]))].map((k) => [Math.floor(k / 16), k % 16]);
+  if (!todo.length) return;
+  const d = document.createElement('canvas');
+  d.width = c.width;
+  d.height = T;
+  const dg = d.getContext('2d', { willReadFrequently: true });
+  const sprites = [];
+  const later = (f) => (globalThis.requestIdleCallback ? requestIdleCallback(f, { timeout: 100 }) : setTimeout(f, 50));
+  const next = () => {
+    const [row, col] = todo.shift();
+    if (!sprites[row]) sprites[row] = leafSprite(LEAF_FORMS[LEAF_ROWS[row]], 1 + row * 7919);
+    const spr = sprites[row];
+    dg.setTransform(1, 0, 0, 1, 0, 0);
+    dg.clearRect(0, 0, d.width, d.height);
+    const oy = (rows - 1 - row) * T;
+    for (const [r, cl, x, y, turn, len] of stamps) {
+      if (r !== row || cl !== col) continue;
+      dg.setTransform(1, 0, 0, 1, 0, 0);
+      dg.translate(x, y - oy);
+      dg.rotate(turn);
+      // (The smallest copy at least as big as the leaf.)
+      const sc = len / SPRITE_LEN;
+      const copy = spr[Math.max(0, Math.min(spr.length - 1, Math.floor(-Math.log2(sc))))];
+      const k = sc * (SPRITE / copy.width);
+      dg.scale(k, k);
+      dg.drawImage(copy, -copy.width / 2, -copy.width / 2);
+    }
+    // (Only this picture's part: each picture's leaves stay in it.)
+    applyDetail(c, dg, col * T, oy, T, T);
+    if (todo.length) later(next);
+    else {
+      d.width = d.height = 0; // (done with)
+      tex.needsUpdate = true;
+    }
+  };
+  later(next);
+}
+
+/** The leaf pictures' brightness scale (see Leaf detail), for the shaders. */
+export const LEAF_BRIGHT = LEAF_K;
 
 /** The atlas's grid (columns, rows), for the shaders. */
 const LEAF_GRID = `vec2(${LEAF_SIZES.length}.0, ${LEAF_ROWS.length}.0)`;
@@ -598,11 +834,11 @@ export const LEAF_FRAGMENT = /* glsl */ `
   {
     vec4 tx = texture2D(map, (vMapUv + vLeafCell) / ${LEAF_GRID});
     float cov = max(tx.a, 0.01);
-    float kk = pow(tx.r / cov, 2.2);
+    float kk = pow(tx.r / cov / ${LEAF_K.toFixed(3)}, 2.2);
     diffuseColor.rgb *= vec3(kk, kk, kk * 0.83);
     // Each leaf's own tint: yellower or bluer-green.
     float tint = tx.b / cov - 0.5;
-    diffuseColor.rgb *= vec3(1.0 + tint * 0.25, 1.0 + tint * 0.05, 1.0 - tint * 0.35) * (1.0 + tint * 0.06);
+    diffuseColor.rgb *= vec3(1.0 + tint * 0.36, 1.0 + tint * 0.07, 1.0 - tint * 0.45) * (1.0 + tint * 0.06);
     // Shaded up the crown (vCardUp).
     diffuseColor.rgb *= mix(0.86, 1.06, vCardUp);
     diffuseColor.a *= tx.a;

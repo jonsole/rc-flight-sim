@@ -1,5 +1,5 @@
 // The challenges' courses: hoops, balloons, limbo, a pylon race round
-// inflatable posts, and streamer cutting. Each builds its things in the
+// inflatable posts, streamer cutting and spot landing. Each builds its things in the
 // arena (src/game/arena.js), and each frame checks the aeroplane against
 // them. The manager (src/game/challenges.js) runs the clock, the scores and
 // the HUD.
@@ -15,11 +15,13 @@
 import {
   Group, Mesh, MeshStandardMaterial, MeshBasicMaterial, TorusGeometry, SphereGeometry, CylinderGeometry,
   ConeGeometry, BoxGeometry, PlaneGeometry, Vector3, Quaternion, Matrix4, BufferGeometry, Line, LineBasicMaterial,
-  BufferAttribute, DoubleSide,
+  BufferAttribute, DoubleSide, TubeGeometry, CatmullRomCurve3, Shape, ShapeGeometry, RingGeometry, CircleGeometry,
 } from 'three';
+import { LOCATION, clubToWorld } from '../sim/location.js';
 import { throughHoop, crossPlane, crossSegment2D, toBody, segmentTouches, ballTouches } from './geom.js';
 import { arenaToWorld, blocked } from './arena.js';
 import { Ribbon, RibbonMesh } from './ribbon.js';
+import { blobMaterial, blobGeometry, placeBlob } from './shadow.js';
 
 const _a = new Vector3();
 const _b = new Vector3();
@@ -62,6 +64,11 @@ function clearOf(env, p, r = 2) {
   return p;
 }
 
+/** Difficulty levels (Menu → Challenges). */
+export const LEVELS = { easy: 'Easy', normal: 'Normal', hard: 'Hard' };
+/** The value for this course's difficulty. */
+const lv = (env, easy, normal, hard) => ({ easy, normal, hard })[env.level] ?? normal;
+
 const fmt = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
 export const formatTime = fmt;
 
@@ -77,9 +84,9 @@ export class Hoops {
     this.group = new Group();
     this.state = 'ready';
     this.next = 0;
-    this.radius = 2.5;
+    this.radius = lv(env, 3.5, 2.5, 1.6);
     const R = env.arena.r;
-    const heights = [6, 9, 13, 8, 5, 11, 15, 7];
+    const heights = lv(env, [6, 7, 9, 8, 6, 8, 10, 7], [6, 9, 13, 8, 5, 11, 15, 7], [5, 11, 17, 7, 4, 13, 19, 6]);
     const n = heights.length;
     this.hoops = [];
     const geo = new TorusGeometry(this.radius + 0.14, 0.14, 10, 48);
@@ -98,7 +105,6 @@ export class Hoops {
       const mesh = new Mesh(geo, mat);
       mesh.position.copy(c);
       mesh.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), n3);
-      mesh.castShadow = true;
       this.group.add(mesh);
       this.hoops.push({ c, n: n3, mesh, mat });
     }
@@ -167,6 +173,8 @@ export const BALLOON = {
   drag: 1.6, // 1/s: how hard the air drags it along (free, it rises at lift / drag ≈ 3 m/s)
 };
 const _bw = new Vector3();
+const _wk = new Vector3();
+const STRING_PTS = 12; // points along a tethered balloon's string, as drawn
 const _bd = new Vector3();
 
 /** A string drawn from a ribbon's points (strings fall and trail like streamers). */
@@ -199,6 +207,7 @@ export class Balloon {
     this.len = len;
     this.radius = radius;
     this.pos = peg.clone().setY(peg.y + len);
+    this.axis = new Vector3(0, 1, 0); // which way is up for the balloon (it tilts)
     this.vel = new Vector3();
     this.free = false; // the string's been cut
     this.popped = false;
@@ -209,7 +218,8 @@ export class Balloon {
 
   /** Where the string meets the balloon. */
   knot(out) {
-    return out.copy(this.pos).setY(this.pos.y - this.radius * 1.18 - 0.08);
+    // (Below the balloon along its tilt: it leans along its string.)
+    return out.copy(this.pos).addScaledVector(this.axis, -(this.radius * 1.18 + 0.08));
   }
 
   step(dt, wind, floor) {
@@ -262,62 +272,171 @@ export class Balloon {
 export class Balloons {
   static id = 'balloons';
   static title = 'Balloon burst';
-  static about = 'Burst all the helium balloons. They are tied to pegs on strings and blown about by the wind. Clip a string and the balloon floats away: chase it and burst it before it gets out of reach. The clock starts when you take off.';
+  static about = 'How many helium balloons can you burst before the time\'s up? They are tied to pegs on strings and blown about by the wind, and new ones keep being tied up. Clip a string and the balloon floats away: chase it and burst it before it gets out of reach. The clock starts when you take off; crash and R puts you back in the air with the clock still running.';
+  static higher = true;
 
   constructor(env) {
     this.env = env;
     this.group = new Group();
     this.state = 'ready';
-    this.radius = 0.45;
-    const R = env.arena.r;
-    const rand = rng(1234 + Math.round(R));
-    const geo = new SphereGeometry(this.radius, 18, 14);
-    geo.scale(1, 1.18, 1);
-    const knot = new ConeGeometry(0.06, 0.1, 8);
+    this.limit = (env.minutes ?? 5) * 60; // seconds to burst as many as you can
+    this.radius = lv(env, 0.8, 0.5, 0.3); // 1.6 m, 1 m, 0.6 m across
+    this.up = lv(env, 15, 12, 9); // balloons up at once
+    this.strings = lv(env, [8, 11], [4, 18], [2, 25]); // string lengths (m): how high they fly, and how much that varies
+    this.rand = rng(1234 + Math.round(env.arena.r));
+    this.geo = new SphereGeometry(this.radius, 32, 22);
+    this.geo.scale(1, 1.18, 1);
+    this.knot = new ConeGeometry(0.06, 0.1, 8);
+    this.blobGeo = blobGeometry();
     this.balloons = [];
     this.bits = [];
     this.burst = 0;
     this.lost = 0;
-    for (let k = 0; k < 15; k++) {
-      const a = rand() * Math.PI * 2;
-      const d = Math.sqrt(rand()) * 0.85 * R;
-      const h = 3 + rand() * 17;
-      const peg = at(env, Math.cos(a) * d, Math.sin(a) * d, 0);
-      const top = clearOf(env, peg.clone().setY(peg.y + h), 1.2);
-      const mat = new MeshStandardMaterial({ color: BALLOON_COLOURS[k % BALLOON_COLOURS.length], roughness: 0.25, metalness: 0.05 });
-      const mesh = new Mesh(geo, mat);
-      mesh.castShadow = true;
-      const k2 = new Mesh(knot, mat);
-      k2.position.y = -this.radius * 1.18 - 0.03;
-      k2.rotation.x = Math.PI;
-      mesh.add(k2);
-      const line = new Line(new BufferGeometry().setAttribute('position', new BufferAttribute(new Float32Array(6), 3)), new LineBasicMaterial({ color: '#dddddd' }));
-      line.frustumCulled = false;
-      this.group.add(mesh, line);
-      const b = new Balloon(peg, top.y - peg.y, this.radius);
-      Object.assign(b, { mesh, line, strings: [] });
-      this.balloons.push(b);
-    }
+    this.made = 0;
+    this.waiting = []; // seconds until each replacement is tied up
+    this.time = 0;
+    this.wake = []; // the air the aeroplane has stirred up: [{ p, v, t, span }]
+    this.wakeTimer = 0;
+    for (let k = 0; k < this.up; k++) this.#spawn();
   }
 
+  /** Tie up a new balloon somewhere in the course. */
+  #spawn() {
+    const env = this.env;
+    const R = env.arena.r;
+    const rand = this.rand;
+    const a = rand() * Math.PI * 2;
+    const d = Math.sqrt(rand()) * 0.85 * R;
+    const [lo, hi] = this.strings;
+    const h = lo + rand() * (hi - lo);
+    const peg = at(env, Math.cos(a) * d, Math.sin(a) * d, 0);
+    const top = clearOf(env, peg.clone().setY(peg.y + h), 1.2);
+    const mat = new MeshStandardMaterial({ color: BALLOON_COLOURS[this.made++ % BALLOON_COLOURS.length], roughness: 0.25, metalness: 0.05 });
+    const mesh = new Mesh(this.geo, mat);
+    mesh.userData.mover = true; // (its shadow is a blob: it moves)
+    const k2 = new Mesh(this.knot, mat);
+    k2.position.y = -this.radius * 1.18 - 0.03;
+    k2.rotation.x = Math.PI;
+    mesh.add(k2);
+    const line = new Line(new BufferGeometry().setAttribute('position', new BufferAttribute(new Float32Array(STRING_PTS * 3), 3)), new LineBasicMaterial({ color: '#dddddd' }));
+    line.frustumCulled = false;
+    const blob = new Mesh(this.blobGeo, blobMaterial());
+    blob.userData.mover = true;
+    blob.renderOrder = 3;
+    blob.visible = false;
+    this.group.add(mesh, line, blob);
+    const b = new Balloon(peg, top.y - peg.y, this.radius);
+    b.blob = blob;
+    // Its own gusts: a few slow waves at random rates and phases.
+    const gust = Array.from({ length: 4 }, () => ({ f: 0.06 + rand() * 0.45, ph: rand() * 100 }));
+    Object.assign(b, { mesh, line, strings: [], gust, spin: rand() * 6, spinRate: (rand() - 0.5) * 0.6 });
+    this.balloons.push(b);
+    return b;
+  }
+
+  /** One's gone (burst or away): tidy it up and tie up another shortly. */
+  #replace(b) {
+    this.group.remove(b.mesh, b.line, b.blob);
+    b.line.geometry.dispose();
+    b.blob.material.dispose();
+    for (const s of b.strings) {
+      this.group.remove(s.line);
+      s.line.geometry.dispose();
+    }
+    this.waiting.push(2);
+  }
+
+  /** Balloons up now. */
   get left() {
-    return this.balloons.length - this.burst - this.lost;
+    return this.balloons.filter((b) => !b.popped && !b.gone).length;
+  }
+
+  /**
+   * The air a balloon feels at `pos`: the wind, plus its own gusts and
+   * swirls (stronger in a stronger wind), a side-to-side sway across the
+   * wind (as a tethered balloon sheds eddies), and the wake of the
+   * aeroplane if it flew past lately.
+   */
+  #air(b, pos, out) {
+    this.ctxWind(pos, out);
+    const W = Math.hypot(out.x, out.z);
+    const t = this.time;
+    const g = 0.35 + 0.3 * W; // m/s of gusting
+    const [a, c, d, e] = b.gust;
+    out.x += g * (Math.sin(t * 2 * Math.PI * a.f + a.ph) + 0.6 * Math.sin(t * 2 * Math.PI * c.f * 1.7 + c.ph));
+    out.z += g * (Math.sin(t * 2 * Math.PI * c.f + c.ph) + 0.6 * Math.sin(t * 2 * Math.PI * d.f * 1.3 + d.ph));
+    out.y += g * 0.7 * Math.sin(t * 2 * Math.PI * e.f + e.ph);
+    if (W > 0.3) {
+      // Swaying across the wind.
+      const sway = 0.45 * W * Math.sin(t * 2 * Math.PI * (0.35 + 0.1 * a.f) + d.ph);
+      const sx = -out.z / W;
+      const sz = out.x / W;
+      out.x += sx * sway;
+      out.z += sz * sway;
+    }
+    // The aeroplane's wake: air dragged along behind it, pushed down off
+    // the wings and swirled by the tip vortices and prop, spreading out and
+    // dying away over a couple of seconds.
+    for (const w of this.wake) {
+      const age = t - w.t;
+      const r = 0.8 * w.span + 1.2 + 0.8 * age; // (it reaches a span or two out)
+      const d2 = pos.distanceToSquared(w.p);
+      if (d2 > 9 * r * r) continue;
+      const f = Math.exp(-d2 / (r * r)) * Math.exp(-age / 1.1);
+      out.addScaledVector(w.v, 0.35 * f);
+      out.y -= 2.2 * f;
+      _wk.copy(pos).sub(w.p).cross(w.dir); // round the line it flew
+      const l = _wk.length();
+      if (l > 1e-3) out.addScaledVector(_wk, (2.5 * f) / l);
+    }
+    return out;
   }
 
   update(ctx) {
     const live = !ctx.ac.crashed && this.state !== 'done';
+    this.time += ctx.dt;
+    this.ctxWind = ctx.wind;
+    // Where the aeroplane has just been, for its wake.
+    const ac = ctx.ac;
+    if ((this.wakeTimer -= ctx.dt) <= 0 && !ac.held && !ac.crashed && ac.velocity.length() > 3) {
+      this.wakeTimer = 0.05;
+      this.wake.push({ p: ctx.pose.p.clone(), v: ac.velocity.clone(), dir: ac.velocity.clone().normalize(), t: this.time, span: ctx.span });
+    }
+    while (this.wake.length && this.time - this.wake[0].t > 3) this.wake.shift();
     for (const b of this.balloons) {
       if (b.popped || b.gone) continue;
-      b.step(ctx.dt, ctx.wind, ctx.floor);
-      // Leaning along its string (or, free, along the way it's going).
+      b.step(ctx.dt, (pos, out) => this.#air(b, pos, out), ctx.floor);
+      // Leaning along its string (or, free, along the way it's going), and
+      // turning slowly as it goes.
       b.mesh.position.copy(b.pos);
       const lean = b.free ? _a.copy(b.vel).multiplyScalar(-0.15).add(_b.set(0, 1, 0)) : _a.copy(b.pos).sub(b.peg);
       b.mesh.quaternion.setFromUnitVectors(_b.set(0, 1, 0), lean.normalize());
+      b.axis.copy(lean);
+      b.spin += ctx.dt * b.spinRate;
+      b.mesh.rotateY(b.spin);
+      placeBlob(b.blob, b.pos, this.radius, this.env.ground, ctx.sun, ctx.shade ?? 0);
       const top = b.knot(_c);
       if (!b.free) {
+        // The string, from the peg to the knot: never quite straight (its
+        // own weight, and the wind blowing a belly into it, which shifts
+        // with the gusts), and drooping when a gust pushes the balloon down
+        // or back towards its peg.
         const arr = b.line.geometry.attributes.position.array;
-        b.peg.toArray(arr, 0);
-        top.toArray(arr, 3);
+        const d = b.peg.distanceTo(top);
+        const len = Math.max(d, b.len - b.radius * 1.18 - 0.08);
+        const sag = Math.sqrt(Math.max(0, len * len - d * d)) * 0.5 + 0.025 * len;
+        _bw.lerpVectors(b.peg, top, 0.5);
+        this.ctxWind(_bw, _bd);
+        _bd.y = 0;
+        const blow = (0.012 * len * Math.min(6, _bd.length())) * (1 + 0.35 * Math.sin(this.time * 2.3 + b.gust[0].ph));
+        if (_bd.lengthSq() > 1e-6) _bd.normalize();
+        for (let i = 0; i < STRING_PTS; i++) {
+          const k = i / (STRING_PTS - 1);
+          const bow = 4 * k * (1 - k);
+          _b.lerpVectors(b.peg, top, k).addScaledVector(_bd, blow * bow);
+          _b.y = Math.max(ctx.floor(_b.x, _b.z) + 0.02, _b.y - sag * bow);
+          _b.toArray(arr, i * 3);
+        }
         b.line.geometry.attributes.position.needsUpdate = true;
       } else {
         b.trail.step(ctx.dt, top, ctx.wind, ctx.floor);
@@ -329,8 +448,8 @@ export class Balloons {
           b.mesh.visible = false;
           for (const s of b.strings) s.line.visible = false;
           this.lost++;
-          if (live) ctx.say(`One got away! ${this.left} left`);
-          this.#check(ctx);
+          if (live) ctx.say('One got away!');
+          this.#replace(b);
           continue;
         }
       }
@@ -370,6 +489,13 @@ export class Balloons {
       s.m.geometry.dispose();
     }
     this.bits = this.bits.filter((x) => x.life > 0);
+    // New balloons to replace the ones gone.
+    this.waiting = this.waiting.map((t) => t - ctx.dt);
+    while (this.waiting.length && this.waiting[0] <= 0) {
+      this.waiting.shift();
+      if (this.state !== 'done') this.#spawn();
+    }
+    this.balloons = this.balloons.filter((b) => !b.gone && !b.popped);
     if (this.state === 'ready' && !ctx.ac.held && !ctx.ac.onGround && ctx.ac.velocity.length() > 3) this.state = 'running';
   }
 
@@ -382,27 +508,18 @@ export class Balloons {
     ctx.sfx('pop');
     for (let i = 0; i < 9; i++) {
       const m = new Mesh(new PlaneGeometry(0.12, 0.08), new MeshBasicMaterial({ color: b.mesh.material.color, side: DoubleSide }));
+      m.userData.mover = true;
       m.position.copy(b.pos);
       const v = new Vector3(Math.random() - 0.5, Math.random() - 0.3, Math.random() - 0.5).multiplyScalar(6).addScaledVector(ctx.ac.velocity, 0.3);
       this.group.add(m);
       this.bits.push({ m, v, spin: 5 + Math.random() * 10, life: 6 });
     }
-    // A free one's string drops.
-    if (b.trail) b.trail.attached = false;
-    if (!this.#check(ctx)) ctx.say(`Pop! ${this.left} to go`);
-  }
-
-  /** All burst or gone: finished. */
-  #check(ctx) {
-    if (this.left > 0 || this.state === 'done') return false;
-    this.state = 'done';
-    ctx.sfx('finish');
-    return true;
+    this.#replace(b);
+    ctx.say(`Pop! ${this.burst}`);
   }
 
   status() {
-    const n = this.balloons.length;
-    return { line: `${this.burst} of ${n} burst${this.lost ? ` · ${this.lost} got away` : ''}` };
+    return { line: `${this.burst} burst${this.lost ? ` · ${this.lost} got away` : ''}` };
   }
 
   target() {
@@ -412,8 +529,8 @@ export class Balloons {
     return best;
   }
 
-  score(time) {
-    return { value: time + 15 * this.lost, text: `${fmt(time + 15 * this.lost)}${this.lost ? ` (${this.lost} got away: +${15 * this.lost} s)` : ''}` };
+  score() {
+    return { value: this.burst, text: `${this.burst} balloon${this.burst === 1 ? '' : 's'}` };
   }
 }
 
@@ -433,7 +550,7 @@ export class Limbo {
     this.state = 'ready';
     this.level = 0;
     this.passes = 0;
-    this.width = 10;
+    this.width = lv(env, 14, 10, 7);
     const a = env.arena;
     // About 35 m in front of the pilot, the bar running away from you, so you
     // fly across your view under it and see the gap side on.
@@ -451,7 +568,6 @@ export class Limbo {
       for (let i = 0; i < n; i++) {
         const s = new Mesh(geo, i % 2 ? m2 : m1);
         s.position.y = (i + 0.5) * (len / n);
-        s.castShadow = true;
         g.add(s);
       }
       return g;
@@ -482,6 +598,7 @@ export class Limbo {
   #setBar() {
     this.barY = this.centre.y + this.barHeight;
     this.bar.position.y = this.barY;
+    this.shadowDirty = true; // (its shadow moves with it)
   }
 
   update(ctx) {
@@ -490,6 +607,7 @@ export class Limbo {
       this.fall.v -= 9.81 * ctx.dt;
       this.bar.position.y = Math.max(this.centre.y + 0.05, this.bar.position.y + this.fall.v * ctx.dt);
       this.bar.rotateZ(ctx.dt * this.fall.spin);
+      if (this.bar.position.y > this.centre.y + 0.06) this.shadowDirty = true;
     }
     if (this.state === 'done' || ctx.ac.crashed) return;
     // Lowered once you're well clear of it.
@@ -557,13 +675,13 @@ export class Limbo {
 export class Pylons {
   static id = 'pylons';
   static title = 'Pylon race';
-  static about = 'Three laps round the inflatable pylons, on the outside of each: cross the start line either way (that sets which way round you race), then round the lit pylon each time. Cutting inside one means going back round it. Don\'t touch them!';
+  static about = 'Laps round the inflatable pylons (2 easy, 3 normal, 5 hard), on the outside of each: cross the start line either way (that sets which way round you race), then round the lit pylon each time on the side its yellow flag sticks out, the way its curved arrow points. Cutting inside one means going back round it. Don\'t touch them!';
 
-  constructor(env, laps = 3) {
+  constructor(env) {
     this.env = env;
     this.group = new Group();
     this.state = 'ready';
-    this.laps = laps;
+    this.laps = lv(env, 2, 3, 5);
     this.lap = 0;
     this.next = -1; // -1: the start line; 0..2 the pylons in racing order
     this.order = [0, 1, 2]; // which pylons, in the order raced (set at the start)
@@ -589,7 +707,6 @@ export class Pylons {
         const r1 = this.rad * (1 - 0.35 * ((i + 1) / bands));
         const m = new Mesh(new CylinderGeometry(r1, r0, this.h / bands, 20), mats[i % 2]);
         m.position.y = (i + 0.5) * (this.h / bands);
-        m.castShadow = true;
         g.add(m);
       }
       const top = new Mesh(new SphereGeometry(this.rad * 0.65, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), mats[0]);
@@ -597,15 +714,18 @@ export class Pylons {
       g.add(top);
       const lamp = new Mesh(new SphereGeometry(0.3, 12, 8), new MeshStandardMaterial({ color: '#ffe060', emissive: '#ffd000', emissiveIntensity: 0 }));
       lamp.position.y = this.h + this.rad * 0.65 + 0.2;
+      lamp.scale.setScalar(0.8);
+      lamp.userData.mover = true; // (it blinks)
       g.add(lamp);
       g.position.copy(base);
       this.group.add(g);
-      return { base, dir, lamp, n: k + 1 };
+      return { base, dir, lamp, g, arrows: null };
     });
     // The start line: across the near leg, in the middle, a white line on
     // the grass between two flags, from well in front of the pilot out to
     // the middle of the course. Crossed either way, at any height.
-    this.lineA = at(env, 0, -0.35 * R - 35, 0);
+    // (Its near end at least 15 m in front of the pilot, who stands at v = -d.)
+    this.lineA = at(env, 0, Math.max(-0.35 * R - 35, -(env.arena.d ?? 1e9) + 15), 0);
     this.lineB = at(env, 0, 0, 0);
     this.lineDir = new Vector3(env.arena.across[0], 0, env.arena.across[1]); // left to right, seen by the pilot
     const len = this.lineA.distanceTo(this.lineB);
@@ -615,6 +735,7 @@ export class Pylons {
     stripe.rotation.x = -Math.PI / 2;
     stripe.rotation.z = -Math.atan2(-(this.lineB.z - this.lineA.z), this.lineB.x - this.lineA.x);
     stripe.renderOrder = 2;
+    stripe.userData.noShadow = true;
     this.group.add(stripe);
     for (const p of [this.lineA, this.lineB]) {
       const pole = new Mesh(new CylinderGeometry(0.04, 0.04, 3, 6), new MeshStandardMaterial({ color: '#ddd' }));
@@ -624,7 +745,94 @@ export class Pylons {
       pole.add(flag);
       this.group.add(pole);
     }
+    this.#arrows();
     this.#light();
+  }
+
+  /**
+   * Markers on each pylon: a curved 3D arrow wrapped round the outside
+   * showing the way round (readable from any side and from the cockpit),
+   * and a yellow pennant on top sticking out to the side to fly past.
+   * Redrawn when the race's direction is set at the start.
+   */
+  #arrows() {
+    const yellow = new MeshStandardMaterial({ color: '#ffd400', emissive: '#806a00', emissiveIntensity: 0.6, roughness: 0.5 });
+    const black = new MeshStandardMaterial({ color: '#141414', roughness: 0.8, side: DoubleSide });
+    const n = this.pylons.length;
+    this.order.forEach((idx, k) => {
+      const p = this.pylons[idx];
+      if (p.arrows) {
+        p.g.remove(p.arrows);
+        p.arrows.traverse((o) => o.geometry?.dispose());
+      }
+      const prev = this.pylons[this.order[(k + n - 1) % n]];
+      const next = this.pylons[this.order[(k + 1) % n]];
+      // The way you're going as you pass it: from the last pylon towards the next.
+      const t = new Vector3().subVectors(next.base, prev.base).setY(0).normalize();
+      const d = p.dir; // out of the course
+      const side = t.clone().addScaledVector(d, -t.dot(d)).normalize(); // along the outside, the way you go
+      p.way = side;
+      const up = new Vector3(0, 1, 0);
+      const a = new Group();
+      // Curved arrow round the outside, about two thirds up.
+      const R = 2.1;
+      const y = this.h * 0.62;
+      const arc = (phi) => new Vector3().addScaledVector(d, Math.cos(phi) * R).addScaledVector(side, Math.sin(phi) * R).setY(y);
+      const pts = [];
+      const end = (95 * Math.PI) / 180;
+      for (let i = 0; i <= 16; i++) pts.push(arc(-end + (i / 16) * 2 * end));
+      const tube = new Mesh(new TubeGeometry(new CatmullRomCurve3(pts), 32, 0.2, 8, false), yellow);
+      a.add(tube);
+      const tip = arc(end);
+      const tdir = new Vector3().addScaledVector(d, -Math.sin(end)).addScaledVector(side, Math.cos(end)).normalize();
+      const head = new Mesh(new ConeGeometry(0.55, 1.2, 14), yellow);
+      head.position.copy(tip).addScaledVector(tdir, 0.5);
+      head.quaternion.setFromUnitVectors(up, tdir);
+      a.add(head);
+      // A short spoke holding it to the pylon (it's a sign, not to be hit).
+      const spoke = new Mesh(new CylinderGeometry(0.06, 0.06, R, 6), black);
+      spoke.position.copy(d).multiplyScalar(R / 2).setY(y);
+      spoke.quaternion.setFromUnitVectors(up, d);
+      a.add(spoke);
+      // A pennant on a pole on top, sticking out to the side you fly past:
+      // keep the flag's side. Yellow, with a black chevron pointing out too.
+      const top = this.h + this.rad * 0.65;
+      const poleH = 3;
+      const pole = new Mesh(new CylinderGeometry(0.05, 0.05, poleH, 6), black);
+      pole.position.set(0, top + poleH / 2, 0);
+      a.add(pole);
+      const L = 4.5; // pennant length
+      const H = 2; // and its height at the pole
+      const pen = new Shape();
+      pen.moveTo(0, -H / 2);
+      pen.lineTo(L, 0);
+      pen.lineTo(0, H / 2);
+      pen.closePath();
+      const flagMat = new MeshStandardMaterial({ color: '#ffd400', emissive: '#806a00', emissiveIntensity: 0.6, roughness: 0.6, side: DoubleSide });
+      const chevMat = new MeshBasicMaterial({ color: '#141414', side: DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      const chev = new Shape();
+      const cx = L * 0.32;
+      const cw = L * 0.13;
+      const ch = H * 0.3;
+      chev.moveTo(cx - cw, -ch);
+      chev.lineTo(cx, -ch);
+      chev.lineTo(cx + cw, 0);
+      chev.lineTo(cx, ch);
+      chev.lineTo(cx - cw, ch);
+      chev.lineTo(cx, 0);
+      chev.closePath();
+      const flag = new Group();
+      flag.add(new Mesh(new ShapeGeometry(pen), flagMat), new Mesh(new ShapeGeometry(chev), chevMat));
+      // Its length along the outward direction, upright.
+      flag.quaternion.setFromRotationMatrix(new Matrix4().makeBasis(d, up, new Vector3().crossVectors(d, up)));
+      flag.position.set(0, top + poleH - H / 2 - 0.05, 0);
+      a.add(flag);
+      p.flag = flag;
+      p.flagLength = L;
+      p.g.add(a);
+      p.arrows = a;
+    });
+    this.shadowRebuild = true; // (new things to shade with)
   }
 
   /** The pylon to round next (null: the line). */
@@ -669,6 +877,7 @@ export class Pylons {
           this.sign = way;
           // Left to right: the right pylon first, then the far one, then the left.
           this.order = way > 0 ? [0, 1, 2] : [2, 1, 0];
+          if (way < 0) this.#arrows();
           ctx.say('Go! Round the lit pylon');
           ctx.sfx('ding');
         } else {
@@ -747,7 +956,7 @@ export class Drone {
     this.pose = { p: new Vector3(), q: new Quaternion() };
     this.vel = new Vector3();
     this.down = null; // crashed: { v, spin }
-    this.ribbons = [new Ribbon({ color: o.colour, seed: o.seed }), new Ribbon({ color: o.colour, seed: o.seed + 1.7 })];
+    this.ribbons = [new Ribbon({ length: o.length, color: o.colour, seed: o.seed }), new Ribbon({ length: o.length, color: o.colour, seed: o.seed + 1.7 })];
     this.meshes = this.ribbons.map((r) => new RibbonMesh(r));
     this.#place(0);
     for (const [i, r] of this.ribbons.entries()) r.place(this.tip(i, _a), _b.copy(this.vel).normalize().negate());
@@ -779,7 +988,10 @@ export class Drone {
     const lift = ac.add(new Vector3(0, 9.81, 0));
     const y = lift.sub(x.clone().multiplyScalar(lift.dot(x))).normalize();
     const z = new Vector3().crossVectors(x, y);
-    this.pose.q.setFromRotationMatrix(new Matrix4().makeBasis(x, y, z));
+    // Rolling smoothly into and out of the turns, as a pilot would.
+    const want = new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(x, y, z));
+    if (dt > 0) this.pose.q.slerp(want, 1 - Math.exp(-dt / 0.5));
+    else this.pose.q.copy(want);
     this.pose.p.copy(p);
     this.vel.copy(v);
   }
@@ -801,7 +1013,7 @@ export class Drone {
 export class Streamers {
   static id = 'streamers';
   static title = 'Streamer cutting';
-  static about = 'Three model aeroplanes fly round towing a crepe-paper streamer from each wing tip. Cut them with your wings or prop, again and again, down to the stubs. Don\'t hit the aeroplanes! In multiplayer you tow streamers too, and everyone can cut everyone\'s.';
+  static about = 'Three model aeroplanes fly slowly round towing a crepe-paper streamer from each wing tip. Cut them with your wings or prop, again and again, down to the stubs. Don\'t hit the aeroplanes! In multiplayer you tow streamers too, and everyone can cut everyone\'s.';
 
   constructor(env) {
     this.env = env;
@@ -811,25 +1023,34 @@ export class Streamers {
     this.loose = []; // cut-off pieces falling
     const a = env.arena;
     const R = a.r;
-    const P = (u, v, h) => at(env, u, v, h);
+    // At steady heights above the course's middle (not following every
+    // bump in the ground below, which made them twitch about).
+    const P = (u, v, h) => {
+      const [x, z] = arenaToWorld(a, u, v);
+      return new Vector3(x, a.g + h, z);
+    };
     const paths = [
       // A wide oval, anticlockwise.
-      (s) => { const t = s * Math.PI * 2; return P(Math.cos(t) * 0.65 * R, Math.sin(t) * 0.45 * R, 24); },
-      // A figure of eight, a little higher.
-      (s) => { const t = s * Math.PI * 2; return P(Math.sin(t) * 0.7 * R, Math.sin(t) * Math.cos(t) * 0.9 * R, 32 + 4 * Math.sin(t * 2)); },
-      // A tighter oval the other way round, swooping.
-      (s) => { const t = -s * Math.PI * 2; return P(Math.cos(t) * 0.4 * R, 0.1 * R + Math.sin(t) * 0.55 * R, 17 + 5 * Math.sin(t)); },
+      (s) => { const t = s * Math.PI * 2; return P(Math.cos(t) * 0.65 * R, Math.sin(t) * 0.45 * R, 22); },
+      // A big, lazy figure of eight, a little higher, gently up and down.
+      (s) => { const t = s * Math.PI * 2; return P(Math.sin(t) * 0.75 * R, Math.sin(t) * Math.cos(t) * 1.0 * R, 28 + 1.5 * Math.sin(t)); },
+      // An oval the other way round, lower.
+      (s) => { const t = -s * Math.PI * 2; return P(Math.cos(t) * 0.5 * R, 0.1 * R + Math.sin(t) * 0.55 * R, 16); },
     ];
     const colours = ['#ff2a2a', '#ffd400', '#2a8cff'];
     this.drones = paths.map((path, k) => {
       const entry = env.droneTypes[k % env.droneTypes.length];
-      const d = new Drone({ path, speed: 12 + k * 1.5, span: entry.def.wingSpan || 1, colour: colours[k], seed: k * 11.3, start: k * 0.31 }, env);
+      const d = new Drone({ path, speed: lv(env, 6.5, 8, 11) + k * 0.5, length: lv(env, 12, 8, 6), span: entry.def.wingSpan || 1, colour: colours[k], seed: k * 11.3, start: k * 0.31 }, env);
       d.entry = entry;
       d.model = entry.createModel();
       d.proxy = env.makeProxy(entry);
       d.model.setPilotVisible?.(true);
+      d.model.root.userData.mover = true; // (it has its own shadow)
       this.group.add(d.model.root);
-      for (const m of d.meshes) this.group.add(m.mesh);
+      for (const m of d.meshes) {
+        m.mesh.userData.mover = true;
+        this.group.add(m.mesh);
+      }
       return d;
     });
   }
@@ -899,6 +1120,7 @@ export class Streamers {
   drop(piece) {
     if (!piece) return;
     const mesh = new RibbonMesh(piece);
+    mesh.mesh.userData.mover = true;
     this.group.add(mesh.mesh);
     this.loose.push({ ribbon: piece, mesh });
   }
@@ -933,4 +1155,250 @@ export class Streamers {
   }
 }
 
-export const COURSES = [Hoops, Balloons, Limbo, Pylons, Streamers];
+// --- Spot landing ------------------------------------------------------------
+
+export const SPOT_RINGS = [2, 5, 10]; // m: the white rings round the bullseye
+const SPOT_BULL = 1; // m: the red bullseye's radius
+
+/**
+ * Take off, climb to the height, fly a full circuit round the spot, then
+ * cut the throttle and land as close to the spot as you can. Scored by how
+ * far from its centre you touch down.
+ */
+export class SpotLanding {
+  static id = 'spot';
+  static title = 'Spot landing';
+  static about = 'Take off and climb to 10 m, fly a nice gentle 360° turn (anywhere: a quick spin round doesn\'t count), then cut the throttle right back and glide in to land as close to the middle of the spot as you can. Scored by where you first touch down. Touch the throttle again after cutting it, or crash on landing, and there\'s no score.';
+
+  constructor(env) {
+    this.env = env;
+    this.group = new Group();
+    this.state = 'ready';
+    this.stage = 'climb'; // climb | circuit | glide | rolling | landed
+    this.climb = lv(env, 10, 10, 20); // m above the ground to reach
+    this.minR = lv(env, 10, 15, 20); // m: the 360 only counts while the turn is at least this wide
+    this.lastTrack = null; // the way it was flying last frame (radians)
+    this.rate = 0; // how fast it's turning, smoothed (rad/s)
+    this.radius = Infinity; // and so how wide the turn is (m)
+    this.turned = 0; // degrees round the spot so far
+    this.result = null; // { dist, void?, why? }
+    // The spot: the middle of the runway (or the course's middle if
+    // something stands there).
+    const rw = LOCATION.layout.runway;
+    let [x, z] = clubToWorld(rw.x, rw.z);
+    if (blocked(env.obstacles, env.ground, x, env.ground.heightAt(x, z) + 1, z)) [x, z] = [env.arena.x, env.arena.z];
+    this.spot = new Vector3(x, env.ground.heightAt(x, z), z);
+    // Painted on the grass: a red bullseye, white rings, orange cones round the outside.
+    const paint = (geo, color) => {
+      const m = new Mesh(geo, new MeshBasicMaterial({ color, transparent: true, opacity: 0.92, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+      m.rotation.x = -Math.PI / 2;
+      m.position.copy(this.spot).setY(this.spot.y + 0.04);
+      m.renderOrder = 2;
+      m.userData.noShadow = true;
+      this.group.add(m);
+      return m;
+    };
+    paint(new CircleGeometry(SPOT_BULL, 40), '#e02020');
+    for (const r of SPOT_RINGS) paint(new RingGeometry(r - 0.12, r + 0.12, 72), '#ffffff');
+    paint(new RingGeometry(0.02, 0.18, 16), '#ffffff'); // centre dot
+    const cone = new ConeGeometry(0.22, 0.6, 12);
+    const coneMat = new MeshStandardMaterial({ color: '#ff6a10', roughness: 0.6 });
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      const r = SPOT_RINGS[SPOT_RINGS.length - 1] + 1;
+      const cx = x + Math.cos(a) * r;
+      const cz = z + Math.sin(a) * r;
+      const c = new Mesh(cone, coneMat);
+      c.position.set(cx, env.ground.heightAt(cx, cz) + 0.3, cz);
+      this.group.add(c);
+    }
+    // Where you touched down: a little flag, shown once you have.
+    this.mark = new Group();
+    const pole = new Mesh(new CylinderGeometry(0.02, 0.02, 1.2, 6), new MeshStandardMaterial({ color: '#eeeeee' }));
+    pole.position.y = 0.6;
+    const flag = new Mesh(new PlaneGeometry(0.5, 0.32), new MeshStandardMaterial({ color: '#1a5cff', side: DoubleSide }));
+    flag.position.set(0.25, 1.04, 0);
+    this.mark.add(pole, flag);
+    this.mark.visible = false;
+    this.group.add(this.mark);
+  }
+
+  update(ctx) {
+    const ac = ctx.ac;
+    if (this.state === 'done') return;
+    const p = ctx.pose.p;
+    const agl = p.y - this.env.ground.heightAt(p.x, p.z);
+    const stick = ac.controls?.throttle ?? ac.throttleActual ?? 0;
+    this.stick = stick;
+    if (this.state === 'ready' && !ac.held && !ac.onGround && ac.velocity.length() > 3) this.state = 'running';
+    if (this.state !== 'running') return;
+    if (ac.crashed) {
+      if (this.stage === 'glide' || this.stage === 'rolling') this.#void(ctx, 'Crashed landing: no score');
+      return;
+    }
+    switch (this.stage) {
+      case 'climb':
+        if (agl >= this.climb) {
+          this.stage = 'circuit';
+          ctx.say(`${this.climb} m! Now a nice gentle 360° turn`);
+          ctx.sfx('ding');
+        }
+        break;
+      case 'circuit': {
+        // A gentle 360: the way it's flying (its track over the ground)
+        // swings right round, while high enough, in a turn at least minR
+        // wide (a quick spin round doesn't count). Anywhere on the field.
+        const dx = p.x - ctx.prev.x;
+        const dz = p.z - ctx.prev.z;
+        const step = Math.hypot(dx, dz);
+        if (step > 1e-3 && ctx.dt > 0) {
+          const track = Math.atan2(dz, dx);
+          if (this.lastTrack !== null) {
+            const d = Math.atan2(Math.sin(track - this.lastTrack), Math.cos(track - this.lastTrack));
+            // Turn rate smoothed over about half a second; width = speed / rate.
+            this.rate += (d / ctx.dt - this.rate) * Math.min(1, ctx.dt / 0.5);
+            this.radius = Math.abs(this.rate) > 1e-3 ? step / ctx.dt / Math.abs(this.rate) : Infinity;
+            this.high = agl >= this.climb;
+            this.wide = this.radius >= this.minR;
+            if (this.high && this.wide) this.turned += (d * 180) / Math.PI;
+          }
+          this.lastTrack = track;
+        }
+        if (ac.onGround) this.#nag(ctx, 'Landed before finishing the 360: take off again');
+        if (Math.abs(this.turned) >= 360) {
+          this.stage = 'cut';
+          ctx.say('360° done! Cut the throttle and land on the spot');
+          ctx.sfx('ding');
+        }
+        break;
+      }
+      case 'cut':
+        // Waiting for the throttle to be cut right back.
+        if (stick <= 0.02) {
+          this.stage = 'glide';
+          ctx.say('Power off: glide in to the spot');
+          ctx.sfx('tick');
+        } else if (ac.onGround) this.#nag(ctx, 'Cut the throttle first!');
+        break;
+      case 'glide':
+        if (stick > 0.05) {
+          this.#void(ctx, 'Throttle opened after the cut: no score');
+          return;
+        }
+        if (ac.onGround) {
+          // Touched down: this is where it's measured from.
+          this.touch = new Vector3(p.x, this.env.ground.heightAt(p.x, p.z), p.z);
+          this.mark.position.copy(this.touch);
+          this.mark.visible = true;
+          this.shadowDirty = true;
+          this.stage = 'rolling';
+          this.rollTime = 0;
+        }
+        break;
+      case 'rolling':
+        // A moment to be sure it was a landing, not a crash.
+        if (stick > 0.05) {
+          this.#void(ctx, 'Throttle opened after the cut: no score');
+          return;
+        }
+        this.rollTime += ctx.dt;
+        if (this.rollTime > 1.5 || ac.velocity.length() < 0.5) {
+          const dist = Math.hypot(this.touch.x - this.spot.x, this.touch.z - this.spot.z);
+          this.result = { dist };
+          this.stage = 'landed';
+          this.state = 'done';
+          ctx.sfx(dist <= SPOT_BULL ? 'finish' : 'ding');
+        }
+        break;
+      default:
+    }
+  }
+
+  /** A reminder, but not every frame. */
+  #nag(ctx, text) {
+    if (this.nagged === text && ctx.time - this.naggedAt < 4) return;
+    this.nagged = text;
+    this.naggedAt = ctx.time;
+    ctx.say(text);
+  }
+
+  #void(ctx, why) {
+    this.result = { void: true, why };
+    this.stage = 'landed';
+    this.state = 'done';
+    ctx.say(why);
+    ctx.sfx('fail');
+  }
+
+  /** How good a landing at `dist` metres was. */
+  static grade(dist) {
+    if (dist <= SPOT_BULL) return 'Bullseye!';
+    if (dist <= SPOT_RINGS[0]) return 'Superb';
+    if (dist <= SPOT_RINGS[1]) return 'Good';
+    if (dist <= SPOT_RINGS[2]) return 'On the spot';
+    return 'Missed the spot';
+  }
+
+  /**
+   * The steps, for the checklist on screen: [{ text, detail?, state:
+   * 'done' | 'now' | 'todo' | 'failed' }].
+   */
+  steps() {
+    const p = this.env.me?.position;
+    const agl = p ? Math.max(0, p.y - this.env.ground.heightAt(p.x, p.z)) : 0;
+    const order = ['takeoff', 'climb', 'circuit', 'cut', 'glide', 'landed'];
+    const at = this.state === 'ready' ? 0 : this.stage === 'rolling' ? 4 : order.indexOf(this.stage);
+    const st = (i) => (i < at ? 'done' : i === at ? 'now' : 'todo');
+    // (Height, degrees and distance are the big number in the box at the
+    // top: here only what that doesn't say.)
+    let why = '';
+    if (at === 2 && agl < this.climb) why = `too low: back up to ${this.climb} m`;
+    else if (at === 2 && this.wide === false) why = 'too tight: turn more gently';
+    const list = [
+      { text: 'Take off', detail: at === 0 ? 'throttle up' : '' },
+      { text: `Climb to ${this.climb} m`, detail: '' },
+      { text: 'Fly a gentle 360° turn', detail: at === 2 ? why : '' },
+      { text: 'Cut the throttle right back', detail: at === 3 ? `throttle at ${Math.round((this.stick ?? 0) * 100)}%` : at > 3 ? 'keep it off!' : '' },
+      { text: 'Glide in and land on the spot', detail: '' },
+    ].map((x, i) => ({ ...x, state: st(i) }));
+    if (this.stage === 'landed') {
+      for (const x of list) x.state = 'done';
+      if (this.result?.void) list[list.length - 1].state = 'failed';
+    }
+    return list;
+  }
+
+  status() {
+    const p = this.env.me?.position;
+    switch (this.stage) {
+      case 'climb': {
+        const agl = p ? Math.max(0, p.y - this.env.ground.heightAt(p.x, p.z)) : 0;
+        return { line: `Take off and climb to ${this.climb} m`, big: `${Math.round(agl)} m` };
+      }
+      case 'circuit':
+        return { line: `A gentle 360° turn, ${this.climb} m up or more`, big: `${Math.min(360, Math.round(Math.abs(this.turned)))}° / 360°` };
+      case 'cut':
+        return { line: 'Cut the throttle right back', big: 'CUT' };
+      case 'glide':
+      case 'rolling': {
+        const d = p ? Math.hypot(p.x - this.spot.x, p.z - this.spot.z) : 0;
+        return { line: 'Glide in and land on the spot', big: `${Math.round(d)} m` };
+      }
+      default:
+        if (this.result?.void) return { line: this.result.why, big: '–' };
+        return { line: SpotLanding.grade(this.result.dist), big: `${this.result.dist.toFixed(1)} m` };
+    }
+  }
+
+  target() {
+    return this.stage === 'glide' || this.stage === 'cut' ? this.spot : null;
+  }
+
+  score() {
+    if (this.result?.void) return { void: true, text: this.result.why };
+    const d = this.result.dist;
+    return { value: Math.round(d * 10) / 10, text: `${d.toFixed(1)} m from the spot (${SpotLanding.grade(d)})` };
+  }
+}
+
+export const COURSES = [Hoops, Balloons, Limbo, Pylons, Streamers, SpotLanding];

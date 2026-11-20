@@ -1,5 +1,5 @@
-// Challenges (Menu → Challenges): hoops, balloon burst, limbo, a pylon race
-// and streamer cutting, laid out in the most open part of the field
+// Challenges (Menu → Challenges): hoops, balloon burst, limbo, a pylon race,
+// streamer cutting and spot landing, laid out in the most open part of the field
 // (src/game/arena.js). This runs the chosen course (src/game/courses.js):
 // its clock, best scores (kept in this browser per field), the HUD, the
 // marker pointing at what's next, and the sounds. Pressing R (reset)
@@ -11,11 +11,26 @@
 // the owner shortens theirs when told.
 import { Vector3 } from 'three';
 import { findArena } from './arena.js';
-import { COURSES, Streamers, formatTime } from './courses.js';
+import { COURSES, Streamers, formatTime, LEVELS } from './courses.js';
 import { Ribbon, RibbonMesh } from './ribbon.js';
 import { bodyShape } from './geom.js';
+import { CourseShadow } from './shadow.js';
+import { PlaneShadow } from '../view/planeShadow.js';
 import { LOCATION } from '../sim/location.js';
 import { getAircraft } from '../aircraft/index.js';
+
+export { LEVELS };
+export const MINUTES = [2, 5, 10]; // balloon burst time limits
+
+/**
+ * Best-score key: per challenge, difficulty and field (and the balloon
+ * burst's time limit). Normal keeps the key used before there were
+ * levels, so earlier bests still count.
+ */
+export function bestKey(mode, level, field, minutes) {
+  if (mode === 'balloons') return `balloons:${level}:${minutes}min:${field}`;
+  return level === 'normal' ? `${mode}:${field}` : `${mode}:${level}:${field}`;
+}
 
 export const MODES = { none: { title: 'Free flying', about: 'No challenge: just fly.' } };
 for (const C of COURSES) MODES[C.id] = { title: C.title, about: C.about, Course: C };
@@ -98,6 +113,8 @@ export class Challenges {
   constructor(o) {
     this.o = o;
     this.mode = 'none';
+    this.level = 'normal'; // LEVELS
+    this.minutes = 5; // balloon burst time limit
     this.course = null;
     this.arena = null;
     this.time = 0; // the clock (s)
@@ -125,6 +142,25 @@ export class Challenges {
     this.msg = document.createElement('div');
     this.msg.id = 'challenge-msg';
     root.after(this.msg);
+    // The steps to do, for challenges that have them (spot landing).
+    this.stepsEl = document.createElement('ol');
+    this.stepsEl.id = 'challenge-steps';
+    this.stepsEl.style.display = 'none';
+    root.after(this.stepsEl);
+  }
+
+  /** The checklist: each step ticked off, the one to do now highlighted. */
+  #steps() {
+    const el = this.stepsEl;
+    if (!el) return;
+    const list = this.course?.steps?.();
+    el.style.display = list ? '' : 'none';
+    if (!list) return;
+    const html = list.map((x) => `<li class="${x.state}"><span class="tick">${{ done: '✓', failed: '✗', now: '▶', todo: '' }[x.state]}</span><span class="t">${x.text}${x.detail ? `<small>${x.detail}</small>` : ''}</span></li>`).join('');
+    if (html !== this.stepsHtml) {
+      el.innerHTML = html;
+      this.stepsHtml = html;
+    }
   }
 
   get active() {
@@ -133,7 +169,26 @@ export class Challenges {
 
   /** Best-score key: per challenge and field. */
   get key() {
-    return `${this.mode}:${LOCATION.id}`;
+    return bestKey(this.mode, this.level, LOCATION.id, this.minutes);
+  }
+
+  /** Difficulty and the balloon burst's time limit; take effect at the next restart. */
+  setLevel(level, minutes = this.minutes) {
+    this.level = LEVELS[level] ? level : 'normal';
+    this.minutes = MINUTES.includes(Number(minutes)) ? Number(minutes) : 5;
+  }
+
+  /**
+   * The aircraft was reset (R): start the challenge again, except in the
+   * middle of a timed one (balloon burst), where you just fly on with the
+   * clock still running.
+   */
+  onReset() {
+    if (this.course?.limit && this.course.state === 'running') {
+      this.hasPrev = false;
+      return;
+    }
+    this.restart();
   }
 
   /** Choose the challenge ('none' for free flying); `restart` false leaves it for the next reset. */
@@ -160,6 +215,7 @@ export class Challenges {
     if (!M.Course) {
       if (this.o.root) this.o.root.style.display = 'none';
       if (this.o.marker) this.o.marker.style.display = 'none';
+      if (this.stepsEl) this.stepsEl.style.display = 'none';
       return;
     }
     this.arena ||= findArena(this.o.obstacles, this.o.ground);
@@ -167,17 +223,29 @@ export class Challenges {
       arena: this.arena,
       ground: this.o.ground,
       obstacles: this.o.obstacles,
+      level: this.level,
+      minutes: this.minutes,
       droneTypes: this.o.aircraftTypes?.() ?? [],
       makeProxy: this.o.makeProxy,
     };
     this.course = new M.Course(env);
     this.o.scene.add(this.course.group);
+    // Shadows: one for everything that stays put, and the streamer planes'
+    // own (src/game/shadow.js).
+    this.courseShadow ||= new CourseShadow(this.o.scene, this.o.ground);
+    this.courseShadow.setObjects(this.course.group);
+    for (const d of this.course.drones ?? []) {
+      d.shadow = new PlaneShadow(this.o.scene, this.o.ground);
+      d.shadow.setModel(d.model, d.span);
+    }
     if (M.Course === Streamers) this.#towMine();
     if (this.o.root) this.o.root.style.display = '';
     this.say(M.title);
   }
 
   #clear() {
+    this.courseShadow?.setObjects(null);
+    for (const d of this.course?.drones ?? []) d.shadow?.dispose();
     if (this.course) {
       this.o.scene.remove(this.course.group);
       this.course.dispose?.();
@@ -276,17 +344,44 @@ export class Challenges {
       floor,
       say: (t) => this.say(t),
       sfx: (k) => this.sfx(k),
+      sun: c.shadow?.lightDir ?? null, // (for balloons' shadows)
+      shade: c.shadow?.strength ?? 0,
     };
     this.course.env.me = ac;
     if (!c.paused) {
       const was = this.course.state;
       this.course.update(ctx);
-      if (this.course.state === 'running' && !ac.crashed) this.time += dt;
+      const limit = this.course.limit;
+      // (A timed challenge's clock keeps going through a crash.)
+      if (this.course.state === 'running' && (!ac.crashed || limit)) this.time += dt;
+      if (limit && this.course.state === 'running' && this.time >= limit) {
+        this.time = limit;
+        this.course.state = 'done';
+        this.sfx('finish');
+      }
       if (was !== 'done' && this.course.state === 'done') this.#finish();
       this.#streamers(ctx, c);
     }
+    this.#shadows(c.shadow);
     this.prev.copy(ac.position);
     this.#hud(ac, c.camera);
+  }
+
+  /** The course's shadows (c.shadow: { renderer, lightDir, strength }, or none). */
+  #shadows(sh) {
+    const cs = this.courseShadow;
+    if (!cs || !this.course) return;
+    if (this.course.shadowRebuild) {
+      this.course.shadowRebuild = false;
+      cs.setObjects(this.course.group);
+    }
+    if (this.course.shadowDirty) {
+      this.course.shadowDirty = false;
+      cs.markDirty();
+    }
+    if (!sh) return;
+    cs.update(sh.renderer, sh.lightDir, sh.strength);
+    for (const d of this.course.drones ?? []) d.shadow?.update(sh.renderer, d.pose.p, sh.lightDir, sh.strength);
   }
 
   /** Your streamers, other players' streamers, and cutting theirs. */
@@ -348,6 +443,11 @@ export class Challenges {
 
   #finish() {
     const s = this.course.score(this.time);
+    if (s.void) {
+      // (Disqualified: nothing to save.)
+      this.finished = { text: s.text, void: true };
+      return;
+    }
     const Course = MODES[this.mode].Course;
     const all = loadBest();
     const old = all[this.key];
@@ -357,7 +457,8 @@ export class Challenges {
       saveBest(all);
     }
     this.finished = { text: s.text, record: better && !!old };
-    this.say(better && old ? `New best! ${s.text}` : `Finished: ${s.text}`);
+    const end = this.course.limit ? 'Time\'s up' : 'Finished';
+    this.say(better && old ? `New best! ${s.text}` : `${end}: ${s.text}`);
   }
 
   #hud(ac, camera) {
@@ -365,15 +466,17 @@ export class Challenges {
     const M = MODES[this.mode];
     const st = this.course.status();
     const best = loadBest()[this.key];
-    this.hud.title.textContent = M.title;
-    let big = st.big ?? formatTime(this.time);
+    this.hud.title.textContent = `${M.title} · ${LEVELS[this.level]}`;
+    const limit = this.course.limit;
+    let big = st.big ?? formatTime(limit ? Math.max(0, limit - this.time) : this.time);
     let line = st.line;
-    if (ac.crashed && this.course.state !== 'done') line = 'Crashed: R to try again';
-    if (this.finished) line = `${this.finished.record ? 'New best! ' : 'Done! '}${this.finished.text} · R to go again`;
+    if (ac.crashed && this.course.state !== 'done') line = limit && this.course.state === 'running' ? 'Crashed: R to fly on (the clock\'s running)' : 'Crashed: R to try again';
+    if (this.finished) line = this.finished.void ? `${this.finished.text} · R to go again` : `${this.finished.record ? 'New best! ' : 'Done! '}${this.finished.text} · R to go again`;
     if (this.mode === 'limbo' && this.course.state === 'done') big = `${this.course.passes} under`;
     this.hud.big.textContent = big;
     this.hud.line.textContent = line;
     this.hud.best.textContent = best ? `Best ${best.text}${best.aircraft ? ` (${best.aircraft})` : ''}` : '';
+    this.#steps();
     this.#marker(camera, ac);
   }
 

@@ -3,7 +3,7 @@ import { Vector3, Quaternion } from 'three';
 import { throughHoop, segmentTouches, bodyShape, crossSegment2D } from '../src/game/geom.js';
 import { Ribbon, SEG } from '../src/game/ribbon.js';
 import { findArena, arenaToWorld } from '../src/game/arena.js';
-import { Hoops, Balloons, Balloon, Limbo, Pylons, Streamers, LIMBO_HEIGHTS } from '../src/game/courses.js';
+import { Hoops, Balloons, Balloon, Limbo, Pylons, Streamers, SpotLanding, LIMBO_HEIGHTS } from '../src/game/courses.js';
 import { Obstacles } from '../src/sim/obstacles.js';
 import { physicsGround as ground } from '../src/sim/terrain.js';
 import { Aircraft } from '../src/sim/aircraft.js';
@@ -65,6 +65,27 @@ describe('challenge geometry', () => {
   it('crosses a line on the ground', () => {
     expect(crossSegment2D(-1, 0, 1, 0, 0, -5, 0, 5)).toMatchObject({ t: 0.5, u: 0.5 });
     expect(crossSegment2D(-1, 6, 1, 6, 0, -5, 0, 5)).toBeNull();
+  });
+});
+
+describe('challenge shadows', () => {
+  it('a balloon\'s shadow lands on the ground away from the sun, softer and fainter the higher it is', async () => {
+    const { Mesh } = await import('three');
+    const { blobMaterial, blobGeometry, placeBlob } = await import('../src/game/shadow.js');
+    const sun = new Vector3(-1, 1, 0).normalize(); // 45 degrees up, in the -x
+    const g = ground.heightAt(0, 0);
+    const low = new Mesh(blobGeometry(), blobMaterial());
+    const high = new Mesh(blobGeometry(), blobMaterial());
+    placeBlob(low, new Vector3(0, g + 5, 0), 0.5, ground, sun, 0.6);
+    placeBlob(high, new Vector3(0, g + 25, 0), 0.5, ground, sun, 0.6);
+    expect(low.visible).toBe(true);
+    expect(low.position.x).toBeCloseTo(5, 0); // 5 m up at 45 degrees: 5 m away from the sun
+    expect(high.position.x).toBeCloseTo(25, 0);
+    expect(high.material.uniforms.opacity.value).toBeLessThan(low.material.uniforms.opacity.value);
+    expect(high.material.uniforms.soft.value).toBeGreaterThan(low.material.uniforms.soft.value);
+    // No sun (night, or overcast): no shadow.
+    placeBlob(low, new Vector3(0, g + 5, 0), 0.5, ground, sun, 0);
+    expect(low.visible).toBe(false);
   });
 });
 
@@ -131,11 +152,41 @@ describe('challenge courses', () => {
   it('balloons burst when flown into', () => {
     const b = new Balloons(env());
     fly(b, [new Vector3(arena.x, arena.g + 40, arena.z), new Vector3(arena.x + 1, arena.g + 40, arena.z)]); // to sway them into place
-    expect(b.left).toBe(15);
-    const t = b.balloons[3].pos.clone();
+    expect(b.left).toBe(12); // normal: 12 up at once
+    const one = b.balloons[3];
+    const t = one.pos.clone();
     fly(b, [t.clone().add(new Vector3(-4, 0, 0)), t.clone().add(new Vector3(4, 0, 0))]);
-    expect(b.balloons[3].popped).toBe(true);
-    expect(b.left).toBe(14);
+    expect(one.popped).toBe(true);
+    expect(b.burst).toBe(1);
+    expect(b.left).toBe(11);
+    // Another is tied up a couple of seconds later.
+    fly(b, [new Vector3(arena.x, arena.g + 60, arena.z), new Vector3(arena.x + 30, arena.g + 60, arena.z)]);
+    expect(b.left).toBe(12);
+    expect(b.score().value).toBe(1);
+  });
+
+  it('balloons: easy has more, bigger balloons; hard fewer, smaller ones', () => {
+    const e = new Balloons({ ...env(), level: 'easy' });
+    const h = new Balloons({ ...env(), level: 'hard' });
+    expect(e.left).toBeGreaterThan(h.left);
+    expect(e.radius).toBeGreaterThan(h.radius * 2);
+    // Easy ones all about the same height; hard ones anywhere from low down to high up.
+    const spread = (c) => {
+      const hs = c.balloons.map((b) => b.len);
+      return Math.max(...hs) - Math.min(...hs);
+    };
+    expect(spread(e)).toBeLessThan(4);
+    expect(spread(h)).toBeGreaterThan(12);
+    expect(new Balloons({ ...env(), minutes: 2 }).limit).toBe(120);
+    expect(new Balloons(env()).limit).toBe(300);
+  });
+
+  it('difficulty changes the other courses too', () => {
+    expect(new Hoops({ ...env(), level: 'easy' }).radius).toBeGreaterThan(new Hoops({ ...env(), level: 'hard' }).radius);
+    expect(new Limbo({ ...env(), level: 'easy' }).width).toBeGreaterThan(new Limbo({ ...env(), level: 'hard' }).width);
+    expect([new Pylons({ ...env(), level: 'easy' }).laps, new Pylons(env()).laps, new Pylons({ ...env(), level: 'hard' }).laps]).toEqual([2, 3, 5]);
+    const speeds = (level) => new Streamers({ ...env(), level }).drones.map((d) => d.o.speed);
+    expect(Math.max(...speeds('easy'))).toBeLessThan(Math.min(...speeds('hard')));
   });
 
   it('a balloon on its string leans downwind and holds its length; cut free it floats up and away', () => {
@@ -153,6 +204,70 @@ describe('challenge courses', () => {
     expect(b.trail.count).toBeGreaterThan(0);
   });
 
+  it('balloons dance about in the wind, and an aeroplane flying close past knocks them about', () => {
+    const run = (W, flyby) => {
+      const c = new Balloons(env());
+      const ac = { crashed: false, held: null, onGround: true, velocity: new Vector3() };
+      const pose = { p: new Vector3(0, -100, 0), q: new Quaternion() };
+      const ctx = { dt: 1 / 30, time: 0, ac, pose, prev: pose.p.clone(), span: 1, shape: bodyShape(1), sweep: 0, wind: (p, o) => o.set(W, 0, 0), floor, say: () => {}, sfx: () => {} };
+      for (let i = 0; i < 300; i++) c.update(ctx); // settle
+      const b = c.balloons[2];
+      const lo = b.pos.clone();
+      const hi = b.pos.clone();
+      const start = b.pos.clone();
+      let moved = 0;
+      for (let i = 0; i < 90; i++) {
+        if (flyby) {
+          // Past it 2 m to the side at 15 m/s.
+          ctx.prev.copy(pose.p);
+          pose.p.copy(start).add(new Vector3(-20 + Math.min(40, i * 0.5), 0, 2));
+          ac.velocity.set(15, 0, 0);
+          ac.onGround = false;
+        }
+        c.update(ctx);
+        lo.min(b.pos);
+        hi.max(b.pos);
+        moved = Math.max(moved, b.pos.distanceTo(start));
+      }
+      for (let i = 0; i < 1500; i++) {
+        c.update(ctx);
+        lo.min(b.pos);
+        hi.max(b.pos);
+      }
+      return { moved, wander: hi.sub(lo).length(), popped: b.popped };
+    };
+    // In a steady 3 m/s wind it wanders about, not just leaning still.
+    expect(run(3, false).wander).toBeGreaterThan(2);
+    // In calm air, a close pass shoves it a lot more than it drifts on its own.
+    const still = run(0, false).moved;
+    const knocked = run(0, true);
+    expect(knocked.popped).toBe(false);
+    expect(knocked.moved).toBeGreaterThan(still + 1);
+  });
+
+  it('a balloon\'s string runs to the knot under it, with a slight curve in it', () => {
+    const c = new Balloons(env());
+    const ctx = { dt: 1 / 30, time: 0, ac: { crashed: false, held: null, onGround: true, velocity: new Vector3() }, pose: { p: new Vector3(0, -100, 0), q: new Quaternion() }, prev: new Vector3(0, -100, 0), span: 1, shape: bodyShape(1), sweep: 0, wind: (p, o) => o.set(4, 0, 0), floor, say: () => {}, sfx: () => {} };
+    for (let i = 0; i < 400; i++) c.update(ctx);
+    for (const b of c.balloons) {
+      b.mesh.updateMatrixWorld(true);
+      // Leaning over in the wind...
+      expect(b.axis.x).toBeGreaterThan(0.1);
+      // ...and the string's end is still at the knot (the little cone under it).
+      const knot = b.mesh.children[0].getWorldPosition(new Vector3());
+      const a = b.line.geometry.attributes.position.array;
+      const n = a.length / 3;
+      const end = new Vector3().fromArray(a, (n - 1) * 3);
+      expect(end.distanceTo(knot)).toBeLessThan(0.1);
+      // Not dead straight: its middle is off the line from peg to knot.
+      const mid = new Vector3().fromArray(a, Math.floor(n / 2) * 3);
+      const line = end.clone().sub(b.peg).normalize();
+      const off = mid.clone().sub(b.peg);
+      off.addScaledVector(line, -off.dot(line));
+      expect(off.length()).toBeGreaterThan(0.015 * b.len);
+    }
+  });
+
   it('balloons: flying through a string cuts it, and the balloon gets away', () => {
     const bs = new Balloons(env());
     fly(bs, [new Vector3(arena.x, arena.g + 60, arena.z), new Vector3(arena.x + 1, arena.g + 60, arena.z)]);
@@ -166,7 +281,7 @@ describe('challenge courses', () => {
     fly(bs, [new Vector3(arena.x, arena.g + 200, arena.z), new Vector3(arena.x + 200, arena.g + 200, arena.z)], { stepLen: 0.05 });
     expect(b.gone).toBe(true);
     expect(bs.lost).toBe(1);
-    expect(bs.left).toBe(14);
+    expect(bs.left).toBe(12); // (replaced)
   });
 
   it('limbo: under lowers the bar, over does not count, touching it ends it', () => {
@@ -227,6 +342,38 @@ describe('challenge courses', () => {
     expect(pr.state).toBe('done');
   });
 
+  it('pylon race: the arrows on the pylons point the way round, either way', () => {
+    for (const way of [1, -1]) {
+      const pr = new Pylons(env());
+      const pts = raceLaps(way);
+      fly(pr, pts.slice(0, 20), { stepLen: 1 }); // over the line: the direction's set
+      for (const p of pr.pylons) {
+        // Where the race path passes the pylon on the outside, which way is it going?
+        let best = 0;
+        for (let i = 1; i < pts.length; i++) if (pts[i].distanceTo(p.base) < pts[best].distanceTo(p.base)) best = i;
+        const go = pts[best + 1].clone().sub(pts[best - 1]).setY(0).normalize();
+        expect(go.dot(p.way)).toBeGreaterThan(0.5);
+      }
+    }
+  });
+
+  it('pylon race: each pylon\'s flag sticks out on the side to fly past (out of the course)', () => {
+    const pr = new Pylons(env());
+    const [cx, cz] = arenaToWorld(arena, 0, 0);
+    for (const p of pr.pylons) {
+      p.g.updateMatrixWorld(true);
+      // The flag's point, in the world.
+      const tip = new Vector3(p.flagLength, 0, 0).applyMatrix4(p.flag.matrixWorld);
+      expect(Math.hypot(tip.x - cx, tip.z - cz)).toBeGreaterThan(Math.hypot(p.base.x - cx, p.base.z - cz) + 3.5);
+    }
+  });
+
+  it('pylon race: the start line keeps clear of the pilot', () => {
+    const pr = new Pylons(env());
+    const [px, pz] = [arena.x - arena.away[0] * arena.d, arena.z - arena.away[1] * arena.d];
+    expect(Math.hypot(pr.lineA.x - px, pr.lineA.z - pz)).toBeGreaterThan(14);
+  });
+
   it('pylon race: the line crossed the wrong way after the start says so', () => {
     const pr = new Pylons(env());
     const R = arena.r;
@@ -264,6 +411,25 @@ describe('challenge courses', () => {
     expect(ac.crashed).toMatch(/pylon/);
   });
 
+  it('streamers: the planes fly slowly and smoothly, at steady heights clear of the ground', () => {
+    const s = new Streamers(env());
+    const ctx = { dt: 1 / 60, time: 0, ac: { crashed: false, held: null, onGround: true, velocity: new Vector3() }, pose: { p: new Vector3(0, -50, 0), q: new Quaternion() }, prev: new Vector3(0, -50, 0), span: 1, shape: bodyShape(1), sweep: 0, wind: still, floor, say: () => {}, sfx: () => {} };
+    const last = s.drones.map((d) => d.pose.q.clone());
+    const ys = s.drones.map(() => []);
+    for (let i = 0; i < 60 * 40; i++) {
+      s.update(ctx);
+      s.drones.forEach((d, k) => {
+        expect(d.vel.length()).toBeLessThan(9.5);
+        // No sudden twitches: at most ~60 degrees a second of attitude change.
+        expect(d.pose.q.angleTo(last[k])).toBeLessThan((60 * Math.PI) / 180 / 60);
+        last[k].copy(d.pose.q);
+        ys[k].push(d.pose.p.y);
+        expect(d.pose.p.y).toBeGreaterThan(ground.heightAt(d.pose.p.x, d.pose.p.z) + 10);
+      });
+    }
+    for (const y of ys) expect(Math.max(...y) - Math.min(...y)).toBeLessThan(3.5);
+  });
+
   it('streamers: the planes fly their loops, and a streamer flown through is cut', () => {
     const s = new Streamers(env());
     const ctx = { dt: 1 / 60, time: 0, ac: { crashed: false, held: null, onGround: true, velocity: new Vector3() }, pose: { p: new Vector3(0, -50, 0), q: new Quaternion() }, prev: new Vector3(0, -50, 0), span: 1, shape: bodyShape(1), sweep: 0, wind: still, floor, say: () => {}, sfx: () => {} };
@@ -283,5 +449,128 @@ describe('challenge courses', () => {
     expect(s.tryCut(r, ctx)).toBe(true);
     expect(r.count).toBeLessThan(before);
     expect(s.loose.length).toBe(1);
+  });
+});
+
+describe('spot landing', () => {
+  /** A stand-in aeroplane and a way to move it, with the throttle and ground contact as given. */
+  function pilot(course) {
+    const ac = { crashed: false, held: null, onGround: true, velocity: new Vector3(12, 0, 0), controls: { throttle: 0.7 }, crash(r) { this.crashed = r; } };
+    const pose = { p: new Vector3(), q: new Quaternion() };
+    const prev = new Vector3();
+    const said = [];
+    let time = 0;
+    const at = (x, z, h, { ground = false, throttle = ac.controls.throttle, speed = 12 } = {}) => {
+      prev.copy(pose.p);
+      pose.p.set(x, ground ? course.env.ground.heightAt(x, z) : course.env.ground.heightAt(x, z) + h, z);
+      ac.onGround = ground;
+      ac.controls.throttle = throttle;
+      ac.velocity.set(speed, 0, 0);
+      time += 0.05;
+      course.env.me = { position: pose.p };
+      course.update({ dt: 0.05, time, ac, pose, prev, span: 1, shape: bodyShape(1), sweep: 0, wind: still, floor, say: (t) => said.push(t), sfx: () => {} });
+    };
+    /** Fly round the spot at radius r, h up, through `deg` degrees, from its -x side. */
+    const circle = (r, h, deg = 380) => {
+      const { x, z } = course.spot;
+      // (Starting on the side the climb ended, the pilot's way, -x.)
+      for (let a = 180; a <= 180 + deg; a += 3) at(x + Math.cos((a * Math.PI) / 180) * r, z + Math.sin((a * Math.PI) / 180) * r, h);
+    };
+    return { ac, at, circle, said };
+  }
+
+  it('climb, circuit, cut the throttle, land: scored by the touchdown point', () => {
+    const c = new SpotLanding(env());
+    const { x, z } = c.spot;
+    const f = pilot(c);
+    f.at(x - 40, z, 0, { ground: true, speed: 0 });
+    expect(c.state).toBe('ready');
+    for (let h = 1; h <= 12; h++) f.at(x - 40 + h, z, h);
+    expect(c.stage).toBe('circuit');
+    f.circle(25, 12);
+    expect(c.stage).toBe('cut');
+    f.at(x - 25, z, 10, { throttle: 0 });
+    expect(c.stage).toBe('glide');
+    for (let k = 0; k < 20; k++) f.at(x - 25 + k, z + 1.5, 10 - k * 0.5, { throttle: 0 });
+    f.at(x - 3, z + 1.5, 0, { ground: true, throttle: 0, speed: 6 });
+    expect(c.stage).toBe('rolling');
+    f.at(x - 1, z + 1.5, 0, { ground: true, throttle: 0, speed: 0.2 }); // stopped
+    expect(c.state).toBe('done');
+    // Measured from where it first touched, not where it stopped.
+    expect(c.score().value).toBeCloseTo(Math.hypot(3, 1.5), 1);
+    expect(c.score().text).toMatch(/Good|Superb/);
+  });
+
+  it('a quick spin round, or a turn too low, does not count; a gentle one anywhere does', () => {
+    const c = new SpotLanding(env());
+    const { x, z } = c.spot;
+    const f = pilot(c);
+    for (let h = 1; h <= 12; h++) f.at(x - 40 + h, z, h);
+    f.circle(8, 12); // tighter than the 15 m minimum
+    expect(c.stage).toBe('circuit');
+    f.circle(30, 6); // below 10 m
+    expect(c.stage).toBe('circuit');
+    f.circle(30, 15);
+    expect(c.stage).toBe('cut');
+    // Not round the spot: a gentle turn well away from it counts just the same.
+    const c2 = new SpotLanding(env());
+    const f2 = pilot(c2);
+    const { x: x2, z: z2 } = c2.spot;
+    for (let h = 1; h <= 12; h++) f2.at(x2 - 100 + h, z2 + 60, h);
+    for (let a = 0; a <= 380; a += 3) f2.at(x2 - 70 - Math.cos((a * Math.PI) / 180) * 20, z2 + 60 + Math.sin((a * Math.PI) / 180) * 20, 12);
+    expect(c2.stage).toBe('cut');
+  });
+
+  it('throttle after the cut, or a crash landing, means no score', () => {
+    for (const how of ['throttle', 'crash']) {
+      const c = new SpotLanding(env());
+      const { x, z } = c.spot;
+      const f = pilot(c);
+      for (let h = 1; h <= 12; h++) f.at(x - 40 + h, z, h);
+      f.circle(25, 12);
+      f.at(x - 25, z, 10, { throttle: 0 });
+      if (how === 'throttle') f.at(x - 20, z, 8, { throttle: 0.3 });
+      else {
+        f.at(x - 2, z, 0, { ground: true, throttle: 0, speed: 8 });
+        f.ac.crashed = 'Crashed';
+        f.at(x - 1, z, 0, { ground: true, throttle: 0, speed: 2 });
+      }
+      expect(c.state).toBe('done');
+      expect(c.score().void).toBe(true);
+    }
+  });
+
+  it('the on-screen steps tick off as you go, and say why the turn isn\'t counting', () => {
+    const c = new SpotLanding(env());
+    const { x, z } = c.spot;
+    const f = pilot(c);
+    const now = () => c.steps().findIndex((st) => st.state === 'now');
+    f.at(x - 40, z, 0, { ground: true, speed: 0 });
+    expect(now()).toBe(0); // take off
+    f.at(x - 39, z, 3);
+    expect(now()).toBe(1); // climb
+    expect(c.steps()[1].detail).toBe(''); // (the height's the big number in the box)
+    for (let h = 4; h <= 12; h++) f.at(x - 40 + h, z, h);
+    expect(now()).toBe(2); // circuit
+    f.circle(6, 12, 90); // a quick spin round
+    expect(c.steps()[2].detail).toMatch(/too tight/);
+    f.at(x - 30, z, 5); // too low
+    expect(c.steps()[2].detail).toMatch(/too low/);
+    f.circle(30, 12, 420); // (a bit more: the first moments after the spin still read as tight)
+    expect(now()).toBe(3); // cut
+    expect(c.steps().slice(0, 3).every((st) => st.state === 'done')).toBe(true);
+    f.at(x - 30, z, 10, { throttle: 0 });
+    expect(now()).toBe(4); // land
+    f.at(x - 1, z, 0, { ground: true, throttle: 0, speed: 0.2 });
+    f.at(x - 1, z, 0, { ground: true, throttle: 0, speed: 0.2 });
+    expect(c.steps().every((st) => st.state === 'done')).toBe(true);
+  });
+
+  it('hard means higher and wider', () => {
+    const e = new SpotLanding({ ...env(), level: 'easy' });
+    const h = new SpotLanding({ ...env(), level: 'hard' });
+    expect(h.climb).toBeGreaterThan(e.climb);
+    expect(h.minR).toBeGreaterThan(e.minR);
+    expect(new SpotLanding(env()).climb).toBe(10);
   });
 });
