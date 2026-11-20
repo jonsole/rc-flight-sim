@@ -3,7 +3,7 @@ import { mkdtempSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Policy, paramCount, toControls } from '../src/ml/policy.js';
-import { OBS_SIZE, OBS_NAMES } from '../src/ml/observe.js';
+import { OBS_SIZE, OBS_NAMES, INPUT_SETS, resolveInputs } from '../src/ml/observe.js';
 import { FlightEnv, runEpisode, makeRng } from '../ml/env.js';
 import { ES, centredRanks } from '../ml/es.js';
 import { getEntry, aircraftIds } from '../ml/aircraft.js';
@@ -47,6 +47,20 @@ describe('ML training environment', () => {
       expect(obs.length).toBe(OBS_SIZE);
       expect(Array.from(obs).every(Number.isFinite)).toBe(true);
     }
+  });
+
+  it('gives a policy only the inputs it was trained on', () => {
+    expect(INPUT_SETS.hardware).not.toContain('alpha');
+    expect(INPUT_SETS.hardware).not.toContain('wingStall');
+    expect(resolveInputs('airspeed,rollRate')).toEqual(['airspeed', 'rollRate']);
+    expect(() => resolveInputs('airspeed,nonsense')).toThrow();
+    const def = getEntry('buschtrottel-shockcub').def;
+    const full = new FlightEnv(def, { seconds: 1 });
+    const hw = new FlightEnv(def, { seconds: 1, inputs: 'hardware' });
+    expect(hw.obsSize).toBe(OBS_SIZE - 3);
+    const a = full.reset(9);
+    const b = hw.reset(9);
+    expect(Array.from(b)).toEqual(INPUT_SETS.hardware.map((n) => a[OBS_NAMES.indexOf(n)]));
   });
 
   it('repeats a flight exactly from its seed', () => {

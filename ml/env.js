@@ -15,7 +15,7 @@
 //              slow), then hold heading and height as in "hold".
 import { Vector3, Quaternion } from 'three';
 import { Aircraft } from '../src/sim/aircraft.js';
-import { observe, OBS_SIZE } from '../src/ml/observe.js';
+import { observe, OBS_SIZE, OBS_NAMES, resolveInputs, selectInputs } from '../src/ml/observe.js';
 import { toControls } from '../src/ml/policy.js';
 import { cruiseSpeed } from './aircraft.js';
 
@@ -81,6 +81,7 @@ export class FlightEnv {
    * @param {number} [o.substep]         physics step (the game uses 1/600)
    * @param {number} [o.windMax]         strongest mean wind (m/s), 0 for calm
    * @param {boolean} [o.randomizeMass] vary weight and inertia ±10% per episode
+   * @param {string|string[]} [o.inputs] which observations the policy gets: 'sim' (all), 'hardware', or names
    */
   constructor(def, o = {}) {
     if (!TASKS.includes(o.task ?? 'hold')) throw new Error(`unknown task "${o.task}"; have: ${TASKS.join(', ')}`);
@@ -96,12 +97,20 @@ export class FlightEnv {
     this.ac.assistMode = 'off';
     this.target = { x: 0, y: 0, z: 0, speed: 0 };
     this.prev = new Float64Array(4);
-    this.obs = new Float64Array(OBS_SIZE);
+    this.inputs = resolveInputs(o.inputs ?? 'sim');
+    this.inputIdx = this.inputs.map((n) => OBS_NAMES.indexOf(n));
+    this.full = new Float64Array(OBS_SIZE); // every feature (what --trace writes)
+    this.obs = new Float64Array(this.inputs.length); // the ones the policy sees
     this.ctl = { roll: 0, pitch: 0, yaw: 0, throttle: 0 };
   }
 
   get obsSize() {
-    return OBS_SIZE;
+    return this.inputs.length;
+  }
+
+  #observe() {
+    observe(this.ac, this.target, this.prev, 0, this.full);
+    return selectInputs(this.full, this.inputIdx, this.obs);
   }
 
   /** Start a new episode, set up from `seed`. Returns the first observation. */
@@ -145,7 +154,7 @@ export class FlightEnv {
     // One tiny step so the aircraft's telemetry (airspeed, alpha...) is set.
     ac.step(1e-6);
     this.lastDist = this.#dist();
-    return observe(ac, this.target, this.prev, 0, this.obs);
+    return this.#observe();
   }
 
   #upset(rng, speed) {
@@ -279,8 +288,7 @@ export class FlightEnv {
       done = true;
       reason = 'time';
     }
-    this.obs = observe(ac, this.target, this.prev, 0, this.obs);
-    return { obs: this.obs, reward, done, info: done ? this.summary(reason) : null };
+    return { obs: this.#observe(), reward, done, info: done ? this.summary(reason) : null };
   }
 
   summary(reason) {

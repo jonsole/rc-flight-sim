@@ -15,11 +15,12 @@ import { Evaluator, Pool } from './evaluate.js';
 import { makeRng, TASKS } from './env.js';
 import { aircraftIds } from './aircraft.js';
 import { Policy } from '../src/ml/policy.js';
-import { OBS_SIZE } from '../src/ml/observe.js';
+import { resolveInputs } from '../src/ml/observe.js';
 
 export const DEFAULTS = {
   aircraft: 'hobbyzone-aeroscout', // comma-separated ids, or "all"
   task: 'hold',
+  inputs: 'sim', // 'sim' (all), 'hardware' (no alpha, beta, wing stall), or a list of names
   gens: 150,
   pairs: 24, // population = 2 × pairs
   episodes: 4, // flights per candidate per generation
@@ -65,17 +66,18 @@ export async function train(opts) {
   const o = { ...DEFAULTS, ...opts };
   const aircraft = String(o.aircraft).split(',').filter(Boolean);
   const hidden = String(o.hidden).split(',').map(Number);
-  const name = o.name || `${o.task}-${aircraft.length > 1 ? 'multi' : aircraft[0]}`;
+  const inputs = resolveInputs(o.inputs);
+  const name = o.name || `${o.task}-${aircraft.length > 1 ? 'multi' : aircraft[0]}${o.inputs === 'sim' ? '' : `-${o.inputs.includes(',') ? 'custom' : o.inputs}`}`;
   const dir = `${o.out.replace(/\/$/, '')}/${name}`;
   mkdirSync(dir, { recursive: true });
   const config = {
     aircraft,
     hidden,
-    env: { task: o.task, seconds: o.seconds, windMax: o.wind, controlHz: o.controlHz, substep: o.substep },
+    env: { task: o.task, inputs, seconds: o.seconds, windMax: o.wind, controlHz: o.controlHz, substep: o.substep },
   };
   const log = (...a) => o.quiet || console.log(...a);
 
-  const policy = new Policy(OBS_SIZE, hidden).init(makeRng(o.seed));
+  const policy = new Policy(inputs.length, hidden).init(makeRng(o.seed));
   if (o.init) {
     const p = Policy.fromJSON(JSON.parse(readFileSync(o.init, 'utf8')));
     if (p.size !== policy.size) throw new Error(`--init policy has a different shape (${p.hidden})`);
@@ -94,16 +96,16 @@ export async function train(opts) {
   } else {
     writeFileSync(`${dir}/log.csv`, 'generation,seconds,popMean,popMax,valScore,valCrashRate,stepNorm\n');
   }
-  writeFileSync(`${dir}/config.json`, JSON.stringify({ ...o, aircraft, hidden, params: policy.size, obsSize: OBS_SIZE }, null, 2));
+  writeFileSync(`${dir}/config.json`, JSON.stringify({ ...o, aircraft, hidden, inputs, params: policy.size, obsSize: inputs.length }, null, 2));
 
   // Validation: fixed flights, never trained on, to pick the best policy.
   const valEpisodes = Array.from({ length: o.evalEpisodes }, (_, i) => ({ seed: 1_000_000 + i, aircraft: i % aircraft.length }));
   const evaluator = new Evaluator(config);
   const pool = o.workers > 1 ? new Pool(config, o.workers) : null;
   const scoreAll = (list, eps) => (pool ? pool.scoreAll(list, eps) : Promise.resolve(list.map((p) => evaluator.score(p, eps).fitness)));
-  const meta = (gen, score) => ({ aircraft, task: o.task, generation: gen, valScore: score, bestScore, hidden, trainedFor: o.seconds });
+  const meta = (gen, score) => ({ aircraft, task: o.task, inputs, generation: gen, valScore: score, bestScore, hidden, trainedFor: o.seconds });
 
-  log(`training ${name}: ${aircraft.join(', ')} | task ${o.task} | ${policy.size} weights | population ${2 * o.pairs} × ${o.episodes} flights | ${o.workers} workers`);
+  log(`training ${name}: ${aircraft.join(', ')} | task ${o.task} | ${inputs.length} inputs | ${policy.size} weights | population ${2 * o.pairs} × ${o.episodes} flights | ${o.workers} workers`);
   const t0 = Date.now();
   try {
     for (let gen = gen0 + 1; gen <= o.gens; gen++) {

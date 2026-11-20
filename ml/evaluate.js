@@ -6,16 +6,15 @@ import { cpus } from 'node:os';
 import { FlightEnv, runEpisode } from './env.js';
 import { getEntry } from './aircraft.js';
 import { Policy } from '../src/ml/policy.js';
-import { OBS_SIZE } from '../src/ml/observe.js';
 
 /**
- * config: { aircraft: [ids], hidden: [..], env: { task, seconds, ... } }
+ * config: { aircraft: [ids], hidden: [..], env: { task, seconds, inputs, ... } }
  * An episode is { seed, aircraft } (an index into config.aircraft).
  */
 export class Evaluator {
   constructor(config) {
     this.envs = config.aircraft.map((id) => new FlightEnv(getEntry(id).def, config.env));
-    this.policy = new Policy(OBS_SIZE, config.hidden);
+    this.policy = new Policy(this.envs[0].obsSize, config.hidden);
   }
 
   /** Mean return of `params` over `episodes`, plus each episode's summary. */

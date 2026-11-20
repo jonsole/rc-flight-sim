@@ -40,7 +40,7 @@ const seconds = o.seconds || meta.trainedFor || 20;
 const rows = [];
 let trace = null;
 for (const id of aircraft) {
-  const env = new FlightEnv(getEntry(id).def, { task, seconds, windMax: o.wind });
+  const env = new FlightEnv(getEntry(id).def, { task, seconds, windMax: o.wind, inputs: meta.inputs ?? 'sim' });
   for (let i = 0; i < o.episodes; i++) {
     const seed = o.seed + i;
     let onStep;
@@ -56,7 +56,7 @@ for (const id of aircraft) {
           ((at.heading * 180) / Math.PI).toFixed(1), ((at.pitch * 180) / Math.PI).toFixed(1), ((at.roll * 180) / Math.PI).toFixed(1),
           ac.airspeed.toFixed(2), e.target.x.toFixed(1), e.target.y.toFixed(1), e.target.z.toFixed(1), e.target.speed.toFixed(2),
           c.roll.toFixed(3), c.pitch.toFixed(3), c.yaw.toFixed(3), c.throttle.toFixed(3), r.toFixed(4),
-          ...Array.from(e.obs, (x) => x.toFixed(3)),
+          ...Array.from(e.full, (x) => x.toFixed(3)),
         ].join(','));
       };
     }
@@ -66,7 +66,7 @@ for (const id of aircraft) {
 }
 
 const f = (x, d = 1) => (x == null ? '   -' : x.toFixed(d).padStart(6));
-console.log(`policy ${o.policy} | task ${task} | ${seconds} s flights | wind up to ${o.wind} m/s\n`);
+console.log(`policy ${o.policy} | inputs ${meta.inputs ? meta.inputs.length : 'all'} | task ${task} | ${seconds} s flights | wind up to ${o.wind} m/s\n`);
 console.log('aircraft                  seed     return  end            alt err  hdg err  spd err  min AGL  wpts');
 for (const r of rows) {
   console.log(

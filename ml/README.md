@@ -32,6 +32,14 @@ up · height above ground, climb rate · unit vector to the target point and
 its distance · height error, airspeed error · motor throttle, wing stall
 fraction · the network's previous four outputs.
 
+`--inputs hardware` trains on only what a real flight controller can
+measure (20 inputs): it leaves out angle of attack and sideslip (they need
+vanes or a multi-hole probe) and the wing stall fraction (no sensor gives
+it). The rest map onto gyro (rates), attitude estimate (up), pitot
+(airspeed), baro/GPS (height, climb) and GPS (target). `--inputs` also takes
+a comma-separated list of the names in `OBS_NAMES`. A policy file records
+its inputs (`meta.inputs`), and `ml/eval.js` feeds it those.
+
 The target is always "a point to fly at, and an airspeed": holding a heading
 and height is a point 150 m ahead along that heading at that height;
 following waypoints is the next waypoint. So one network shape covers every
@@ -89,6 +97,7 @@ wrapped for Python over a pipe.
 | --- | --- | --- |
 | `--aircraft` | `hobbyzone-aeroscout` | Model id, comma-separated list, or `all` (one policy for several models; flights rotate between them). |
 | `--task` | `hold` | `hold`, `waypoints` or `recover`. |
+| `--inputs` | `sim` | `sim` (all 23), `hardware` (20: no angle of attack, sideslip or stall), or a list of input names. |
 | `--gens` | 150 | Generations. |
 | `--pairs` | 24 | Mirrored pairs per generation (population = 2 × pairs). |
 | `--episodes` | 4 | Flights per candidate per generation. |

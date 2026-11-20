@@ -24,6 +24,33 @@ export const OBS_NAMES = [
   'prevRoll', 'prevPitch', 'prevYaw', 'prevThrottle',
 ];
 
+/**
+ * Named choices of inputs (a policy can be trained on a subset of OBS_NAMES).
+ *   sim       everything
+ *   hardware  only what a real flight controller can measure: gyro rates,
+ *             attitude, airspeed (pitot), height and climb rate (baro/GPS),
+ *             target from GPS. Leaves out angle of attack and sideslip
+ *             (they need vanes or a multi-hole probe) and wing stall
+ *             (no sensor gives it).
+ */
+export const INPUT_SETS = {
+  sim: OBS_NAMES,
+  hardware: OBS_NAMES.filter((n) => !['alpha', 'beta', 'wingStall'].includes(n)),
+};
+
+/** Input names from a set name ("sim", "hardware") or a comma-separated list of names. */
+export function resolveInputs(spec = 'sim') {
+  const names = Array.isArray(spec) ? spec : INPUT_SETS[spec] ?? String(spec).split(',').map((s) => s.trim());
+  for (const n of names) if (!OBS_NAMES.includes(n)) throw new Error(`unknown input "${n}"; have: ${OBS_NAMES.join(', ')}`);
+  return names.slice();
+}
+
+/** Copy the chosen inputs (indices into the full observation) into `out`. */
+export function selectInputs(full, indices, out = new Float64Array(indices.length)) {
+  for (let i = 0; i < indices.length; i++) out[i] = full[indices[i]];
+  return out;
+}
+
 const _qi = new Quaternion();
 const _v = new Vector3();
 const clip = (x, lim = 1) => (x > lim ? lim : x < -lim ? -lim : x);
