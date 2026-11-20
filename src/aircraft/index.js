@@ -8,12 +8,7 @@
 // file in the same folder (glTF, made in Blender: see src/aircraft/fileModel.js).
 //
 // Each entry: { id, name, summary, defaultAssist, def, geometry, views, createModel(opts) }
-import { buildSE5a } from './se5a.js';
-import { buildF22 } from './f22.js';
-import { buildBuschtrottel } from './buschtrottel.js';
-import { buildAeroScout } from './aeroscout.js';
-import { buildEasyStar } from './easystar.js';
-import { tunedDef } from '../sim/tuning.js';
+import { buildEntry, fromJson } from './defs.js';
 import { createFileModel } from './fileModel.js';
 import { propModel } from './prop.js';
 import { Group } from 'three';
@@ -23,32 +18,12 @@ function emptyModel() {
   return { root: new Group(), parts: {}, update() {}, setPilotVisible() {} };
 }
 
-const BUILDERS = { se5a: buildSE5a, buschtrottel: buildBuschtrottel, f22: buildF22, aeroscout: buildAeroScout, easystar: buildEasyStar };
-
-/** JSON options to the builders' terms: `…Deg` angles to radians (key without "Deg"); notes dropped. */
-export function fromJson(o) {
-  if (Array.isArray(o)) return o.map(fromJson);
-  if (!o || typeof o !== 'object') return o;
-  const out = {};
-  for (const [k, v] of Object.entries(o)) {
-    if (k === 'notes') continue;
-    if (k.endsWith('Deg') && typeof v === 'number') out[k.slice(0, -3)] = (v * Math.PI) / 180;
-    else if (k.endsWith('Deg') && v && typeof v === 'object') {
-      // e.g. "throwsDeg": { "aileron": 22 } (a group of angles)
-      out[k.slice(0, -3)] = Object.fromEntries(Object.entries(v).map(([kk, vv]) => [kk, (vv * Math.PI) / 180]));
-    } else out[k] = fromJson(v);
-  }
-  return out;
-}
+export { fromJson };
 
 /** An aircraft from its JSON file. */
 export function buildAircraft(json) {
-  const { builder, tuning, model: modelFile, ...opts } = json;
-  const build = BUILDERS[builder];
-  if (!build) throw new Error(`${json.id}: unknown builder "${builder}"`);
-  let entry = build(fromJson(opts));
-  // Built-in tuning: becomes the model's defaults (a changed prop is drawn too).
-  if (tuning && Object.keys(tuning).length) entry = { ...entry, def: tunedDef(entry.def, tuning) };
+  const modelFile = json.model;
+  const entry = buildEntry(json);
   // The 3D model: its file (loadModelFiles), with the propeller drawn in code
   // at the file's prop marker, so a prop changed in Tuning shows.
   const withFile = {

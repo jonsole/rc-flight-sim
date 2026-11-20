@@ -265,11 +265,27 @@ limits). Switch with G or an assigned transmitter switch.
 npm test           # flight-model checks: stability, trim, stall, controls, takeoff, crash
 ```
 
+## Neural-network pilots
+
+`ml/` trains small neural networks to fly the models, on the same flight
+model the game runs (under Node, no browser): hold a heading, height and
+speed, fly through waypoints, or recover from an upset. Training uses
+Evolution Strategies across every CPU core.
+
+```bash
+npm run train -- --aircraft hobbyzone-aeroscout --task hold --gens 150
+npm run train:eval -- --policy ml/runs/hold-hobbyzone-aeroscout/best.json
+```
+
+See [ml/README.md](ml/README.md) for the tasks, rewards, observations and options.
+
 ## Project layout
 
 ```
 src/sim/       physics (no rendering): aero.js, aircraft.js, obstacles.js, terrain.js, wind.js
-src/aircraft/  aircraft registry (index.js), settings and 3D model files (models/), flight-model builders, the propeller
+src/aircraft/  aircraft registry (index.js, defs.js), settings and 3D model files (models/), flight-model builders, the propeller
+src/ml/        neural-network pilot: the network and what it sees (shared with the trainer)
+ml/            training harness for neural-network pilots (Node only, see ml/README.md)
 src/world/     sky, terrain, runway, trees, windsock
 src/view/      camera rig (LOS / FPV / chase)
 src/input/     transmitter (Gamepad API) + keyboard, expo & rates

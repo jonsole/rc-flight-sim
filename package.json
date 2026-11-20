@@ -8,7 +8,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "train": "node ml/train.js",
+    "train:eval": "node ml/eval.js"
   },
   "repository": {
     "type": "git",
