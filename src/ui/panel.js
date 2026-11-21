@@ -415,38 +415,63 @@ export class Panel {
     return out;
   }
 
+  /**
+   * Collapsible groups for a tab (as Tuning, Weather and View have), which
+   * are open remembered in this browser under `key`. Returns group(name, ...rows).
+   */
+  #groups(key, openAtFirst) {
+    let open = {};
+    try {
+      open = JSON.parse(localStorage.getItem(key)) ?? openAtFirst;
+    } catch {
+      open = openAtFirst;
+    }
+    return (name, ...rows) => {
+      const det = el('details', { class: 'tune-group weather-group', open: !!open[name] }, el('summary', {}, name), ...rows);
+      det.addEventListener('toggle', () => {
+        open[name] = det.open;
+        try {
+          localStorage.setItem(key, JSON.stringify(open));
+        } catch {
+          /* storage blocked */
+        }
+      });
+      return det;
+    };
+  }
+
   tab_view() {
+    const group = this.#groups('rcsim.viewOpen', { Screen: true });
     return [
-      el('h3', {}, 'Screen'),
+      group('Screen',
       this.#check('Show HUD / OSD (H)', 'showHud'),
       this.#check('Full screen on phones and tablets (when you press Fly)', 'fullscreen'),
       ...(canFullscreen()
         ? [el('div', { class: 'row' }, el('button', { onclick: () => { toggleFullscreen(); this.opts.onClose(); } }, isFullscreen() ? 'Leave full screen (F)' : 'Full screen (F)'))]
-        : [el('p', { class: 'hint' }, 'This browser can\'t go full screen. On an iPhone: tap Share, then Add to Home Screen, and open the simulator from there: it opens with no browser bars.')]),
-      el('h3', {}, 'FPV'),
+        : [el('p', { class: 'hint' }, 'This browser can\'t go full screen. On an iPhone: tap Share, then Add to Home Screen, and open the simulator from there: it opens with no browser bars.')])),
+      group('FPV',
       this.#select('Camera mount', 'fpvMount', { cockpit: "Pilot's eye (cockpit)", wing: 'Top wing pod' }),
       this.#range('Camera uptilt', 'fpvTilt', -10, 40, 1, (v) => `${v}°`),
       this.#range('Field of view (across)', 'fpvFov', 70, 170, 1, (v) => `${v}°`),
       this.#check('Motor vibration', 'fpvShake'),
-      this.#check('Analog video effect', 'fpvAnalog'),
-      el('h3', {}, 'Line of sight'),
+      this.#check('Analog video effect', 'fpvAnalog')),
+      group('Line of sight',
       this.#range('Field of view (across)', 'losFov', 30, 170, 1, (v) => `${v}°`),
       this.#select('Auto-zoom', 'losZoom', { 0: 'Off', 1: 'Gentle', 2: 'Strong' }),
       this.#range('Pilot position (left/right)', 'pilotX', -60, 60, 1, (v) => `${v} m`),
-      this.#range('Pilot position (fwd/back)', 'pilotZ', -10, 30, 1, (v) => `${v} m`),
-      el('h3', {}, 'Graphics'),
+      this.#range('Pilot position (fwd/back)', 'pilotZ', -10, 30, 1, (v) => `${v} m`)),
+      group('Graphics',
       this.#select('Quality', 'graphics', Object.fromEntries(Object.entries(QUALITY).map(([k, q]) => [k, q.name]))),
       this.#select('Scenery distance', 'viewDistance', DISTANCES),
       this.#select('Trees and bushes', 'treeStyle', { fluffy: 'Leafy', classic: 'Classic (solid)' }),
       this.#check('Leaves face the camera (off: face the screen, as before)', 'cardsFaceCamera'),
       this.#check('Sun glare', 'sunGlare'),
-      el('p', { class: 'hint' }, 'Lower these if the picture is jerky. Low draws simpler trees and fewer pixels; a shorter distance leaves out far trees and brings the haze in. Leafy trees lose their leaves in winter; classic ones are a little quicker to draw. Changing any of these reloads the simulator.'),
-      ...(LOCATION.data ? [
+      el('p', { class: 'hint' }, 'Lower these if the picture is jerky. Low draws simpler trees and fewer pixels; a shorter distance leaves out far trees and brings the haze in. Leafy trees lose their leaves in winter; classic ones are a little quicker to draw. Changing any of these reloads the simulator.')),
+      ...(LOCATION.data ? [group('Scenery',
         this.#select('Scenery', 'scenery', { built: 'Built in (LIDAR and OpenStreetMap)', google: 'Google photorealistic 3D' }),
         this.#text('Google Maps API key', 'googleKey', { type: 'password', placeholder: 'AIza…' }),
         el('p', { class: 'hint' }, 'Google photorealistic 3D needs your own Google Maps Platform API key with the Map Tiles API enabled (and billing set up). The key stays in this browser. Google\'s tiles replace the ground and buildings; the trees, hedges and fences stay, and are what you fly into. Press O to switch them on and off in flight.'),
-        el('p', { class: 'hint' }, `Google bills per session: each page load that shows the tiles starts one (good for 3 hours); switching off and on again doesn't. Sessions started from this browser this month: ${googleSessions().count}. Tip: leave the tiles off while reloading a lot, and set a daily cap on root tileset requests in the Google Cloud console.`),
-      ] : []),
+        el('p', { class: 'hint' }, `Google bills per session: each page load that shows the tiles starts one (good for 3 hours); switching off and on again doesn't. Sessions started from this browser this month: ${googleSessions().count}. Tip: leave the tiles off while reloading a lot, and set a daily cap on root tileset requests in the Google Cloud console.`))] : []),
     ];
   }
 
@@ -456,24 +481,7 @@ export class Panel {
       return `${v}° (${names[Math.round(v / 45) % 8]})`;
     };
     // Collapsible groups (which are open: remembered in this browser).
-    let open = {};
-    try {
-      open = JSON.parse(localStorage.getItem('rcsim.weatherOpen')) ?? { Wind: true, Time: true };
-    } catch {
-      /* none */
-    }
-    const group = (name, ...rows) => {
-      const det = el('details', { class: 'tune-group weather-group', open: !!open[name] }, el('summary', {}, name), ...rows);
-      det.addEventListener('toggle', () => {
-        open[name] = det.open;
-        try {
-          localStorage.setItem('rcsim.weatherOpen', JSON.stringify(open));
-        } catch {
-          /* storage blocked */
-        }
-      });
-      return det;
-    };
+    const group = this.#groups('rcsim.weatherOpen', { Wind: true, Time: true });
     return [
       group('Wind',
         this.#range('Wind speed', 'windSpeed', 0, 12, 0.5, (v) => `${v} m/s (${Math.round(v * 3.6)} km/h)`),
@@ -543,29 +551,31 @@ export class Panel {
       el('span', { class: 'val' }, cfg.buttons[name] == null ? 'not set' : `Button ${cfg.buttons[name]}`),
       el('button', { onclick: (e) => this.#detectButton(name, e.target) }, 'Detect'));
 
+    const group = this.#groups('rcsim.txOpen', { Device: true, 'Channel mapping': true });
     return [
+      group('Device',
       el('p', { class: 'hint' }, 'Connect your transmitter by USB (EdgeTX/OpenTX: choose "USB Joystick (HID)"), or use a USB sim dongle. Move a stick so the browser notices it.'),
       this.#select('On-screen sticks', 'touchControls', { auto: 'Auto (touch screens)', on: 'Always show', off: 'Off' }),
       this.#select('Stick mode', 'stickMode', { 2: 'Mode 2 (throttle left)', 1: 'Mode 1 (throttle right)' }),
       el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Device'), padSel),
       el('div', { class: 'status', id: 'pad-status' }, inp.gamepadName || 'No transmitter detected — keyboard active'),
       el('div', { class: 'hint', id: 'pad-raw', style: 'font-family: monospace; word-break: break-all' }, ''),
-      el('p', { class: 'hint' }, 'On phones the browser may move or drop some joystick axes, or report them as analog buttons. Use Detect and move just that stick; if a channel never responds, set your radio\'s USB joystick to map the channels to X, Y, Z and Rz.'),
-      el('h3', {}, 'Channel mapping'),
+      el('p', { class: 'hint' }, 'On phones the browser may move or drop some joystick axes, or report them as analog buttons. Use Detect and move just that stick; if a channel never responds, set your radio\'s USB joystick to map the channels to X, Y, Z and Rz.')),
+      group('Channel mapping',
       el('p', { class: 'hint' }, 'Bars should move right for: right aileron, pull back (up elevator), right rudder, throttle up. Use Reverse if not.'),
       ...rows,
       el('div', { class: 'row' },
         el('button', { onclick: (e) => this.#calibrate(e.target) }, this.calibrating ? 'Finish calibration' : 'Calibrate sticks'),
         el('button', { onclick: () => { inp.resetConfig(); this.render(); } }, 'Reset to defaults')),
-      el('p', { class: 'hint', id: 'cal-hint' }, this.calibrating ? 'Move every stick to all its extremes, centre the sticks (throttle low), then press Finish.' : ''),
-      el('h3', {}, 'Expo & rates'),
-      ...['roll', 'pitch', 'yaw'].map(expoRow),
-      el('h3', {}, 'Switches'),
+      el('p', { class: 'hint', id: 'cal-hint' }, this.calibrating ? 'Move every stick to all its extremes, centre the sticks (throttle low), then press Finish.' : '')),
+      group('Expo & rates',
+      ...['roll', 'pitch', 'yaw'].map(expoRow)),
+      group('Switches',
       btnRow('reset', 'Reset aircraft'),
       btnRow('camera', 'Change camera'),
-      btnRow('assist', 'Flight assist (cycle)'),
-      el('h3', {}, 'Keyboard'),
-      el('p', { class: 'hint' }, 'Arrows: aileron/elevator · A/D: rudder · W/S: throttle · R: reset · C: camera · G: flight assist · P: pause · H: HUD · Esc: menu'),
+      btnRow('assist', 'Flight assist (cycle)')),
+      group('Keyboard',
+      el('p', { class: 'hint' }, 'Arrows (or I J K L): aileron/elevator · A/D: rudder · W/S: throttle · R: reset · X: save start position · C: camera · G: flight assist · P: pause · H: HUD · M: mute · F: full screen · Enter/T: chat · Esc: menu')),
     ];
   }
 
