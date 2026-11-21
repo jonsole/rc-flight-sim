@@ -329,38 +329,58 @@ function applySettings() {
   if (rig.mode !== settings.cameraMode) rig.setMode(settings.cameraMode);
 }
 
-// Your own start positions, per site, kept in this browser (settings):
-// { [site]: { ground: { x, z, h }, hand: { x, z, h, wx, wz } } } (world
-// metres and heading; wx, wz: where you'd walked to from your spot).
-function savedStart(kind) {
-  return settings.startSpots?.[LOCATION.id]?.[kind] ?? null;
-}
-function saveStart(kind, spot) {
-  settings.startSpots ||= {};
-  settings.startSpots[LOCATION.id] = { ...settings.startSpots[LOCATION.id], [kind]: spot };
-  saveSettings(settings);
+// Your saved start position, per field, kept in this browser (settings):
+// { [site]: { saved: { kind, x, y, z, h, speed, wx, wz } } } (world metres,
+// heading in radians). kind: 'ground' (sat on the ground), 'air' (flying:
+// height y and speed too) or 'hand' (in your hand before a hand launch;
+// wx, wz: where you'd walked to from your spot). Start: Saved position
+// starts there; X (or Menu -> Flying -> Save position) saves it.
+let noSavedSaid = false; // (said once a session)
+function savedSpot() {
+  const site = settings.startSpots?.[LOCATION.id];
+  if (!site) return null;
+  // (From before there was one saved position: a ground or hand spot.)
+  if (!site.saved && (site.ground || site.hand)) site.saved = site.ground ? { kind: 'ground', ...site.ground } : { kind: 'hand', ...site.hand };
+  return site.saved ?? null;
 }
 /** The world heading the aircraft faces (about the vertical). */
 function headingOf(q) {
   const f = new Vector3(1, 0, 0).applyQuaternion(q);
   return Math.atan2(-f.z, f.x);
 }
-/** Ground take-off: start where the aircraft is now, next time too (on the ground, nearly stopped). */
-function startHere() {
-  if (aircraft.held || !aircraft.onGround || aircraft.velocity.length() > 1) {
-    toast('Land and stop first: the start is saved where the model sits');
+/** Save where the aircraft is now as the start position here, and start there from now on. */
+function savePosition() {
+  let spot;
+  if (aircraft.crashed) {
+    toast('Can\'t save a crash: restart first');
     return;
   }
-  saveStart('ground', { x: aircraft.position.x, z: aircraft.position.z, h: headingOf(aircraft.orientation) });
-  toast('Start position saved for this field');
-}
-function defaultStart() {
-  if (settings.startSpots?.[LOCATION.id]) {
-    delete settings.startSpots[LOCATION.id];
-    saveSettings(settings);
+  if (aircraft.held) {
+    const h = aircraft.held;
+    spot = { kind: 'hand', x: h.pos.x, z: h.pos.z, h: headingOf(h.q), wx: rig.walk.x, wz: rig.walk.z };
+  } else if (aircraft.onGround) {
+    if (aircraft.velocity.length() > 1) {
+      toast('Stop first: the start is saved where the model sits');
+      return;
+    }
+    spot = { kind: 'ground', x: aircraft.position.x, z: aircraft.position.z, h: headingOf(aircraft.orientation) };
+  } else {
+    const p = aircraft.position;
+    spot = { kind: 'air', x: p.x, y: p.y, z: p.z, h: headingOf(aircraft.orientation), speed: Math.max(8, aircraft.velocity.length()) };
   }
-  toast('Back to the field\'s own start position');
-  resetAircraft();
+  settings.startSpots ||= {};
+  settings.startSpots[LOCATION.id] = { saved: spot };
+  settings.startMode = 'saved';
+  saveSettings(settings);
+  toast({ ground: 'Start position saved (on the ground)', air: `Start position saved (in the air, ${Math.round(spot.y - ground.heightAt(spot.x, spot.z))} m up)`, hand: 'Start position saved (in your hand)' }[spot.kind]);
+  if (panel?.visible) panel.render();
+}
+/** What's saved here, in words (for the menu). */
+function savedSpotText() {
+  const s = savedSpot();
+  if (!s) return 'None saved for this field yet: press X (or Save position) where you want to start.';
+  if (s.kind === 'air') return `Saved here: in the air, ${Math.round(s.y - ground.heightAt(s.x, s.z))} m up.`;
+  return s.kind === 'hand' ? 'Saved here: in your hand, ready to throw.' : 'Saved here: on the ground.';
 }
 
 /**
@@ -434,7 +454,21 @@ function resetAircraft() {
   const lane = mp.connected ? ((mp.myId - 1) % 4) - 1.5 : 0;
   mpGraceUntil = performance.now() / 1000 + 3;
   rig.walk.x = rig.walk.z = 0; // back at your spot on the flight line
-  if (settings.startMode === 'air') {
+  // Start: Saved position, if there is one here.
+  let saved = settings.startMode === 'saved' ? savedSpot() : null;
+  if (settings.startMode === 'saved' && !saved && !noSavedSaid) {
+    toast('No saved position here yet: starting on the runway. Press X where you want to start.');
+    noSavedSaid = true;
+  }
+  // (Saved in the air: start in the air there, whatever the aircraft.)
+  if (saved?.kind === 'air') {
+    aircraft.resetInAir(new Vector3(saved.x, saved.y, saved.z), saved.h, saved.speed);
+    input.kb.throttle = 0.5;
+    saved = 'done';
+  }
+  if (saved === 'done') {
+    // (Started.)
+  } else if (settings.startMode === 'air') {
     const [ax, az] = clubToWorld(RUNWAY.x, RUNWAY.z - 10 + lane * 8);
     aircraft.resetInAir(new Vector3(ax, 30 + lane * 4, az), heading, 14);
     input.kb.throttle = 0.5;
@@ -446,24 +480,25 @@ function resetAircraft() {
     const [px, pz] = pilotSpot();
     const ex = px + settings.pilotX + lane * 3;
     const ez = pz + settings.pilotZ;
-    const mine = !mp.connected && savedStart('hand');
+    // A saved spot: where you'd walked to (a hand-launch one), or out to a
+    // ground one (saved with a wheeled model).
+    const mine = saved && (saved.kind === 'hand' ? saved : { h: saved.h, wx: saved.x - ex, wz: saved.z - ez });
     // Held out in your right hand at arm's length: its middle far enough
     // ahead that the tail is clear of your face.
     const { fwd, side } = handHold(entry.def);
     const hold = (x, z, h) => aircraft.resetHandLaunch(x + Math.cos(h) * fwd + Math.sin(h) * side, z - Math.sin(h) * fwd + Math.cos(h) * side, h);
     if (mine) {
-      // Where you last walked to and threw from, here.
+      // Where you saved it, here.
       rig.walk.x = mine.wx;
       rig.walk.z = mine.wz;
       hold(ex + mine.wx, ez + mine.wz, mine.h);
     } else {
       hold(ex, ez, clearHeading(ex, ez, heading));
     }
-    launchFrom = { x: aircraft.position.x, z: aircraft.position.z, h: headingOf(aircraft.orientation) };
-  } else if (!mp.connected && savedStart('ground')) {
-    // Your own start position here (Menu -> Flying -> Start here next time).
-    const g = savedStart('ground');
-    aircraft.resetOnGround(g.x, g.z, g.h);
+  } else if (saved) {
+    // Your saved start position here (on the ground; or, saved with a
+    // hand-launch model, on the ground where it was in your hand).
+    aircraft.resetOnGround(saved.x, saved.z, saved.h);
   } else if (LOCATION.layout.takeoff) {
     // The site's own take-off spot and direction (side by side in multiplayer).
     const t = LOCATION.layout.takeoff;
@@ -496,7 +531,6 @@ function selectAircraft(id) {
 // --- Multiplayer -------------------------------------------------------------
 const mp = new Multiplayer();
 mp.extra = () => challenges.netState();
-let launchFrom = null; // where this hand launch started (to see if you moved)
 let mpGraceUntil = 0; // no collisions just after a reset
 const peers = new Peers(world.scene, ground);
 peers.addShadow = (model, span) => {
@@ -635,8 +669,8 @@ const panel = new Panel(document.getElementById('panel'), {
     resetAircraft();
   },
   challenges: () => challenges,
-  onStartHere: () => startHere(),
-  onDefaultStart: () => defaultStart(),
+  onSavePosition: () => savePosition(),
+  savedSpotText: () => savedSpotText(),
   aircraftEntry: () => entry,
   onRetune: () => retune(),
   onClose: () => setMenu(false),
@@ -669,6 +703,9 @@ input.onAction = (code) => {
   switch (code) {
     case 'KeyR':
       resetAircraft();
+      break;
+    case 'KeyX':
+      savePosition();
       break;
     case 'KeyC':
       settings.cameraMode = rig.cycle();
@@ -873,14 +910,7 @@ function frame(now) {
     // points on the model as its tracks: src/world/snowTracks.js).
     if (aircraft.snowSamples !== snowTracks.samples) aircraft.setSnowPoints(snowTracks.samples);
     aircraft.snowDepth = snowDepth(world.snow.cover);
-    const wasHeld = aircraft.held;
     aircraft.update(dt);
-    // Thrown: if you'd walked or turned first, start from there next time.
-    if (wasHeld && !aircraft.held && launchFrom && !mp.connected) {
-      const moved = Math.hypot(wasHeld.pos.x - launchFrom.x, wasHeld.pos.z - launchFrom.z) > 0.3
-        || Math.abs(Math.atan2(Math.sin(headingOf(wasHeld.q) - launchFrom.h), Math.cos(headingOf(wasHeld.q) - launchFrom.h))) > 0.05;
-      if (moved) saveStart('hand', { x: wasHeld.pos.x, z: wasHeld.pos.z, h: headingOf(wasHeld.q), wx: rig.walk.x, wz: rig.walk.z });
-    }
     // Parts that broke off in a crash fly away as debris.
     while (aircraft.breakEvents.length) {
       const ev = aircraft.breakEvents.shift();

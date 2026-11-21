@@ -222,7 +222,9 @@ be assigned to *reset* and *change camera*. Settings are saved in the browser.
 
 Keyboard fallback: arrows = aileron/elevator, A/D = rudder, W/S = throttle,
 Hand launch: before throttling up, aileron or rudder turns you round and elevator walks you forward or back, to aim clear of trees.
-R = reset, C = camera, G = flight assist, P = pause, H = HUD, M = mute, Esc = menu.
+R = reset, X = save start position, C = camera, G = flight assist, P = pause, H = HUD, M = mute, Esc = menu.
+
+*Start* (Menu → Flying) is *On the runway* (the field's own take-off spot), *In the air* (30 m up) or *Saved position*: press X (or *Save position*) wherever you are, on the ground and stopped, in the air (height, heading and speed), or with a hand-launch model in your hand after walking and turning, and you start there from then on. One saved position per field, kept in this browser.
 
 ## Phones and tablets
 
