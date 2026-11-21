@@ -93,8 +93,11 @@ export class Panel {
       el('div', { class: 'panel' },
         el('div', { class: 'panel-head' },
           el('h2', {}, 'RC Flight Sim'),
-          // (Not the tap that opened the menu, landing where this now is.)
-          el('button', { class: 'close', onclick: () => performance.now() - (this.openedAt ?? 0) > 400 && this.opts.onClose() }, 'Resume ▶')),
+          el('div', { class: 'head-btns' },
+            // Back to the start (as R), and on with flying.
+            el('button', { title: 'Put the aircraft back at the start (R)', onclick: () => { if (performance.now() - (this.openedAt ?? 0) > 400) { this.opts.onReset(); this.opts.onClose(); } } }, 'Restart'),
+            // (Not the tap that opened the menu, landing where this now is.)
+            el('button', { class: 'close', onclick: () => performance.now() - (this.openedAt ?? 0) > 400 && this.opts.onClose() }, 'Resume ▶'))),
         el('div', { class: 'tabs' }, Object.entries(tabs).map(([k, t]) =>
           el('button', { class: k === this.tab ? 'tab on' : 'tab', onclick: () => { this.tab = k; this.render(); } }, t))),
         el('div', { class: 'body' }, this[`tab_${this.tab}`]())));
@@ -110,7 +113,7 @@ export class Panel {
   /**
    * Flying: laid out like the start screen. The aircraft (with the same
    * turning preview, on a computer) on the left; where and how you fly on
-   * the right; Reset and a big Resume along the bottom, as Fly is there.
+   * the right. (Restart and Resume are at the top, on every tab.)
    */
   tab_fly() {
     const entry = getAircraft(this.settings.aircraft);
@@ -145,9 +148,6 @@ export class Panel {
             el('button', { onclick: () => { this.opts.onDefaultStart(); this.opts.onClose(); } }, 'Default start')),
           sub('Volume'),
           this.#range('', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`))),
-      el('div', { class: 'fly-actions' },
-        el('button', { onclick: () => { this.opts.onReset(); this.opts.onClose(); } }, 'Reset aircraft (R)'),
-        el('button', { class: 'go', onclick: () => performance.now() - (this.openedAt ?? 0) > 400 && this.opts.onClose() }, 'Resume ▶')),
     ];
   }
 
@@ -194,10 +194,8 @@ export class Panel {
         streamers: 'Easy: slow planes, long streamers. Hard: fast planes, short streamers.',
         spot: 'The 360° only counts while the turn is gentle: wider than 10 m on easy, 15 m on normal, 20 m on hard. Climb to 10 m (20 m on hard).',
       }[mode]),
-      el('div', { class: 'row' }, mode === 'none'
-        ? el('button', { onclick: () => { this.opts.onReset(); this.opts.onClose(); } }, 'Reset aircraft (R)')
-        : el('button', { onclick: restart }, 'Start again')),
-      el('p', { class: 'hint' }, `The course is set out in the most open part of the field, in front of you. R starts it again (and resets the aircraft)${mode === 'balloons' ? ', except during a balloon burst, where it just puts you back in the air with the clock running' : ''}. The arrow on screen points to what's next.`),
+      mode === 'none' ? null : el('div', { class: 'row' }, el('button', { onclick: restart }, 'Start again')),
+      mode === 'none' ? null : el('p', { class: 'hint' }, `The course is set out in the most open part of the field, in front of you. Restart (or R) starts it again too${mode === 'balloons' ? ', except during a balloon burst, where it just puts you back in the air with the clock running' : ''}. The arrow on screen points to what's next.`),
       el('h3', {}, `Your best here (${LOCATION.name})`),
       el('table', { class: 'best' }, el('tr', {}, el('th', {}, 'Challenge'), Object.values(LEVELS).map((t) => el('th', {}, t))), rows),
     ];
