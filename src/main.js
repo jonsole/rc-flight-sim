@@ -970,6 +970,35 @@ function frame(now) {
   });
   sound.update(aircraft, dist, fpv, eye);
 }
+
+// Before the Fly button comes on: get the graphics card ready, so the first
+// frame isn't one long stall (the page can't redraw until it's done, so the
+// loading screen would sit at 100%). The shaders compile in the background
+// where the browser can (the loading screen keeps going meanwhile), then
+// one frame is drawn behind the start screen: the scenery's shadow map, the
+// leafy crowns near you, and everything's first trip to the graphics card.
+setStage('Preparing the graphics…', 0);
+await nextFrame();
+rig.update(aircraft, 0);
+rig.camera.updateMatrixWorld();
+try {
+  await renderer.compileAsync(world.scene, rig.camera);
+} catch (e) {
+  console.warn('Compiling the shaders ahead failed; they compile on the first frame instead.', e);
+}
+setStage('Preparing the graphics…', 0.6);
+await nextFrame();
+world.updateLod(rig.camera.position);
+world.updateShadows();
+renderer.render(world.scene, rig.camera);
+{
+  // Wait for the graphics card to have done it: drawing is queued, so
+  // without this the work would land on the first frames after Fly comes on.
+  const gl = renderer.getContext();
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+}
+setStage('Preparing the graphics…', 1);
+await nextFrame();
 requestAnimationFrame(frame);
 
 // Expose for debugging in the console.
