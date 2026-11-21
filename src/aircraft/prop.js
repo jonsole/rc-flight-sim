@@ -100,6 +100,7 @@ export function createProp(P, { spinner = 0.011 } = {}) {
   const disc = new Mesh(new CircleGeometry(P.radius, 40), new MeshStandardMaterial({ map: propDiscTexture(), transparent: true, depthWrite: false, side: DoubleSide }));
   disc.rotation.y = Math.PI / 2;
   disc.visible = false;
+  disc.userData.propDisc = true; // (fainter seen from the cockpit: fileModel.js setPilotVisible)
   group.add(blades, disc);
 
   let angle = 0;

@@ -88,3 +88,55 @@ describe('3D model files', () => {
     }
   });
 });
+
+describe('cockpit camera and the canopy', () => {
+  /** A model with a pilot, and a canopy box centred at `at` (half-size 0.05). */
+  function withCanopy(at) {
+    const scene = new Group();
+    const pilot = new Mesh(new BoxGeometry(0.02, 0.04, 0.02), new MeshStandardMaterial());
+    pilot.name = 'pilot';
+    const canopy = new Mesh(new BoxGeometry(0.1, 0.1, 0.1), new MeshStandardMaterial());
+    canopy.name = 'canopy';
+    canopy.position.copy(at);
+    scene.add(pilot, canopy);
+    const m = createFileModel(scene);
+    const find = (n) => { let o = null; m.root.traverse((q) => !o && q.name === n && (o = q)); return o; };
+    return { m, pilot: find('pilot'), canopy: find('canopy') };
+  }
+
+  it('hides a canopy the cockpit camera is inside (it would only see its inside), and nothing else', () => {
+    const eye = [0.12, 0.045, 0];
+    const inside = withCanopy(new Vector3(0.12, 0.05, 0));
+    inside.m.setPilotVisible(false, eye);
+    expect(inside.pilot.visible).toBe(false);
+    expect(inside.canopy.visible).toBe(false);
+    // Out of the cockpit view: both back.
+    inside.m.setPilotVisible(true, null);
+    expect(inside.canopy.visible).toBe(true);
+    expect(inside.pilot.visible).toBe(true);
+    // A canopy elsewhere (the camera is outside it): left as it is.
+    const elsewhere = withCanopy(new Vector3(-0.2, 0.05, 0));
+    elsewhere.m.setPilotVisible(false, eye);
+    expect(elsewhere.canopy.visible).toBe(true);
+  });
+
+  it('hides see-through glass right in front of the cockpit camera, not glass further off', () => {
+    const scene = new Group();
+    const pane = (name, x) => {
+      const m = new Mesh(new BoxGeometry(0.002, 0.06, 0.06), new MeshStandardMaterial({ transparent: true, opacity: 0.2 }));
+      m.name = name;
+      m.position.set(x, 0.05, 0);
+      scene.add(m);
+      return m;
+    };
+    pane('near', 0.14);
+    pane('far', 0.4);
+    const m = createFileModel(scene);
+    const find = (n) => { let o = null; m.root.traverse((q) => !o && q.name === n && (o = q)); return o; };
+    m.setPilotVisible(false, [0.12, 0.045, 0]);
+    expect(find('near').visible).toBe(false);
+    expect(find('far').visible).toBe(true);
+    m.setPilotVisible(true, null);
+    expect(find('near').visible).toBe(true);
+  });
+});

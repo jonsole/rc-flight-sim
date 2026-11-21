@@ -326,9 +326,10 @@ export function buildF22(style) {
     geometry,
     views: {
       span: SPAN,
-      // Under the canopy, and a camera on top of the fuselage box.
-      // Under the canopy, and a camera on the box behind it.
-      cockpit: [O.canopy.back + 0.02, under + 0.002, 0],
+      // A camera on top of the canopy (lower down, between its sides, the
+      // view was a channel of foam with a strip of sky), and one on the box
+      // behind it.
+      cockpit: [O.canopy.back + 0.02, under + 0.037, 0],
       pod: [0.0, under + 0.012, 0],
       chase: { back: 1.4, up: 0.45 },
     },
