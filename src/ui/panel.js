@@ -104,10 +104,10 @@ export class Panel {
     this.#flyPreview();
   }
 
-  /** A drop-down on its own, for the start-screen style (a heading above it). */
-  #pick(key, options) {
+  /** A drop-down on its own, for the start-screen style (a heading above it); `off`: choices greyed out. */
+  #pick(key, options, off = [], shown = this.settings[key]) {
     return el('select', { onchange: (e) => this.#set(key, e.target.value) },
-      Object.entries(options).map(([v, t]) => el('option', { value: v, selected: String(this.settings[key]) === v }, t)));
+      Object.entries(options).map(([v, t]) => el('option', { value: v, selected: String(shown) === v, disabled: off.includes(v) }, t)));
   }
 
   /**
@@ -142,9 +142,13 @@ export class Panel {
           sub('Camera'),
           this.#pick('cameraMode', CAMERA_LABELS),
           sub('Start'),
-          el('div', { class: 'pair' },
-            this.#pick('startMode', { runway: 'On the runway', air: 'In the air (30 m)', saved: 'Saved position' }),
-            el('button', { title: 'Save where the aircraft is now (on the ground, in the air, or in your hand) as the start for this field, in this browser', onclick: () => this.opts.onSavePosition() }, 'Save position (X)')),
+          // (Saved position only once there is one here: X saves it.)
+          // (Set to it, but none at this field: shown as the runway, where you start.)
+          (() => {
+            const has = !!this.opts.hasSavedSpot?.();
+            const shown = this.settings.startMode === 'saved' && !has ? 'runway' : this.settings.startMode;
+            return this.#pick('startMode', { runway: 'On the runway', air: 'In the air (30 m)', saved: 'Saved position' }, has ? [] : ['saved'], shown);
+          })(),
           el('p', { class: 'hint' }, this.opts.savedSpotText?.() ?? ''),
           sub('Volume'),
           this.#range('', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`))),

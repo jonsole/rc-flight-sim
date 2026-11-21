@@ -378,7 +378,7 @@ function savePosition() {
 /** What's saved here, in words (for the menu). */
 function savedSpotText() {
   const s = savedSpot();
-  if (!s) return 'None saved for this field yet: press X (or Save position) where you want to start.';
+  if (!s) return 'Press X where you want to start (on the ground, in the air, or in your hand) to save a position here.';
   if (s.kind === 'air') return `Saved here: in the air, ${Math.round(s.y - ground.heightAt(s.x, s.z))} m up.`;
   return s.kind === 'hand' ? 'Saved here: in your hand, ready to throw.' : 'Saved here: on the ground.';
 }
@@ -669,7 +669,7 @@ const panel = new Panel(document.getElementById('panel'), {
     resetAircraft();
   },
   challenges: () => challenges,
-  onSavePosition: () => savePosition(),
+  hasSavedSpot: () => !!savedSpot(),
   savedSpotText: () => savedSpotText(),
   aircraftEntry: () => entry,
   onRetune: () => retune(),
