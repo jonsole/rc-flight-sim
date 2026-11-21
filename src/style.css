@@ -293,3 +293,21 @@ table.best th { color: #99a; font-weight: 600; }
   #challenge-steps .t small { font-size: 12px; }
   body.challenge #challenge-msg { top: 48%; }
 }
+/* Menu → Flying, laid out like the start screen (#splash): orange headings
+   over full-width drop-downs, the aircraft with its turning preview on the
+   left, and a big Resume where the start screen has Fly. */
+.fly { display: grid; grid-template-columns: 1.1fr 1fr; gap: 0 28px; }
+.fly .sub { margin: 12px 0 6px; color: #e0a030; font-size: 14px; }
+.fly .fly-col > .sub:first-child { margin-top: 2px; }
+.fly select { width: 100%; padding: 8px 10px; font-size: 15px; }
+.fly .pair { display: flex; gap: 8px; }
+.fly .pair > * { flex: 1; min-width: 0; }
+.fly .row { margin: 0; }
+.fly .lbl:empty { display: none; }
+.fly .row input[type=range] { flex: 1; }
+.fly-preview { display: block; width: 100%; height: clamp(110px, 24vh, 230px); margin: 8px 0 0; }
+@media (hover: none) and (pointer: coarse), (max-width: 700px), (max-height: 560px) { .fly-preview { display: none; } }
+.fly-actions { display: flex; gap: 10px; margin-top: 18px; }
+.fly-actions button { padding: 11px 16px; font-size: 15px; }
+.fly-actions .go { flex: 1; background: #e0a030; color: #1a1a1a; border: none; font-weight: 700; font-size: 17px; }
+@media (max-width: 640px) { .fly { grid-template-columns: 1fr; } }

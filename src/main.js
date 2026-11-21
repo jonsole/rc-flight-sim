@@ -635,7 +635,6 @@ const panel = new Panel(document.getElementById('panel'), {
     resetAircraft();
   },
   challenges: () => challenges,
-  onEditScenery: () => openEditor(),
   onStartHere: () => startHere(),
   onDefaultStart: () => defaultStart(),
   aircraftEntry: () => entry,

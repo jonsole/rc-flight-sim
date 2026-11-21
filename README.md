@@ -163,7 +163,7 @@ field.
 
 ### Scenery editor
 
-Press **E** (or *Menu → Flying → Edit scenery*) to fix up a field: fly
+Press **E** to fix up a field (it isn't in the menu): fly
 around with W A S D, Q / E (down / up), Shift (faster), right-drag to look
 and the wheel to zoom. Click a tree, bush, building, fence or the windsock to
 select it, drag its arrows to move it, and set its size or type in the
