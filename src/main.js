@@ -1,4 +1,4 @@
-import { WebGLRenderer, ACESFilmicToneMapping, PCFSoftShadowMap, SRGBColorSpace, Vector3 } from 'three';
+import { WebGLRenderer, ACESFilmicToneMapping, PCFSoftShadowMap, SRGBColorSpace, Vector3, Box3 } from 'three';
 import { Aircraft } from './sim/aircraft.js';
 import { physicsGround as ground, setSnowCover } from './sim/terrain.js';
 import { Obstacles, setLeafiness } from './sim/obstacles.js';
@@ -184,6 +184,7 @@ function openEditor() {
 let entry = null; // selected aircraft (registry entry)
 let aircraft = null; // flight model
 let model = null; // 3D model
+let modelBack = 0; // how far the model reaches behind its middle (m; set in replaceModel, for handHold)
 
 /** Swap in another aircraft: new flight model, 3D model and camera mounts. */
 const debris = new Debris(world.scene, ground);
@@ -208,6 +209,10 @@ function replaceModel() {
   const tuning = loadTuning(entry.id);
   const tunedProp = ['propDiameter', 'propPitch', 'propBlades', 'propTips'].some((k) => tuning[k] != null) ? tunedDef(entry.def, tuning).motor.prop : null;
   model = entry.createModel(tunedProp ? { prop: tunedProp } : {});
+  // How far the model reaches behind its middle (body axes, before it's
+  // placed anywhere): for holding it in a hand launch (handHold).
+  const box = new Box3().setFromObject(model.root);
+  modelBack = box.isEmpty() ? 0 : Math.max(0, -box.min.x);
   navLights = addNavLights(model, { shine: true });
   planeShadow.setModel(model, entry.def.wingSpan);
   world.scene.add(model.root);
@@ -403,6 +408,17 @@ function clearHeading(x, z, wanted) {
   return best;
 }
 
+/**
+ * Where a hand-launched model is held, from your eye: `fwd` metres ahead
+ * (its middle, far enough out that its tail is a third of a metre clear of
+ * your face) and `side` to the right. The tail is the furthest back of its
+ * contact points and its 3D model, so any aircraft works.
+ */
+function handHold(def) {
+  const contacts = Math.max(0, ...def.contacts.map((c) => -(Array.isArray(c.pos) ? c.pos[0] : c.pos.x)));
+  return { fwd: Math.max(0.6, Math.max(contacts, modelBack) + 0.3), side: 0.35 };
+}
+
 function resetAircraft() {
   // Put the model back together if anything broke off.
   if (aircraft.broken.size || debris.items.length) replaceModel();
@@ -431,16 +447,17 @@ function resetAircraft() {
     const ex = px + settings.pilotX + lane * 3;
     const ez = pz + settings.pilotZ;
     const mine = !mp.connected && savedStart('hand');
+    // Held out in your right hand at arm's length: its middle far enough
+    // ahead that the tail is clear of your face.
+    const { fwd, side } = handHold(entry.def);
+    const hold = (x, z, h) => aircraft.resetHandLaunch(x + Math.cos(h) * fwd + Math.sin(h) * side, z - Math.sin(h) * fwd + Math.cos(h) * side, h);
     if (mine) {
       // Where you last walked to and threw from, here.
       rig.walk.x = mine.wx;
       rig.walk.z = mine.wz;
-      aircraft.resetHandLaunch(mine.x, mine.z, mine.h);
+      hold(ex + mine.wx, ez + mine.wz, mine.h);
     } else {
-      const launch = clearHeading(ex, ez, heading);
-      const hx = ex + Math.cos(launch) * 0.5 + Math.sin(launch) * 0.3;
-      const hz = ez - Math.sin(launch) * 0.5 + Math.cos(launch) * 0.3;
-      aircraft.resetHandLaunch(hx, hz, launch);
+      hold(ex, ez, clearHeading(ex, ez, heading));
     }
     launchFrom = { x: aircraft.position.x, z: aircraft.position.z, h: headingOf(aircraft.orientation) };
   } else if (!mp.connected && savedStart('ground')) {
@@ -763,6 +780,8 @@ updateSplash();
 onModelLoaded((id) => {
   if (id === entry.id) {
     replaceModel();
+    // Still in your hand: held out by the real model's size now it's here.
+    if (aircraft.held) resetAircraft();
     preview.shown = null;
     updateSplash();
   }
