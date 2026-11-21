@@ -10,6 +10,7 @@ import { listedLocations, LOCATION } from '../sim/location.js';
 import { QUALITY, DISTANCES } from '../world/quality.js';
 import { googleSessions } from '../world/googleTiles.js';
 import { MODES, LEVELS, MINUTES, loadBest, bestKey } from '../game/challenges.js';
+import { AircraftPreview } from './preview.js';
 import { tunablesFor, loadTuning, saveTuning, tunedDef, powerSummary } from '../sim/tuning.js';
 
 const CH_LABEL = { roll: 'Aileron (roll)', pitch: 'Elevator (pitch)', yaw: 'Rudder (yaw)', throttle: 'Throttle' };
@@ -92,36 +93,78 @@ export class Panel {
       el('div', { class: 'panel' },
         el('div', { class: 'panel-head' },
           el('h2', {}, 'RC Flight Sim'),
-          // (Not the tap that opened the menu, landing where this now is.)
-          el('button', { class: 'close', onclick: () => performance.now() - (this.openedAt ?? 0) > 400 && this.opts.onClose() }, 'Resume ▶')),
+          el('div', { class: 'head-btns' },
+            // Back to the start (as R), and on with flying.
+            el('button', { title: 'Put the aircraft back at the start (R)', onclick: () => { if (performance.now() - (this.openedAt ?? 0) > 400) { this.opts.onReset(); this.opts.onClose(); } } }, 'Restart'),
+            // (Not the tap that opened the menu, landing where this now is.)
+            el('button', { class: 'close', onclick: () => performance.now() - (this.openedAt ?? 0) > 400 && this.opts.onClose() }, 'Resume ▶'))),
         el('div', { class: 'tabs' }, Object.entries(tabs).map(([k, t]) =>
           el('button', { class: k === this.tab ? 'tab on' : 'tab', onclick: () => { this.tab = k; this.render(); } }, t))),
         el('div', { class: 'body' }, this[`tab_${this.tab}`]())));
+    this.#flyPreview();
   }
 
+  /** A drop-down on its own, for the start-screen style (a heading above it); `off`: choices greyed out. */
+  #pick(key, options, off = [], shown = this.settings[key]) {
+    return el('select', { onchange: (e) => this.#set(key, e.target.value) },
+      Object.entries(options).map(([v, t]) => el('option', { value: v, selected: String(shown) === v, disabled: off.includes(v) }, t)));
+  }
+
+  /**
+   * Flying: laid out like the start screen. The aircraft (with the same
+   * turning preview, on a computer) on the left; where and how you fly on
+   * the right. (Restart and Resume are at the top, on every tab.)
+   */
   tab_fly() {
+    const entry = getAircraft(this.settings.aircraft);
+    const sub = (t) => el('p', { class: 'sub' }, t);
+    const challenge = MODES[this.settings.challenge] ? this.settings.challenge : 'none';
+    // One canvas and preview for the menu's life (a fresh 3D renderer on
+    // every redraw would soon run out of them): started once it's on the page.
+    this.flyCanvas ||= el('canvas', { class: 'fly-preview', 'aria-label': 'The selected aircraft, turning' });
     return [
-      this.#select('Aircraft', 'aircraft', Object.fromEntries(AIRCRAFT.map((a) => [a.id, a.name]))),
-      el('p', { class: 'hint' }, getAircraft(this.settings.aircraft).summary),
-      this.#select('Flying field', 'location', Object.fromEntries(listedLocations(LOCATION.id).map((l) => [l.id, l.name]))),
-      el('p', { class: 'hint' }, `${LOCATION.summary} Changing field reloads the simulator.`),
-      this.#select('Flight assist', 'assist', { off: 'Off (manual)', as3x: 'AS3X (gyro stabilised)', safe: 'SAFE (self-levelling, angle limits)' }),
-      this.#select('Start position', 'startMode', { runway: 'On the runway', air: 'In the air (30 m)' }),
-      this.#select('Camera', 'cameraMode', CAMERA_LABELS),
-      el('div', { class: 'row' }, el('button', { onclick: () => { this.opts.onReset(); this.opts.onClose(); } }, 'Reset aircraft (R)')),
-      el('div', { class: 'row' },
-        el('button', { onclick: () => this.opts.onStartHere() }, 'Start here next time'),
-        el('button', { onclick: () => { this.opts.onDefaultStart(); this.opts.onClose(); } }, 'Default start')),
-      el('p', { class: 'hint' }, 'Take-offs from the ground start where the model now sits (land and stop first). A hand launch starts where you last walked to and turned before throwing. Saved for this field in this browser.'),
-      el('div', { class: 'row' }, el('button', { onclick: () => this.opts.onEditScenery() }, 'Edit scenery (E)')),
-      el('p', { class: 'hint' }, 'Move, resize or delete trees, buildings and fences, or add new ones. Edits are saved in this browser for this field.'),
-      this.#range('Volume', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
-      this.#check('Show HUD / OSD (H)', 'showHud'),
-      this.#check('Full screen on phones and tablets (when you press Fly)', 'fullscreen'),
-      ...(canFullscreen()
-        ? [el('div', { class: 'row' }, el('button', { onclick: () => { toggleFullscreen(); this.opts.onClose(); } }, isFullscreen() ? 'Leave full screen (F)' : 'Full screen (F)'))]
-        : [el('p', { class: 'hint' }, 'This browser can\'t go full screen. On an iPhone: tap Share, then Add to Home Screen, and open the simulator from there: it opens with no browser bars.')]),
+      el('div', { class: 'fly' },
+        el('div', { class: 'fly-col' },
+          sub('Aircraft'),
+          this.#pick('aircraft', Object.fromEntries(AIRCRAFT.map((a) => [a.id, a.name]))),
+          this.flyCanvas,
+          el('p', { class: 'hint' }, entry.summary)),
+        el('div', { class: 'fly-col' },
+          sub('Flying field'),
+          this.#pick('location', Object.fromEntries(listedLocations(LOCATION.id).map((l) => [l.id, l.name]))),
+          el('p', { class: 'hint' }, 'Changing field reloads the simulator.'),
+          sub('Challenge'),
+          el('div', { class: 'pair' },
+            this.#pick('challenge', Object.fromEntries(Object.entries(MODES).map(([k, m]) => [k, m.title]))),
+            challenge === 'none' ? null : this.#pick('challengeLevel', LEVELS)),
+          sub('Flight assist'),
+          this.#pick('assist', { off: 'Off (manual)', as3x: 'AS3X (gyro stabilised)', safe: 'SAFE (self-levelling)' }),
+          sub('Camera'),
+          this.#pick('cameraMode', CAMERA_LABELS),
+          sub('Start'),
+          // (Saved position only once there is one here: X saves it.)
+          // (Set to it, but none at this field: shown as the runway, where you start.)
+          (() => {
+            const has = !!this.opts.hasSavedSpot?.();
+            const shown = this.settings.startMode === 'saved' && !has ? 'runway' : this.settings.startMode;
+            return this.#pick('startMode', { runway: 'On the runway', air: 'In the air (30 m)', saved: 'Saved position' }, has ? [] : ['saved'], shown);
+          })(),
+          el('p', { class: 'hint' }, this.opts.savedSpotText?.() ?? ''),
+          sub('Volume'),
+          this.#range('', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`))),
     ];
+  }
+
+  /** The Flying tab's turning aircraft: started, or switched to the chosen one, once the tab is on screen. */
+  #flyPreview() {
+    if (this.tab !== 'fly' || !this.visible || !this.flyCanvas?.isConnected) return;
+    this.flyPreview ||= new AircraftPreview(this.flyCanvas);
+    const entry = getAircraft(this.settings.aircraft);
+    const shown = `${entry.id}:${!!entry.fileScene}`; // (again once its model file has loaded)
+    if (this.flyPreview.shown !== shown) {
+      this.flyPreview.setAircraft(entry);
+      this.flyPreview.shown = shown;
+    }
   }
 
   /** Challenges (src/game/challenges.js): pick one, start again, best scores here. */
@@ -140,8 +183,14 @@ export class Panel {
       this.opts.onRestartChallenge();
       this.opts.onClose();
     };
+    // Start again, beside the challenge: only once it's under way (choosing
+    // another challenge or difficulty sets a fresh one out, not started).
+    const course = this.opts.challenges?.()?.course;
+    const started = !!course && course.state !== 'ready';
+    const pick = this.#select('Challenge', 'challenge', Object.fromEntries(Object.entries(MODES).map(([k, m]) => [k, m.title])));
+    if (mode !== 'none') pick.append(el('button', { disabled: !started, title: started ? 'Set the course out again, from the start' : 'Not started yet', onclick: restart }, 'Start again'));
     return [
-      this.#select('Challenge', 'challenge', Object.fromEntries(Object.entries(MODES).map(([k, m]) => [k, m.title]))),
+      pick,
       el('p', { class: 'hint' }, MODES[mode].about),
       mode === 'none' ? null : this.#select('Difficulty', 'challengeLevel', LEVELS),
       mode === 'balloons' ? el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Time limit'),
@@ -155,10 +204,7 @@ export class Panel {
         streamers: 'Easy: slow planes, long streamers. Hard: fast planes, short streamers.',
         spot: 'The 360° only counts while the turn is gentle: wider than 10 m on easy, 15 m on normal, 20 m on hard. Climb to 10 m (20 m on hard).',
       }[mode]),
-      el('div', { class: 'row' }, mode === 'none'
-        ? el('button', { onclick: () => { this.opts.onReset(); this.opts.onClose(); } }, 'Reset aircraft (R)')
-        : el('button', { onclick: restart }, 'Start again')),
-      el('p', { class: 'hint' }, `The course is set out in the most open part of the field, in front of you. R starts it again (and resets the aircraft)${mode === 'balloons' ? ', except during a balloon burst, where it just puts you back in the air with the clock running' : ''}. The arrow on screen points to what's next.`),
+      mode === 'none' ? null : el('p', { class: 'hint' }, `The course is set out in the most open part of the field, in front of you. Restart (or R) starts it again too${mode === 'balloons' ? ', except during a balloon burst, where it just puts you back in the air with the clock running' : ''}. The arrow on screen points to what's next.`),
       el('h3', {}, `Your best here (${LOCATION.name})`),
       el('table', { class: 'best' }, el('tr', {}, el('th', {}, 'Challenge'), Object.values(LEVELS).map((t) => el('th', {}, t))), rows),
     ];
@@ -369,32 +415,63 @@ export class Panel {
     return out;
   }
 
+  /**
+   * Collapsible groups for a tab (as Tuning, Weather and View have), which
+   * are open remembered in this browser under `key`. Returns group(name, ...rows).
+   */
+  #groups(key, openAtFirst) {
+    let open = {};
+    try {
+      open = JSON.parse(localStorage.getItem(key)) ?? openAtFirst;
+    } catch {
+      open = openAtFirst;
+    }
+    return (name, ...rows) => {
+      const det = el('details', { class: 'tune-group weather-group', open: !!open[name] }, el('summary', {}, name), ...rows);
+      det.addEventListener('toggle', () => {
+        open[name] = det.open;
+        try {
+          localStorage.setItem(key, JSON.stringify(open));
+        } catch {
+          /* storage blocked */
+        }
+      });
+      return det;
+    };
+  }
+
   tab_view() {
+    const group = this.#groups('rcsim.viewOpen', { Screen: true });
     return [
-      el('h3', {}, 'FPV'),
+      group('Screen',
+      this.#check('Show HUD / OSD (H)', 'showHud'),
+      this.#check('Full screen on phones and tablets (when you press Fly)', 'fullscreen'),
+      ...(canFullscreen()
+        ? [el('div', { class: 'row' }, el('button', { onclick: () => { toggleFullscreen(); this.opts.onClose(); } }, isFullscreen() ? 'Leave full screen (F)' : 'Full screen (F)'))]
+        : [el('p', { class: 'hint' }, 'This browser can\'t go full screen. On an iPhone: tap Share, then Add to Home Screen, and open the simulator from there: it opens with no browser bars.')])),
+      group('FPV',
       this.#select('Camera mount', 'fpvMount', { cockpit: "Pilot's eye (cockpit)", wing: 'Top wing pod' }),
       this.#range('Camera uptilt', 'fpvTilt', -10, 40, 1, (v) => `${v}°`),
       this.#range('Field of view (across)', 'fpvFov', 70, 170, 1, (v) => `${v}°`),
       this.#check('Motor vibration', 'fpvShake'),
-      this.#check('Analog video effect', 'fpvAnalog'),
-      el('h3', {}, 'Line of sight'),
+      this.#check('Analog video effect', 'fpvAnalog')),
+      group('Line of sight',
       this.#range('Field of view (across)', 'losFov', 30, 170, 1, (v) => `${v}°`),
       this.#select('Auto-zoom', 'losZoom', { 0: 'Off', 1: 'Gentle', 2: 'Strong' }),
       this.#range('Pilot position (left/right)', 'pilotX', -60, 60, 1, (v) => `${v} m`),
-      this.#range('Pilot position (fwd/back)', 'pilotZ', -10, 30, 1, (v) => `${v} m`),
-      el('h3', {}, 'Graphics'),
+      this.#range('Pilot position (fwd/back)', 'pilotZ', -10, 30, 1, (v) => `${v} m`)),
+      group('Graphics',
       this.#select('Quality', 'graphics', Object.fromEntries(Object.entries(QUALITY).map(([k, q]) => [k, q.name]))),
       this.#select('Scenery distance', 'viewDistance', DISTANCES),
       this.#select('Trees and bushes', 'treeStyle', { fluffy: 'Leafy', classic: 'Classic (solid)' }),
       this.#check('Leaves face the camera (off: face the screen, as before)', 'cardsFaceCamera'),
       this.#check('Sun glare', 'sunGlare'),
-      el('p', { class: 'hint' }, 'Lower these if the picture is jerky. Low draws simpler trees and fewer pixels; a shorter distance leaves out far trees and brings the haze in. Leafy trees lose their leaves in winter; classic ones are a little quicker to draw. Changing any of these reloads the simulator.'),
-      ...(LOCATION.data ? [
+      el('p', { class: 'hint' }, 'Lower these if the picture is jerky. Low draws simpler trees and fewer pixels; a shorter distance leaves out far trees and brings the haze in. Leafy trees lose their leaves in winter; classic ones are a little quicker to draw. Changing any of these reloads the simulator.')),
+      ...(LOCATION.data ? [group('Scenery',
         this.#select('Scenery', 'scenery', { built: 'Built in (LIDAR and OpenStreetMap)', google: 'Google photorealistic 3D' }),
         this.#text('Google Maps API key', 'googleKey', { type: 'password', placeholder: 'AIza…' }),
         el('p', { class: 'hint' }, 'Google photorealistic 3D needs your own Google Maps Platform API key with the Map Tiles API enabled (and billing set up). The key stays in this browser. Google\'s tiles replace the ground and buildings; the trees, hedges and fences stay, and are what you fly into. Press O to switch them on and off in flight.'),
-        el('p', { class: 'hint' }, `Google bills per session: each page load that shows the tiles starts one (good for 3 hours); switching off and on again doesn't. Sessions started from this browser this month: ${googleSessions().count}. Tip: leave the tiles off while reloading a lot, and set a daily cap on root tileset requests in the Google Cloud console.`),
-      ] : []),
+        el('p', { class: 'hint' }, `Google bills per session: each page load that shows the tiles starts one (good for 3 hours); switching off and on again doesn't. Sessions started from this browser this month: ${googleSessions().count}. Tip: leave the tiles off while reloading a lot, and set a daily cap on root tileset requests in the Google Cloud console.`))] : []),
     ];
   }
 
@@ -404,24 +481,7 @@ export class Panel {
       return `${v}° (${names[Math.round(v / 45) % 8]})`;
     };
     // Collapsible groups (which are open: remembered in this browser).
-    let open = {};
-    try {
-      open = JSON.parse(localStorage.getItem('rcsim.weatherOpen')) ?? { Wind: true, Time: true };
-    } catch {
-      /* none */
-    }
-    const group = (name, ...rows) => {
-      const det = el('details', { class: 'tune-group weather-group', open: !!open[name] }, el('summary', {}, name), ...rows);
-      det.addEventListener('toggle', () => {
-        open[name] = det.open;
-        try {
-          localStorage.setItem('rcsim.weatherOpen', JSON.stringify(open));
-        } catch {
-          /* storage blocked */
-        }
-      });
-      return det;
-    };
+    const group = this.#groups('rcsim.weatherOpen', { Wind: true, Time: true });
     return [
       group('Wind',
         this.#range('Wind speed', 'windSpeed', 0, 12, 0.5, (v) => `${v} m/s (${Math.round(v * 3.6)} km/h)`),
@@ -491,29 +551,31 @@ export class Panel {
       el('span', { class: 'val' }, cfg.buttons[name] == null ? 'not set' : `Button ${cfg.buttons[name]}`),
       el('button', { onclick: (e) => this.#detectButton(name, e.target) }, 'Detect'));
 
+    const group = this.#groups('rcsim.txOpen', { Device: true, 'Channel mapping': true });
     return [
+      group('Device',
       el('p', { class: 'hint' }, 'Connect your transmitter by USB (EdgeTX/OpenTX: choose "USB Joystick (HID)"), or use a USB sim dongle. Move a stick so the browser notices it.'),
       this.#select('On-screen sticks', 'touchControls', { auto: 'Auto (touch screens)', on: 'Always show', off: 'Off' }),
       this.#select('Stick mode', 'stickMode', { 2: 'Mode 2 (throttle left)', 1: 'Mode 1 (throttle right)' }),
       el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Device'), padSel),
       el('div', { class: 'status', id: 'pad-status' }, inp.gamepadName || 'No transmitter detected — keyboard active'),
       el('div', { class: 'hint', id: 'pad-raw', style: 'font-family: monospace; word-break: break-all' }, ''),
-      el('p', { class: 'hint' }, 'On phones the browser may move or drop some joystick axes, or report them as analog buttons. Use Detect and move just that stick; if a channel never responds, set your radio\'s USB joystick to map the channels to X, Y, Z and Rz.'),
-      el('h3', {}, 'Channel mapping'),
+      el('p', { class: 'hint' }, 'On phones the browser may move or drop some joystick axes, or report them as analog buttons. Use Detect and move just that stick; if a channel never responds, set your radio\'s USB joystick to map the channels to X, Y, Z and Rz.')),
+      group('Channel mapping',
       el('p', { class: 'hint' }, 'Bars should move right for: right aileron, pull back (up elevator), right rudder, throttle up. Use Reverse if not.'),
       ...rows,
       el('div', { class: 'row' },
         el('button', { onclick: (e) => this.#calibrate(e.target) }, this.calibrating ? 'Finish calibration' : 'Calibrate sticks'),
         el('button', { onclick: () => { inp.resetConfig(); this.render(); } }, 'Reset to defaults')),
-      el('p', { class: 'hint', id: 'cal-hint' }, this.calibrating ? 'Move every stick to all its extremes, centre the sticks (throttle low), then press Finish.' : ''),
-      el('h3', {}, 'Expo & rates'),
-      ...['roll', 'pitch', 'yaw'].map(expoRow),
-      el('h3', {}, 'Switches'),
+      el('p', { class: 'hint', id: 'cal-hint' }, this.calibrating ? 'Move every stick to all its extremes, centre the sticks (throttle low), then press Finish.' : '')),
+      group('Expo & rates',
+      ...['roll', 'pitch', 'yaw'].map(expoRow)),
+      group('Switches',
       btnRow('reset', 'Reset aircraft'),
       btnRow('camera', 'Change camera'),
-      btnRow('assist', 'Flight assist (cycle)'),
-      el('h3', {}, 'Keyboard'),
-      el('p', { class: 'hint' }, 'Arrows: aileron/elevator · A/D: rudder · W/S: throttle · R: reset · C: camera · G: flight assist · P: pause · H: HUD · Esc: menu'),
+      btnRow('assist', 'Flight assist (cycle)')),
+      group('Keyboard',
+      el('p', { class: 'hint' }, 'Arrows (or I J K L): aileron/elevator · A/D: rudder · W/S: throttle · R: reset · X: save start position · C: camera · G: flight assist · P: pause · H: HUD · M: mute · F: full screen · Enter/T: chat · Esc: menu')),
     ];
   }
 

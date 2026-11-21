@@ -31,6 +31,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-f
 }
 .panel-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px 6px; }
 .panel-head h2 { margin: 0; font-size: 18px; }
+.head-btns { display: flex; gap: 8px; }
 .tabs { display: flex; gap: 4px; padding: 0 14px; border-bottom: 1px solid #333a40; flex-wrap: wrap; }
 .tab { background: none; border: none; color: #aab; padding: 10px 12px; cursor: pointer; font-size: 14px; border-bottom: 2px solid transparent; }
 .tab.on { color: #fff; border-bottom-color: #e0a030; }
@@ -293,3 +294,20 @@ table.best th { color: #99a; font-weight: 600; }
   #challenge-steps .t small { font-size: 12px; }
   body.challenge #challenge-msg { top: 48%; }
 }
+/* Menu → Flying, laid out like the start screen (#splash): orange headings
+   over full-width drop-downs, the aircraft with its turning preview on the
+   left; Restart and Resume at the top of the menu. */
+.fly { display: grid; grid-template-columns: 1.1fr 1fr; gap: 0 28px; }
+.fly .sub { margin: 12px 0 6px; color: #e0a030; font-size: 14px; }
+.fly .fly-col > .sub:first-child { margin-top: 2px; }
+.fly select { width: 100%; padding: 8px 10px; font-size: 15px; }
+.fly .pair { display: flex; gap: 8px; }
+.fly .pair > * { flex: 1; min-width: 0; }
+.fly .row { margin: 0; }
+.fly .lbl:empty { display: none; }
+.fly .row input[type=range] { flex: 1; }
+.fly-preview { display: block; width: 100%; height: clamp(110px, 24vh, 230px); margin: 8px 0 0; }
+@media (hover: none) and (pointer: coarse), (max-width: 700px), (max-height: 560px) { .fly-preview { display: none; } }
+@media (max-width: 640px) { .fly { grid-template-columns: 1fr; } }
+/* Transmitter's channel rows and status line inside its groups: indented like the other rows. */
+.weather-group > .chan, .weather-group > .status { margin-left: 12px; margin-right: 12px; }
