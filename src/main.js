@@ -906,7 +906,8 @@ function frame(now) {
   navLights.update(world.night, now / 1000, rig.camera, window.innerHeight, aircraft.broken);
 
   const fpv = rig.mode === 'fpv';
-  model.setPilotVisible(!(fpv && settings.fpvMount === 'cockpit'));
+  const cockpitCam = fpv && settings.fpvMount === 'cockpit';
+  model.setPilotVisible(!cockpitCam, cockpitCam ? entry.views.cockpit : null);
   if (editor.active) editor.update(dt);
   else rig.update(aircraft, dt);
   if (googleTiles?.visible) googleTiles.update(rig.camera, renderer, dt);

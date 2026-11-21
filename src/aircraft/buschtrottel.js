@@ -337,9 +337,10 @@ export function buildBuschtrottel(style) {
     geometry: L,
     views: {
       span: SPAN,
-      // High wing: from the cabin under the wing. Agro: on the front of its
-      // (opaque) canopy block.
-      cockpit: up(high ? [0.04, 0.058, 0] : [-0.05, 0.108, 0]),
+      // High wing: in the cabin just behind the windscreen, ahead of the
+      // wing (further back, under it, the wing's underside filled the top of
+      // the view). Agro: on the front of its (opaque) canopy block.
+      cockpit: up(high ? [0.09, 0.058, 0] : [-0.05, 0.108, 0]),
       // Wing-top pod (high wing) or a nose-top camera (low wing).
       pod: up(high ? [0.05, L.wingY + 0.04, 0] : [0.17, 0.065, 0]),
       chase: { back: SPAN * 2.0 + 0.3, up: SPAN * 0.5 + 0.15 },
