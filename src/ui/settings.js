@@ -5,7 +5,7 @@ export const DEFAULT_SETTINGS = {
   cameraMode: 'los',
   aircraft: 'eflite-se5a-900', // see src/aircraft/index.js
   startMode: 'runway', // 'runway' | 'air'
-  location: 'home',    // flying field, see src/sim/location.js
+  location: 'waterbeach', // flying field, see src/sim/location.js (the Club field is hidden: ?field=home)
   assist: 'as3x',      // 'off' | 'as3x' | 'safe'
   challenge: 'none',   // src/game/challenges.js MODES
   challengeLevel: 'normal', // 'easy' | 'normal' | 'hard'
@@ -55,7 +55,7 @@ export const DEFAULT_SETTINGS = {
   // Multiplayer
   mpName: '',            // set to "Pilot NNN" on first run
   mpRoom: '',
-  mpServer: '',          // blank = the built-in relay
+  mpServer: '',          // the relay's wss:// address (no built-in one; invite links carry it)
 };
 
 export function loadSettings() {
