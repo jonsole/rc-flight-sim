@@ -10,6 +10,7 @@ import { listedLocations, LOCATION } from '../sim/location.js';
 import { QUALITY, DISTANCES } from '../world/quality.js';
 import { googleSessions } from '../world/googleTiles.js';
 import { MODES, LEVELS, MINUTES, loadBest, bestKey } from '../game/challenges.js';
+import { AircraftPreview } from './preview.js';
 import { tunablesFor, loadTuning, saveTuning, tunedDef, powerSummary } from '../sim/tuning.js';
 
 const CH_LABEL = { roll: 'Aileron (roll)', pitch: 'Elevator (pitch)', yaw: 'Rudder (yaw)', throttle: 'Throttle' };
@@ -97,31 +98,69 @@ export class Panel {
         el('div', { class: 'tabs' }, Object.entries(tabs).map(([k, t]) =>
           el('button', { class: k === this.tab ? 'tab on' : 'tab', onclick: () => { this.tab = k; this.render(); } }, t))),
         el('div', { class: 'body' }, this[`tab_${this.tab}`]())));
+    this.#flyPreview();
   }
 
+  /** A drop-down on its own, for the start-screen style (a heading above it). */
+  #pick(key, options) {
+    return el('select', { onchange: (e) => this.#set(key, e.target.value) },
+      Object.entries(options).map(([v, t]) => el('option', { value: v, selected: String(this.settings[key]) === v }, t)));
+  }
+
+  /**
+   * Flying: laid out like the start screen. The aircraft (with the same
+   * turning preview, on a computer) on the left; where and how you fly on
+   * the right; Reset and a big Resume along the bottom, as Fly is there.
+   */
   tab_fly() {
+    const entry = getAircraft(this.settings.aircraft);
+    const sub = (t) => el('p', { class: 'sub' }, t);
+    const challenge = MODES[this.settings.challenge] ? this.settings.challenge : 'none';
+    // One canvas and preview for the menu's life (a fresh 3D renderer on
+    // every redraw would soon run out of them): started once it's on the page.
+    this.flyCanvas ||= el('canvas', { class: 'fly-preview', 'aria-label': 'The selected aircraft, turning' });
     return [
-      this.#select('Aircraft', 'aircraft', Object.fromEntries(AIRCRAFT.map((a) => [a.id, a.name]))),
-      el('p', { class: 'hint' }, getAircraft(this.settings.aircraft).summary),
-      this.#select('Flying field', 'location', Object.fromEntries(listedLocations(LOCATION.id).map((l) => [l.id, l.name]))),
-      el('p', { class: 'hint' }, `${LOCATION.summary} Changing field reloads the simulator.`),
-      this.#select('Flight assist', 'assist', { off: 'Off (manual)', as3x: 'AS3X (gyro stabilised)', safe: 'SAFE (self-levelling, angle limits)' }),
-      this.#select('Start position', 'startMode', { runway: 'On the runway', air: 'In the air (30 m)' }),
-      this.#select('Camera', 'cameraMode', CAMERA_LABELS),
-      el('div', { class: 'row' }, el('button', { onclick: () => { this.opts.onReset(); this.opts.onClose(); } }, 'Reset aircraft (R)')),
-      el('div', { class: 'row' },
-        el('button', { onclick: () => this.opts.onStartHere() }, 'Start here next time'),
-        el('button', { onclick: () => { this.opts.onDefaultStart(); this.opts.onClose(); } }, 'Default start')),
-      el('p', { class: 'hint' }, 'Take-offs from the ground start where the model now sits (land and stop first). A hand launch starts where you last walked to and turned before throwing. Saved for this field in this browser.'),
-      el('div', { class: 'row' }, el('button', { onclick: () => this.opts.onEditScenery() }, 'Edit scenery (E)')),
-      el('p', { class: 'hint' }, 'Move, resize or delete trees, buildings and fences, or add new ones. Edits are saved in this browser for this field.'),
-      this.#range('Volume', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
-      this.#check('Show HUD / OSD (H)', 'showHud'),
-      this.#check('Full screen on phones and tablets (when you press Fly)', 'fullscreen'),
-      ...(canFullscreen()
-        ? [el('div', { class: 'row' }, el('button', { onclick: () => { toggleFullscreen(); this.opts.onClose(); } }, isFullscreen() ? 'Leave full screen (F)' : 'Full screen (F)'))]
-        : [el('p', { class: 'hint' }, 'This browser can\'t go full screen. On an iPhone: tap Share, then Add to Home Screen, and open the simulator from there: it opens with no browser bars.')]),
+      el('div', { class: 'fly' },
+        el('div', { class: 'fly-col' },
+          sub('Aircraft'),
+          this.#pick('aircraft', Object.fromEntries(AIRCRAFT.map((a) => [a.id, a.name]))),
+          this.flyCanvas,
+          el('p', { class: 'hint' }, entry.summary)),
+        el('div', { class: 'fly-col' },
+          sub('Flying field'),
+          this.#pick('location', Object.fromEntries(listedLocations(LOCATION.id).map((l) => [l.id, l.name]))),
+          el('p', { class: 'hint' }, 'Changing field reloads the simulator.'),
+          sub('Challenge'),
+          el('div', { class: 'pair' },
+            this.#pick('challenge', Object.fromEntries(Object.entries(MODES).map(([k, m]) => [k, m.title]))),
+            challenge === 'none' ? null : this.#pick('challengeLevel', LEVELS)),
+          sub('Flight assist'),
+          this.#pick('assist', { off: 'Off (manual)', as3x: 'AS3X (gyro stabilised)', safe: 'SAFE (self-levelling)' }),
+          sub('Camera'),
+          this.#pick('cameraMode', CAMERA_LABELS),
+          sub('Start'),
+          this.#pick('startMode', { runway: 'On the runway', air: 'In the air (30 m)' }),
+          el('div', { class: 'pair' },
+            el('button', { title: 'Take-offs from the ground start where the model now sits (land and stop first); a hand launch where you last walked to and turned. Saved for this field in this browser.', onclick: () => this.opts.onStartHere() }, 'Start here next time'),
+            el('button', { onclick: () => { this.opts.onDefaultStart(); this.opts.onClose(); } }, 'Default start')),
+          sub('Volume'),
+          this.#range('', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`))),
+      el('div', { class: 'fly-actions' },
+        el('button', { onclick: () => { this.opts.onReset(); this.opts.onClose(); } }, 'Reset aircraft (R)'),
+        el('button', { class: 'go', onclick: () => performance.now() - (this.openedAt ?? 0) > 400 && this.opts.onClose() }, 'Resume ▶')),
     ];
+  }
+
+  /** The Flying tab's turning aircraft: started, or switched to the chosen one, once the tab is on screen. */
+  #flyPreview() {
+    if (this.tab !== 'fly' || !this.visible || !this.flyCanvas?.isConnected) return;
+    this.flyPreview ||= new AircraftPreview(this.flyCanvas);
+    const entry = getAircraft(this.settings.aircraft);
+    const shown = `${entry.id}:${!!entry.fileScene}`; // (again once its model file has loaded)
+    if (this.flyPreview.shown !== shown) {
+      this.flyPreview.setAircraft(entry);
+      this.flyPreview.shown = shown;
+    }
   }
 
   /** Challenges (src/game/challenges.js): pick one, start again, best scores here. */
@@ -371,6 +410,12 @@ export class Panel {
 
   tab_view() {
     return [
+      el('h3', {}, 'Screen'),
+      this.#check('Show HUD / OSD (H)', 'showHud'),
+      this.#check('Full screen on phones and tablets (when you press Fly)', 'fullscreen'),
+      ...(canFullscreen()
+        ? [el('div', { class: 'row' }, el('button', { onclick: () => { toggleFullscreen(); this.opts.onClose(); } }, isFullscreen() ? 'Leave full screen (F)' : 'Full screen (F)'))]
+        : [el('p', { class: 'hint' }, 'This browser can\'t go full screen. On an iPhone: tap Share, then Add to Home Screen, and open the simulator from there: it opens with no browser bars.')]),
       el('h3', {}, 'FPV'),
       this.#select('Camera mount', 'fpvMount', { cockpit: "Pilot's eye (cockpit)", wing: 'Top wing pod' }),
       this.#range('Camera uptilt', 'fpvTilt', -10, 40, 1, (v) => `${v}°`),
