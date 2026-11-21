@@ -309,3 +309,5 @@ table.best th { color: #99a; font-weight: 600; }
 .fly-preview { display: block; width: 100%; height: clamp(110px, 24vh, 230px); margin: 8px 0 0; }
 @media (hover: none) and (pointer: coarse), (max-width: 700px), (max-height: 560px) { .fly-preview { display: none; } }
 @media (max-width: 640px) { .fly { grid-template-columns: 1fr; } }
+/* Transmitter's channel rows and status line inside its groups: indented like the other rows. */
+.weather-group > .chan, .weather-group > .status { margin-left: 12px; margin-right: 12px; }
