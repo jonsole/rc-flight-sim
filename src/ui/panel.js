@@ -183,8 +183,14 @@ export class Panel {
       this.opts.onRestartChallenge();
       this.opts.onClose();
     };
+    // Start again, beside the challenge: only once it's under way (choosing
+    // another challenge or difficulty sets a fresh one out, not started).
+    const course = this.opts.challenges?.()?.course;
+    const started = !!course && course.state !== 'ready';
+    const pick = this.#select('Challenge', 'challenge', Object.fromEntries(Object.entries(MODES).map(([k, m]) => [k, m.title])));
+    if (mode !== 'none') pick.append(el('button', { disabled: !started, title: started ? 'Set the course out again, from the start' : 'Not started yet', onclick: restart }, 'Start again'));
     return [
-      this.#select('Challenge', 'challenge', Object.fromEntries(Object.entries(MODES).map(([k, m]) => [k, m.title]))),
+      pick,
       el('p', { class: 'hint' }, MODES[mode].about),
       mode === 'none' ? null : this.#select('Difficulty', 'challengeLevel', LEVELS),
       mode === 'balloons' ? el('label', { class: 'row' }, el('span', { class: 'lbl' }, 'Time limit'),
@@ -198,7 +204,6 @@ export class Panel {
         streamers: 'Easy: slow planes, long streamers. Hard: fast planes, short streamers.',
         spot: 'The 360° only counts while the turn is gentle: wider than 10 m on easy, 15 m on normal, 20 m on hard. Climb to 10 m (20 m on hard).',
       }[mode]),
-      mode === 'none' ? null : el('div', { class: 'row' }, el('button', { onclick: restart }, 'Start again')),
       mode === 'none' ? null : el('p', { class: 'hint' }, `The course is set out in the most open part of the field, in front of you. Restart (or R) starts it again too${mode === 'balloons' ? ', except during a balloon burst, where it just puts you back in the air with the clock running' : ''}. The arrow on screen points to what's next.`),
       el('h3', {}, `Your best here (${LOCATION.name})`),
       el('table', { class: 'best' }, el('tr', {}, el('th', {}, 'Challenge'), Object.values(LEVELS).map((t) => el('th', {}, t))), rows),
