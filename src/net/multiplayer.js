@@ -36,7 +36,7 @@ export class Multiplayer {
     this.name = name;
     this.aircraft = aircraft;
     if (!server) {
-      this.#setStatus('error', 'No multiplayer server configured.');
+      this.#setStatus('error', 'No server set: enter one under Advanced → Server.');
       return;
     }
     let url;

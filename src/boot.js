@@ -1,13 +1,17 @@
 // Start-up: pick the flying site, load its baked data (real sites) and the
 // chosen aircraft's 3D model file, then start the simulator. The site is fixed for the session; changing it in the
 // menu reloads the page with ?field=<id>.
-import { LOCATIONS, setLocation, loadSiteData } from './sim/location.js';
+import { LOCATIONS, listedLocations, setLocation, loadSiteData } from './sim/location.js';
 import { setStage, nextFrame } from './ui/loading.js';
 import { loadSettings, saveSettings } from './ui/settings.js';
 
 const settings = loadSettings();
 const asked = new URLSearchParams(location.search).get('field');
-const site = LOCATIONS.find((l) => l.id === (asked || settings.location)) || LOCATIONS[0];
+// The field asked for in the URL (?field=, hidden ones too), else the last
+// one flown at if it's still listed, else the first listed.
+const site = LOCATIONS.find((l) => l.id === asked)
+  || listedLocations().find((l) => l.id === settings.location)
+  || listedLocations()[0];
 if (settings.location !== site.id) saveSettings({ ...settings, location: site.id });
 
 const start = document.getElementById('start');

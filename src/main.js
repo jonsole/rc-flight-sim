@@ -18,7 +18,6 @@ import { PlaneShadow } from './view/planeShadow.js';
 import { Peers } from './view/peers.js';
 import { addNavLights } from './view/navlights.js';
 import { Multiplayer } from './net/multiplayer.js';
-import { DEFAULT_MP_SERVER } from './net/config.js';
 import { Chat } from './ui/chat.js';
 import { clockHours, dayOfYear } from './world/sun.js';
 import { cloudTypeFor } from './world/clouds.js';
@@ -26,7 +25,7 @@ import { OSD } from './ui/osd.js';
 import { Panel } from './ui/panel.js';
 import { loadSettings, saveSettings } from './ui/settings.js';
 import { EngineSound } from './audio/engine.js';
-import { LOCATION, LOCATIONS, clubAngle, clubToWorld, pilotSpot } from './sim/location.js';
+import { LOCATION, listedLocations, clubAngle, clubToWorld, pilotSpot } from './sim/location.js';
 import { QUALITY, qualityPreset, viewDistance } from './world/quality.js';
 import { tunedDef, loadTuning } from './sim/tuning.js';
 import { GoogleTiles } from './world/googleTiles.js';
@@ -71,9 +70,13 @@ if (import.meta.env.VITE_CHANNEL === 'dev') {
 const settings = loadSettings();
 settings.losZoom = Number(settings.losZoom);
 if (!settings.mpName) settings.mpName = `Pilot ${100 + Math.floor(Math.random() * 900)}`;
-// Invite links: ?room=CODE fills in the room and joins when you start flying.
+// Invite links: ?room=CODE fills in the room and joins when you start
+// flying, and &server=wss://... the relay to meet on (there's no built-in
+// one: it's set in Menu → Multiplayer, and invite links carry it).
 const inviteRoom = new URLSearchParams(location.search).get('room');
 if (inviteRoom) settings.mpRoom = inviteRoom.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 24);
+const inviteServer = new URLSearchParams(location.search).get('server');
+if (inviteServer && /^wss?:\/\/[^\s]+$/i.test(inviteServer)) settings.mpServer = inviteServer.slice(0, 200);
 saveSettings(settings);
 
 // --- Renderer ----------------------------------------------------------------
@@ -486,7 +489,7 @@ peers.addShadow = (model, span) => {
 };
 const mpBadge = document.getElementById('mp-badge');
 const mpToast = document.getElementById('mp-toast');
-const mpServer = () => settings.mpServer || DEFAULT_MP_SERVER;
+const mpServer = () => settings.mpServer || ''; // (no built-in server)
 function toast(text, ms = 3500) {
   const d = document.createElement('div');
   d.textContent = text;
@@ -571,9 +574,8 @@ const panel = new Panel(document.getElementById('panel'), {
   settings,
   input,
   mp,
-  defaultServer: DEFAULT_MP_SERVER,
   newRoomCode,
-  inviteLink: () => `${location.origin}${location.pathname}?room=${encodeURIComponent(mp.baseRoom ?? mp.room)}${LOCATION.data ? `&field=${LOCATION.id}` : ''}`,
+  inviteLink: () => `${location.origin}${location.pathname}?room=${encodeURIComponent(mp.baseRoom ?? mp.room)}${LOCATION.data ? `&field=${LOCATION.id}` : ''}${settings.mpServer ? `&server=${encodeURIComponent(settings.mpServer)}` : ''}`,
   onMpConnect: () => {
     mpConnect();
     panel.render();
@@ -711,7 +713,7 @@ const splashSummary = document.getElementById('splash-summary');
 for (const a of AIRCRAFT) splashSelect.append(new Option(a.name, a.id));
 splashSelect.addEventListener('change', (e) => selectAircraft(e.target.value));
 const splashField = document.getElementById('splash-field');
-for (const l of LOCATIONS) splashField.append(new Option(l.name, l.id));
+for (const l of listedLocations(LOCATION.id)) splashField.append(new Option(l.name, l.id));
 splashField.value = LOCATION.id;
 splashField.addEventListener('change', (e) => changeField(e.target.value));
 const splashGraphics = document.getElementById('splash-graphics');

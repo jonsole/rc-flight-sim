@@ -6,7 +6,7 @@ import { CAMERA_LABELS } from '../view/cameras.js';
 import { AIRCRAFT, getAircraft } from '../aircraft/index.js';
 import { formatHours } from '../world/sun.js';
 import { formatDay } from '../world/seasons.js';
-import { LOCATIONS, LOCATION } from '../sim/location.js';
+import { listedLocations, LOCATION } from '../sim/location.js';
 import { QUALITY, DISTANCES } from '../world/quality.js';
 import { googleSessions } from '../world/googleTiles.js';
 import { MODES, LEVELS, MINUTES, loadBest, bestKey } from '../game/challenges.js';
@@ -103,7 +103,7 @@ export class Panel {
     return [
       this.#select('Aircraft', 'aircraft', Object.fromEntries(AIRCRAFT.map((a) => [a.id, a.name]))),
       el('p', { class: 'hint' }, getAircraft(this.settings.aircraft).summary),
-      this.#select('Flying field', 'location', Object.fromEntries(LOCATIONS.map((l) => [l.id, l.name]))),
+      this.#select('Flying field', 'location', Object.fromEntries(listedLocations(LOCATION.id).map((l) => [l.id, l.name]))),
       el('p', { class: 'hint' }, `${LOCATION.summary} Changing field reloads the simulator.`),
       this.#select('Flight assist', 'assist', { off: 'Off (manual)', as3x: 'AS3X (gyro stabilised)', safe: 'SAFE (self-levelling, angle limits)' }),
       this.#select('Start position', 'startMode', { runway: 'On the runway', air: 'In the air (30 m)' }),
@@ -363,8 +363,8 @@ export class Panel {
     }
     out.push(
       el('h3', {}, 'Advanced'),
-      this.#text('Server', 'mpServer', { placeholder: o.defaultServer || 'wss://…' }),
-      el('p', { class: 'hint' }, 'Leave blank to use the built-in server.'),
+      this.#text('Server', 'mpServer', { placeholder: 'wss://…' }),
+      el('p', { class: 'hint' }, 'The relay server to meet on (there is no built-in one): its wss:// address, e.g. your own Cloudflare Worker (see server/ in the code). Invite links include it.'),
     );
     return out;
   }
