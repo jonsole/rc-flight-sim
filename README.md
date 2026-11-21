@@ -129,11 +129,13 @@ saves them to a file (send it in to have them built into the model) and
 ## Flying fields
 
 Pick the field on the start screen or under *Menu → Flying → Flying field*
-(changing it reloads the page; `?field=waterbeach` in the URL opens Barrack Field):
+(changing it reloads the page; `?field=waterbeach` in the URL opens Barrack Field).
+Barrack Field is the default. The Club field is left out of the lists while its
+lake is unfinished; `?field=home` still opens it:
 
 | Field | Notes |
 | --- | --- |
-| **Club field** | Made up: a mown field in rolling country. |
+| **Club field** | Made up: a mown field in rolling country. Hidden from the lists for now (`?field=home`). |
 | **Barrack Field** | The real field at Waterbeach, Cambridgeshire: the cricket pitch is the runway, with the grass mown about 32 m round it, and you stand 10 m south of it. 2 × 2 km of scenery around it is built from Environment Agency 1 m LIDAR (ground, ~5000 trees at their measured heights and crown sizes, hedges, building heights) and OpenStreetMap (building outlines, roads, paths, water, gardens, farmland), touched up from what's there now: bigger trees, the chain-link and temporary fences, demolished buildings left out. |
 | **Hotel Glocknerhof** | The hotel's model airfield at Berg im Drautal, Carinthia (Austria), in the Drau valley under the hotel: a 200 m mown grass runway running roughly north-south between the access road and a maize field, the pits behind a 5 m safety net, the big green and white pyramid tent, cars along the road. You stand at the net near the north end, facing east. 2 × 2 km round it from the BEV's 1 m laser-scan heights (ground, ~5000 trees, conifers told from broadleaves by how dark they are from above, building heights), coloured from basemap.at aerial photos, with OpenStreetMap building outlines; and 14 × 14 km of the mountains round the valley (up to ~2500 m) from the same heights every 32 m, coloured from the aerial photos. `?field=glocknerhof`. |
 
@@ -428,4 +430,4 @@ Players who join the same room code see each other's aeroplanes (menu → Multip
 
 - Hosting: Cloudflare Workers Builds deploys the relay from this repository on every push to main, using `wrangler.toml` at the repo root (no build command; deploy command `npx wrangler deploy`).
 - Local relay: `cd server && npm install && npm start` (or `npx wrangler dev`), then set Server to `ws://127.0.0.1:8787` in the Multiplayer menu.
-- The game connects to `wss://rc-flight-sim.jon-sole.workers.dev` (`src/net/config.js`, or build with `VITE_MP_SERVER`).
+- No server is built into the game: enter the relay's address under *Menu → Multiplayer → Advanced → Server* (e.g. your Worker's `wss://….workers.dev` address). Invite links carry it (`&server=`), so the people you invite don't have to.

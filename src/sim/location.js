@@ -60,6 +60,8 @@ const HOME = {
   id: 'home',
   name: 'Club field',
   summary: 'A made-up club field in rolling country.',
+  // Not in the lists of fields while its lake is unfinished: ?field=home still opens it.
+  hidden: true,
   layout: {
     runway: { x: 0, z: -22, length: 180, width: 18 },
     pilotPad: { x: 0, z: 0.5, length: 6, width: 4 },
@@ -239,6 +241,14 @@ const GLOCKNERHOF = {
 };
 
 export const LOCATIONS = [HOME, WATERBEACH, IMPINGTON, GLOCKNERHOF];
+
+/**
+ * The fields to offer in the lists (start screen, menu): all but the hidden
+ * ones, though the field you're at is always there (opened by its URL).
+ */
+export function listedLocations(current = null) {
+  return LOCATIONS.filter((l) => !l.hidden || l.id === current);
+}
 
 export const LOCATION = { ...HOME, data: null };
 
