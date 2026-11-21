@@ -4,7 +4,7 @@ const KEY = 'rcsim.settings.v1';
 export const DEFAULT_SETTINGS = {
   cameraMode: 'los',
   aircraft: 'eflite-se5a-900', // see src/aircraft/index.js
-  startMode: 'runway', // 'runway' | 'air'
+  startMode: 'runway', // 'runway' | 'air' | 'saved' (your saved position: X)
   location: 'waterbeach', // flying field, see src/sim/location.js (the Club field is hidden: ?field=home)
   assist: 'as3x',      // 'off' | 'as3x' | 'safe'
   challenge: 'none',   // src/game/challenges.js MODES
@@ -27,7 +27,7 @@ export const DEFAULT_SETTINGS = {
   viewDistance: '',      // metres as a string, '0' = unlimited
   treeStyle: 'fluffy',
   sunGlare: true,
-  startSpots: {},        // your own start positions per field (main.js savedStart)
+  startSpots: {},        // your saved start position per field (main.js savedSpot; X saves it)
   mist: 'seasonal',      // 'seasonal' (spring and autumn mornings) | 'off' | 'light' | 'thick'  (src/world/mist.js)
   snow: 'seasonal',      // 'seasonal' (some winter days) | 'off' | 'dusting' | 'lying' | 'light' | 'heavy'  (src/world/snow.js)
   lowCloud: 'seasonal',  // 'seasonal' | 'off' | 'broken' | 'overcast'        // looking into the sun washes the picture out (src/view/glare.js)

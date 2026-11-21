@@ -142,10 +142,10 @@ export class Panel {
           sub('Camera'),
           this.#pick('cameraMode', CAMERA_LABELS),
           sub('Start'),
-          this.#pick('startMode', { runway: 'On the runway', air: 'In the air (30 m)' }),
           el('div', { class: 'pair' },
-            el('button', { title: 'Take-offs from the ground start where the model now sits (land and stop first); a hand launch where you last walked to and turned. Saved for this field in this browser.', onclick: () => this.opts.onStartHere() }, 'Start here next time'),
-            el('button', { onclick: () => { this.opts.onDefaultStart(); this.opts.onClose(); } }, 'Default start')),
+            this.#pick('startMode', { runway: 'On the runway', air: 'In the air (30 m)', saved: 'Saved position' }),
+            el('button', { title: 'Save where the aircraft is now (on the ground, in the air, or in your hand) as the start for this field, in this browser', onclick: () => this.opts.onSavePosition() }, 'Save position (X)')),
+          el('p', { class: 'hint' }, this.opts.savedSpotText?.() ?? ''),
           sub('Volume'),
           this.#range('', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`))),
     ];
