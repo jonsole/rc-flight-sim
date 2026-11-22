@@ -148,7 +148,9 @@ about as much of every model. Trees snag the net, and a hard enough pull
 snaps the cord. Best times are kept with the other challenges'. While the
 challenge is on, *Menu → Tuning* has an *Insect net* group: net size, drag
 factor and cord length, per model and difficulty (best times only count with
-the standard net). The course's height, loop size and number of circuits
+the standard net). The net's bag is drawn as soft fabric
+(`src/view/netCloth.js`): it billows and flutters in the airflow, swings
+about behind, and crumples in a heap when dropped. The course's height, loop size and number of circuits
 are `COURSE` in `src/sim/net.js`; the drawing is in `src/view/netView.js`.
 
 ## Flying fields
