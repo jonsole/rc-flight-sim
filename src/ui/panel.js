@@ -336,7 +336,7 @@ export class Panel {
       const n = g.items.filter((t) => values[t.key] != null).length;
       const det = el('details', { class: 'tune-group', open: !!open[g.name] },
         el('summary', {}, g.name, n ? el('span', { class: 'tune-count' }, `${n} changed`) : null),
-        ...g.items.map(row),
+        ...g.items.map((t) => row(t)), // (not map(row): its index and array would be taken as where to save)
         after[g.name]?.());
       det.addEventListener('toggle', () => {
         open[g.name] = det.open;
