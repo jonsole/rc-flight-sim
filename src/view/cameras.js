@@ -118,9 +118,14 @@ export class CameraRig {
       cam.near = 0.02;
     } else {
       // Chase: behind and above along the flight path.
+      // (Further back and up when towing, to see what's on the end of the
+      // cord: this.towReach, metres behind the tail.)
       const c = this.views.chase;
-      const back = new Vector3(-c.back, c.up, 0).applyQuaternion(aircraft.orientation);
-      back.y = Math.max(back.y, c.up * 0.7);
+      const reach = this.towReach ?? 0;
+      const cb = Math.max(c.back, reach > 0 ? reach * 1.2 + 1.5 : 0);
+      const cu = c.up + reach * 0.3;
+      const back = new Vector3(-cb, cu, 0).applyQuaternion(aircraft.orientation);
+      back.y = Math.max(back.y, cu * 0.7);
       const target = _v.copy(aircraft.position).add(back);
       if (!this.chaseInit) {
         this.chasePos.copy(target);

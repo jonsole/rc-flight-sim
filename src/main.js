@@ -238,6 +238,7 @@ function retune() {
   for (const k of ['position', 'velocity', 'orientation', 'omega']) aircraft[k].copy(old[k]);
   for (const k of ['controls', 'servo', 'assistMode', 'throttleActual', 'held', 'crashed', 'crashReason', 'propBroken', 'battery', 'time']) aircraft[k] = old[k];
   for (const part of old.broken) aircraft.broken.add(part);
+  aircraft.tow = old.tow; // (the insect net, still on)
   // A different prop: show it.
   if (JSON.stringify(aircraft.def.motor.prop) !== oldProp) replaceModel();
 }
@@ -255,6 +256,8 @@ const challenges = new Challenges({
   sound,
   root: document.getElementById('challenge'),
   marker: document.getElementById('challenge-mark'),
+  aircraftId: () => entry.id,
+  aircraftDef: () => entry.def,
   // The streamer planes: the loaded models, yours last.
   aircraftTypes: () => {
     const loaded = AIRCRAFT.filter((a) => a.fileScene && a.id !== entry.id);
@@ -673,6 +676,7 @@ const panel = new Panel(document.getElementById('panel'), {
   savedSpotText: () => savedSpotText(),
   aircraftEntry: () => entry,
   onRetune: () => retune(),
+  onNetRetune: () => challenges.restart(), // (the insect net changed: a new one, and start again)
   onClose: () => setMenu(false),
 });
 
@@ -938,7 +942,11 @@ function frame(now) {
   const cockpitCam = fpv && settings.fpvMount === 'cockpit';
   model.setPilotVisible(!cockpitCam, cockpitCam ? entry.views.cockpit : null);
   if (editor.active) editor.update(dt);
-  else rig.update(aircraft, dt);
+  else {
+    // Towing (the insect net): the chase camera stands back to see it.
+    rig.towReach = aircraft.tow && !aircraft.tow.snapped ? aircraft.tow.cordLength + aircraft.tow.diameter * 2 : 0;
+    rig.update(aircraft, dt);
+  }
   if (googleTiles?.visible) googleTiles.update(rig.camera, renderer, dt);
   // Other players (after the camera has moved, so their labels line up).
   rig.camera.updateMatrixWorld();

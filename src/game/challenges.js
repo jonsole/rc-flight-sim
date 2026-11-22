@@ -1,5 +1,5 @@
 // Challenges (Menu → Challenges): hoops, balloon burst, limbo, a pylon race,
-// streamer cutting and spot landing, laid out in the most open part of the field
+// streamer cutting, spot landing and the insect net tow (src/game/netTow.js), laid out in the most open part of the field
 // (src/game/arena.js). This runs the chosen course (src/game/courses.js):
 // its clock, best scores (kept in this browser per field), the HUD, the
 // marker pointing at what's next, and the sounds. Pressing R (reset)
@@ -12,6 +12,7 @@
 import { Vector3 } from 'three';
 import { findArena } from './arena.js';
 import { COURSES, Streamers, formatTime, LEVELS } from './courses.js';
+import { NetTowCourse } from './netTow.js';
 import { Ribbon, RibbonMesh } from './ribbon.js';
 import { bodyShape } from './geom.js';
 import { CourseShadow } from './shadow.js';
@@ -33,7 +34,7 @@ export function bestKey(mode, level, field, minutes) {
 }
 
 export const MODES = { none: { title: 'Free flying', about: 'No challenge: just fly.' } };
-for (const C of COURSES) MODES[C.id] = { title: C.title, about: C.about, Course: C };
+for (const C of [...COURSES, NetTowCourse]) MODES[C.id] = { title: C.title, about: C.about, Course: C };
 
 const BEST_KEY = 'rcsim.best.v1';
 const _v = new Vector3();
@@ -227,6 +228,9 @@ export class Challenges {
       minutes: this.minutes,
       droneTypes: this.o.aircraftTypes?.() ?? [],
       makeProxy: this.o.makeProxy,
+      // (The insect net: sized for the model, with its own tuning.)
+      aircraftId: this.o.aircraftId?.(),
+      aircraftDef: this.o.aircraftDef?.(),
     };
     this.course = new M.Course(env);
     this.o.scene.add(this.course.group);

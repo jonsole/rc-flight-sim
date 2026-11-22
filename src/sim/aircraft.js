@@ -155,6 +155,8 @@ export class Aircraft {
     this.foliageSpeed = 0;
     /** In the pilot's hand before a hand launch: { pos, q } or null. */
     this.held = null;
+    /** Towed on a cord from the tail (the insect net, src/sim/net.js), or null. */
+    this.tow = null;
 
     // Telemetry (updated each step)
     this.airspeed = 0;
@@ -480,6 +482,8 @@ export class Aircraft {
     this.#groundContacts(fWorld, _m, q, _qi);
     this.#snowDrag(fWorld, _m, q, _qi);
     if (this.env.obstacles) this.#obstacleContacts(fWorld, _m, q, _qi);
+    // Anything towed on a cord (the insect net, src/sim/net.js) pulls on the tail.
+    if (this.tow) this.tow.step(this, dt, fWorld, _m, q, _qi);
 
     // --- Integrate (semi-implicit Euler) ----------------------------------
     this.velocity.addScaledVector(fWorld, dt / this.mass);

@@ -10,6 +10,7 @@ import { listedLocations, LOCATION } from '../sim/location.js';
 import { QUALITY, DISTANCES } from '../world/quality.js';
 import { googleSessions } from '../world/googleTiles.js';
 import { MODES, LEVELS, MINUTES, loadBest, bestKey } from '../game/challenges.js';
+import { netTunables, loadNetTuning, saveNetTuning } from '../sim/net.js';
 import { AircraftPreview } from './preview.js';
 import { tunablesFor, loadTuning, saveTuning, tunedDef, powerSummary } from '../sim/tuning.js';
 
@@ -240,22 +241,24 @@ export class Panel {
       const b2 = this.root.querySelector('.body');
       if (b2) b2.scrollTop = top;
     };
-    const setValue = (t, v) => {
+    const setValue = (t, v, vals = values, save = commit) => {
       const nv = Math.min(t.max, Math.max(t.min, Math.round(v / t.step) * t.step));
-      if (Math.abs(nv - t.dflt) < t.step / 2) delete values[t.key];
-      else values[t.key] = Number(nv.toFixed(6));
-      commit();
+      if (Math.abs(nv - t.dflt) < t.step / 2) delete vals[t.key];
+      else vals[t.key] = Number(nv.toFixed(6));
+      save();
     };
     const tuned = tunedDef(entry.def, values);
 
-    const row = (t) => {
-      const v = values[t.key] ?? t.dflt;
-      const changed = values[t.key] != null;
+    // (A row for one setting, kept in `vals` and saved by `save`: the model's
+    // tuning, or the insect net's.)
+    const row = (t, vals = values, save = commit) => {
+      const v = vals[t.key] ?? t.dflt;
+      const changed = vals[t.key] != null;
       const show = el('span', { class: 'val' }, fmt(t, v));
       const note = t.note ? el('small', { class: 'tune-note' }, t.note(tuned, v)) : null;
       // A setting with named choices is a drop-down rather than a slider.
       if (t.choices) {
-        const sel = el('select', { class: 'tune-choice', onchange: (e) => setValue(t, Number(e.target.value)) },
+        const sel = el('select', { class: 'tune-choice', onchange: (e) => setValue(t, Number(e.target.value), vals, save) },
           Object.entries(t.choices).map(([k, label]) => el('option', { value: k, selected: Number(k) === Math.round(v) }, label)));
         return el('div', { class: changed ? 'tune-row tuned' : 'tune-row' },
           el('div', { class: 'tune-head' },
@@ -263,7 +266,7 @@ export class Panel {
             el('small', {}, `default ${fmt(t, t.dflt)}`),
             el('button', {
               class: 'tune-reset', title: `Back to ${fmt(t, t.dflt)}`, disabled: !changed,
-              onclick: () => { delete values[t.key]; commit(); },
+              onclick: () => { delete vals[t.key]; save(); },
             }, '↺')),
           el('div', { class: 'tune-ctl' }, sel));
       }
@@ -273,16 +276,16 @@ export class Panel {
           show.textContent = fmt(t, e.target.value);
           if (note) note.textContent = t.note(tuned, Number(e.target.value));
         },
-        onchange: (e) => setValue(t, Number(e.target.value)),
+        onchange: (e) => setValue(t, Number(e.target.value), vals, save),
       });
-      const btn = (label, d, title) => el('button', { class: 'tune-step', title, onclick: (e) => { e.preventDefault(); setValue(t, v + d * t.step); } }, label);
+      const btn = (label, d, title) => el('button', { class: 'tune-step', title, onclick: (e) => { e.preventDefault(); setValue(t, v + d * t.step, vals, save); } }, label);
       return el('div', { class: changed ? 'tune-row tuned' : 'tune-row' },
         el('div', { class: 'tune-head' },
           el('span', { class: 'tune-lbl' }, t.label),
           el('small', {}, `default ${fmt(t, t.dflt)}`),
           el('button', {
             class: 'tune-reset', title: `Back to ${fmt(t, t.dflt)}`, disabled: !changed,
-            onclick: () => { delete values[t.key]; commit(); },
+            onclick: () => { delete vals[t.key]; save(); },
           }, '↺')),
         el('div', { class: 'tune-ctl' }, btn('−', -1, 'Less'), input, btn('+', 1, 'More'), show),
         note);
@@ -305,6 +308,30 @@ export class Panel {
     const out = [
       el('p', { class: 'hint' }, `${entry.name}. Changes apply straight away, in flight too, and are saved in this browser for this model. Export them to send in and have them built in.`),
     ];
+    // The insect net, while that challenge is on: per model and difficulty.
+    if (this.settings.challenge === 'net') {
+      const level = LEVELS[this.settings.challengeLevel] ? this.settings.challengeLevel : 'normal';
+      const netVals = loadNetTuning(entry.id, level);
+      const saveNet = () => {
+        saveNetTuning(entry.id, level, netVals);
+        this.opts.onNetRetune?.();
+        const body = this.root.querySelector('.body');
+        const top = body?.scrollTop ?? 0;
+        this.render();
+        const b2 = this.root.querySelector('.body');
+        if (b2) b2.scrollTop = top;
+      };
+      const n = Object.keys(netVals).length;
+      const det = el('details', { class: 'tune-group', open: open.net !== false },
+        el('summary', {}, `Insect net (${LEVELS[level].toLowerCase()})`, n ? el('span', { class: 'tune-count' }, `${n} changed`) : null),
+        ...netTunables(entry.def, level).map((t) => row(t, netVals, saveNet)),
+        el('p', { class: 'hint' }, 'For the insect net tow challenge, on this model and difficulty. Changing the net starts the challenge again; best times only count with the standard net.'));
+      det.addEventListener('toggle', () => {
+        open.net = det.open;
+        saveOpen();
+      });
+      out.push(det);
+    }
     for (const g of groups) {
       const n = g.items.filter((t) => values[t.key] != null).length;
       const det = el('details', { class: 'tune-group', open: !!open[g.name] },
