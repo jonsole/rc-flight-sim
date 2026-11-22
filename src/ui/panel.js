@@ -8,6 +8,7 @@ import { LOCATIONS, LOCATION } from '../sim/location.js';
 import { QUALITY, DISTANCES } from '../world/quality.js';
 import { googleSessions } from '../world/googleTiles.js';
 import { tunablesFor, loadTuning, saveTuning, tunedDef, powerSummary } from '../sim/tuning.js';
+import { DIFFICULTIES, netTunables, loadNetTuning, saveNetTuning, bestTime } from '../sim/net.js';
 
 const CH_LABEL = { roll: 'Aileron (roll)', pitch: 'Elevator (pitch)', yaw: 'Rudder (yaw)', throttle: 'Throttle' };
 
@@ -104,6 +105,11 @@ export class Panel {
       el('p', { class: 'hint' }, `${LOCATION.summary} Changing field reloads the simulator.`),
       this.#select('Flight assist', 'assist', { off: 'Off (manual)', as3x: 'AS3X (gyro stabilised)', safe: 'SAFE (self-levelling, angle limits)' }),
       this.#select('Start position', 'startMode', { runway: 'On the runway', air: 'In the air (30 m)' }),
+      this.#select('Challenge', 'challenge', { off: 'None (free flying)', net: 'Insect net tow' }),
+      ...(this.settings.challenge === 'net' ? [
+        this.#select('Difficulty', 'netDifficulty', Object.fromEntries(Object.entries(DIFFICULTIES).map(([k, d]) => [k, d.name]))),
+        el('p', { class: 'hint' }, this.#netHint()),
+      ] : []),
       this.#select('Camera', 'cameraMode', CAMERA_LABELS),
       el('div', { class: 'row' }, el('button', { onclick: () => { this.opts.onReset(); this.opts.onClose(); } }, 'Reset aircraft (R)')),
       el('div', { class: 'row' },
@@ -115,6 +121,13 @@ export class Panel {
       this.#range('Volume', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.#check('Show HUD / OSD (H)', 'showHud'),
     ];
+  }
+
+  #netHint() {
+    const id = this.settings.aircraft;
+    const best = bestTime(id, this.settings.netDifficulty);
+    const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+    return `Tow a drag net on a cord from the tail and fly it through the swarms of insects (follow the yellow marker). The net starts folded and opens in the airflow, and drags hard: the harder the difficulty, the bigger the net. Fill it to finish; a tree will snag it. Net size, drag and cord length are under Tuning. ${best != null ? `Your best with the ${getAircraft(id).name} on this difficulty: ${fmt(best)}.` : ''}`;
   }
 
   /** Tuning: the flight settings of the model you're flying (src/sim/tuning.js), in collapsible groups. */
@@ -147,22 +160,24 @@ export class Panel {
       const b2 = this.root.querySelector('.body');
       if (b2) b2.scrollTop = top;
     };
-    const setValue = (t, v) => {
+    const setValue = (t, v, vals = values, save = commit) => {
       const nv = Math.min(t.max, Math.max(t.min, Math.round(v / t.step) * t.step));
-      if (Math.abs(nv - t.dflt) < t.step / 2) delete values[t.key];
-      else values[t.key] = Number(nv.toFixed(6));
-      commit();
+      if (Math.abs(nv - t.dflt) < t.step / 2) delete vals[t.key];
+      else vals[t.key] = Number(nv.toFixed(6));
+      save();
     };
     const tuned = tunedDef(entry.def, values);
 
-    const row = (t) => {
-      const v = values[t.key] ?? t.dflt;
-      const changed = values[t.key] != null;
+    // (A row for one setting, kept in `vals` and saved by `save`: the model's
+    // tuning, or the challenge's net.)
+    const row = (t, vals = values, save = commit) => {
+      const v = vals[t.key] ?? t.dflt;
+      const changed = vals[t.key] != null;
       const show = el('span', { class: 'val' }, fmt(t, v));
       const note = t.note ? el('small', { class: 'tune-note' }, t.note(tuned, v)) : null;
       // A setting with named choices is a drop-down rather than a slider.
       if (t.choices) {
-        const sel = el('select', { class: 'tune-choice', onchange: (e) => setValue(t, Number(e.target.value)) },
+        const sel = el('select', { class: 'tune-choice', onchange: (e) => setValue(t, Number(e.target.value), vals, save) },
           Object.entries(t.choices).map(([k, label]) => el('option', { value: k, selected: Number(k) === Math.round(v) }, label)));
         return el('div', { class: changed ? 'tune-row tuned' : 'tune-row' },
           el('div', { class: 'tune-head' },
@@ -170,7 +185,7 @@ export class Panel {
             el('small', {}, `default ${fmt(t, t.dflt)}`),
             el('button', {
               class: 'tune-reset', title: `Back to ${fmt(t, t.dflt)}`, disabled: !changed,
-              onclick: () => { delete values[t.key]; commit(); },
+              onclick: () => { delete vals[t.key]; save(); },
             }, '↺')),
           el('div', { class: 'tune-ctl' }, sel));
       }
@@ -180,16 +195,16 @@ export class Panel {
           show.textContent = fmt(t, e.target.value);
           if (note) note.textContent = t.note(tuned, Number(e.target.value));
         },
-        onchange: (e) => setValue(t, Number(e.target.value)),
+        onchange: (e) => setValue(t, Number(e.target.value), vals, save),
       });
-      const btn = (label, d, title) => el('button', { class: 'tune-step', title, onclick: (e) => { e.preventDefault(); setValue(t, v + d * t.step); } }, label);
+      const btn = (label, d, title) => el('button', { class: 'tune-step', title, onclick: (e) => { e.preventDefault(); setValue(t, v + d * t.step, vals, save); } }, label);
       return el('div', { class: changed ? 'tune-row tuned' : 'tune-row' },
         el('div', { class: 'tune-head' },
           el('span', { class: 'tune-lbl' }, t.label),
           el('small', {}, `default ${fmt(t, t.dflt)}`),
           el('button', {
             class: 'tune-reset', title: `Back to ${fmt(t, t.dflt)}`, disabled: !changed,
-            onclick: () => { delete values[t.key]; commit(); },
+            onclick: () => { delete vals[t.key]; save(); },
           }, '↺')),
         el('div', { class: 'tune-ctl' }, btn('−', -1, 'Less'), input, btn('+', 1, 'More'), show),
         note);
@@ -212,6 +227,30 @@ export class Panel {
     const out = [
       el('p', { class: 'hint' }, `${entry.name}. Changes apply straight away, in flight too, and are saved in this browser for this model. Export them to send in and have them built in.`),
     ];
+    // The insect net, while that challenge is on: per model and difficulty.
+    if (this.settings.challenge === 'net') {
+      const diff = this.settings.netDifficulty;
+      const netVals = loadNetTuning(entry.id, diff);
+      const saveNet = () => {
+        saveNetTuning(entry.id, diff, netVals);
+        this.opts.onNetRetune();
+        const body = this.root.querySelector('.body');
+        const top = body?.scrollTop ?? 0;
+        this.render();
+        const b2 = this.root.querySelector('.body');
+        if (b2) b2.scrollTop = top;
+      };
+      const n = Object.keys(netVals).length;
+      const det = el('details', { class: 'tune-group', open: open.net !== false },
+        el('summary', {}, `Insect net (${DIFFICULTIES[diff]?.short ?? diff})`, n ? el('span', { class: 'tune-count' }, `${n} changed`) : null),
+        ...netTunables(entry.def, diff).map((t) => row(t, netVals, saveNet)),
+        el('p', { class: 'hint' }, 'For the insect-net challenge, on this model and difficulty. Changing the net starts the challenge again; best times only count with the standard net.'));
+      det.addEventListener('toggle', () => {
+        open.net = det.open;
+        saveOpen();
+      });
+      out.push(det);
+    }
     for (const g of groups) {
       const n = g.items.filter((t) => values[t.key] != null).length;
       const det = el('details', { class: 'tune-group', open: !!open[g.name] },
@@ -457,6 +496,12 @@ export class Panel {
         el('li', {}, 'Flight assist mirrors E-flite BNF receivers: AS3X damps gusts and wobbles; SAFE also levels the wings when you let go and limits bank and pitch. Switch modes in flight with G or an assigned transmitter switch.'),
         el('li', {}, 'Coordinate turns with a little rudder; rudder alone also rolls it, slowly.'),
         el('li', {}, 'Low and slow in a turn will drop a wing. Unload (release elevator) to recover.')),
+      el('h3', {}, 'Insect-net challenge'),
+      el('ul', {},
+        el('li', {}, 'Choose it under Flying → Challenge. Take off gently: the folded net drags along the grass until it lifts and opens.'),
+        el('li', {}, 'Open, the net drags hard: keep the power up and the speed above the stall, and turn wide and gently.'),
+        el('li', {}, 'The net hangs a few metres behind and below: fly a little above a swarm so the net goes through the middle. Follow the yellow marker to the nearest one.'),
+        el('li', {}, 'Keep the net clear of trees: it snags, and a hard pull snaps the cord.')),
       el('h3', {}, 'Views'),
       el('ul', {},
         el('li', {}, 'Line of sight: you stand at the flight line like a real RC pilot. Auto-zoom keeps the model visible at distance.'),

@@ -32,6 +32,8 @@ import { SunGlare } from './view/glare.js';
 import { weatherFor } from './world/mist.js';
 import { loadEdits } from './sim/edits.js';
 import { Editor } from './editor/editor.js';
+import { NetTow, InsectChallenge, netConfig, recordTime, bestTime, DIFFICULTIES } from './sim/net.js';
+import { NetView } from './view/netView.js';
 
 // The version running: the GitHub commit it was built from, and its date.
 {
@@ -174,6 +176,11 @@ let model = null; // 3D model
 
 /** Swap in another aircraft: new flight model, 3D model and camera mounts. */
 const debris = new Debris(world.scene, ground);
+// The insect-net challenge (Menu → Flying → Challenge; src/sim/net.js).
+const netView = new NetView(world.scene, document.getElementById('swarm-markers'));
+const challengeHud = document.getElementById('challenge-hud');
+let challenge = null;
+let challengeCfg = null;
 
 /** (Re)build the 3D model, clearing any parts that broke off. */
 function replaceModel() {
@@ -216,6 +223,7 @@ function retune() {
   for (const k of ['position', 'velocity', 'orientation', 'omega']) aircraft[k].copy(old[k]);
   for (const k of ['controls', 'servo', 'assistMode', 'throttleActual', 'held', 'crashed', 'crashReason', 'propBroken', 'battery', 'time']) aircraft[k] = old[k];
   for (const part of old.broken) aircraft.broken.add(part);
+  aircraft.tow = old.tow;
   // A different prop: show it.
   if (JSON.stringify(aircraft.def.motor.prop) !== oldProp) replaceModel();
 }
@@ -411,6 +419,69 @@ function resetAircraft() {
   osd.reset();
   rig.chaseInit = false;
   rig.losInit = false;
+  startChallenge();
+}
+
+/** Room for a swarm of insects here: nothing solid or leafy within a few metres. */
+function clearForSwarm(x, y, z) {
+  const near = obstacles.near(x, z, 4);
+  for (const [dx, dy, dz] of [[0, 0, 0], [3, 0, 0], [-3, 0, 0], [0, 0, 3], [0, 0, -3], [0, 2, 0], [0, -2, 0]]) {
+    for (const s of near) if (Obstacles.test(s, x + dx, y + dy, z + dz)) return false;
+  }
+  return true;
+}
+
+/** (Re)start the challenge chosen in the menu, if any, from the aircraft's start. */
+function startChallenge() {
+  if (settings.challenge !== 'net') {
+    aircraft.tow = null;
+    challenge = null;
+    netView.set(null);
+    challengeHud.style.display = 'none';
+    return;
+  }
+  challengeCfg = netConfig(entry.def, entry.id, settings.netDifficulty);
+  const net = new NetTow(challengeCfg, aircraft);
+  aircraft.tow = net;
+  net.place(aircraft);
+  const [cx, cz] = pilotSpot();
+  challenge = new InsectChallenge(net, { ground, center: { x: cx, z: cz }, clear: clearForSwarm });
+  netView.set(challenge);
+  challengeHud.style.display = 'block';
+}
+
+/** The net's tuning changed (Menu → Tuning): a new net where the old one is, and the challenge starts again. */
+function retuneNet() {
+  if (!challenge) return;
+  const old = challenge.net;
+  startChallenge();
+  const net = challenge.net;
+  net.position.copy(old.position);
+  net.velocity.copy(old.velocity);
+  net.open = old.open;
+  net.snapped = old.snapped;
+}
+
+const fmtTime = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+let hudText = '';
+/** The challenge's line at the top of the screen. */
+function updateChallengeHud() {
+  if (!challenge) return;
+  const c = challenge;
+  const net = c.net;
+  let status;
+  if (c.done) status = `<span class="win">Net full in ${fmtTime(c.time)}!</span> R to go again`;
+  else if (net.snapped) status = '<span class="warn">Cord snapped: net lost.</span> R to retry';
+  else if (aircraft.crashed) status = '<span class="warn">Crashed.</span> R to retry';
+  else if (net.snagged) status = '<span class="warn">Net caught in a tree!</span>';
+  else if (!c.started) status = 'Take off and find the swarms';
+  else status = `${fmtTime(c.time)} · net ${Math.round(net.open * 100)}% open`;
+  const frac = c.caught / c.target;
+  const text = `Insects ${Math.floor(c.caught)} / ${c.target}<span class="bar"><span class="fill" style="width:${(frac * 100).toFixed(1)}%"></span></span>${status}`;
+  if (text !== hudText) {
+    hudText = text;
+    challengeHud.innerHTML = text;
+  }
 }
 
 /** User picked a different model: load it with its default flight assist. */
@@ -551,6 +622,10 @@ const panel = new Panel(document.getElementById('panel'), {
     }
     if (key === 'scenery' || key === 'googleKey') applyScenery();
     if (key === 'startMode') resetAircraft();
+    if (key === 'challenge' || key === 'netDifficulty') {
+      resetAircraft();
+      panel.render();
+    }
   },
   onReset: resetAircraft,
   onEditScenery: () => openEditor(),
@@ -558,6 +633,7 @@ const panel = new Panel(document.getElementById('panel'), {
   onDefaultStart: () => defaultStart(),
   aircraftEntry: () => entry,
   onRetune: () => retune(),
+  onNetRetune: () => retuneNet(),
   onClose: () => setMenu(false),
 });
 
@@ -758,6 +834,21 @@ function frame(now) {
     }
     debris.update(dt);
     osd.update(dt, aircraft);
+    if (challenge) {
+      // The clock starts once it's moving, and stops on a crash or a lost net.
+      if (!aircraft.held && aircraft.velocity.length() > 2) challenge.started = true;
+      const wasDone = challenge.done;
+      challenge.update(aircraft.crashed || challenge.net.snapped ? 0 : dt);
+      if (challenge.done && !wasDone) {
+        const name = DIFFICULTIES[settings.netDifficulty]?.name ?? settings.netDifficulty;
+        if (challengeCfg.tuned) toast(`Net full in ${fmtTime(challenge.time)} (tuned net: not counted as a best)`);
+        else {
+          const prev = bestTime(entry.id, settings.netDifficulty);
+          if (recordTime(entry.id, settings.netDifficulty, challenge.time)) toast(`New best for ${name}: ${fmtTime(challenge.time)}${prev != null ? ` (was ${fmtTime(prev)})` : ''}`);
+          else toast(`Net full in ${fmtTime(challenge.time)} (best ${fmtTime(prev)})`);
+        }
+      }
+    }
   }
   // Following the clock: move the sun along every 20 s.
   if (settings.useClock && (clockTimer -= dt) <= 0) {
@@ -774,6 +865,7 @@ function frame(now) {
 
   const fpv = rig.mode === 'fpv';
   model.setPilotVisible(!(fpv && settings.fpvMount === 'cockpit'));
+  rig.towReach = challenge && !challenge.net.snapped ? challenge.net.cordLength + challenge.net.diameter * 2 : 0;
   if (editor.active) editor.update(dt);
   else rig.update(aircraft, dt);
   if (googleTiles?.visible) googleTiles.update(rig.camera, renderer, dt);
@@ -815,6 +907,12 @@ function frame(now) {
       rig.camera.updateProjectionMatrix();
     }
   }
+  if (challenge && !editor.active) {
+    netView.update(aircraft, rig.camera, now / 1000, window.innerWidth, window.innerHeight);
+    updateChallengeHud();
+  }
+  netView.marker.style.visibility = editor.active || !settings.showHud ? 'hidden' : '';
+  challengeHud.style.visibility = editor.active ? 'hidden' : '';
   glare.update(rig.camera, world, obstacles, dt, settings.sunGlare !== false && !editor?.active);
   renderer.render(world.scene, rig.camera);
   if (editor.active) osd.clear();
@@ -841,6 +939,9 @@ window.sim = {
   },
   get entry() {
     return entry;
+  },
+  get challenge() {
+    return challenge;
   },
   world,
   renderer,

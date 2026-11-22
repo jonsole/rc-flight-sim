@@ -126,6 +126,23 @@ your browser per model (↺ puts one back, *Reset all* the lot). *Export*
 saves them to a file (send it in to have them built into the model) and
 *Import* loads one.
 
+## Insect-net challenge
+
+*Menu → Flying → Challenge → Insect net tow* ties a drag net on a cord to
+the model's tail. The net starts folded (on the grass behind the model, or
+trailing if you start in the air) and opens in the airflow; open, it drags
+hard. Fly it through the swarms of insects around the field (a yellow marker
+points to the nearest) until it's full. The difficulty is the net's size:
+its drag at 10 m/s is 12% (easy), 22% (medium) or 35% (hard) of the model's
+static thrust, so each difficulty asks about as much of every model, and the
+number of insects to catch grows with the net. A swarm thins as you catch
+from it and disperses after about three good passes. Trees snag the net, and
+a hard enough pull snaps the cord. Your best time is kept per model and
+difficulty. While the challenge is on, *Menu → Tuning* has an *Insect net*
+group: net size, drag factor and cord length, per model and difficulty
+(best times only count with the standard net). The physics is in
+`src/sim/net.js`, the drawing in `src/view/netView.js`.
+
 ## Flying fields
 
 Pick the field on the start screen or under *Menu → Flying → Flying field*

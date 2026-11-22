@@ -237,3 +237,19 @@ body.touch #splash .keys-only { display: none; }
 .tune-note { display: block; color: #8a93a0; margin-top: 4px; text-align: right; }
 .tune-group > .hint { padding-bottom: 10px; }
 .tune-files { margin-top: 10px; gap: 8px; }
+/* Insect-net challenge (src/sim/net.js, src/view/netView.js) */
+#challenge-hud {
+  position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5; pointer-events: none; display: none;
+  padding: 4px 12px; border-radius: 6px; background: rgba(20,24,28,0.6); color: #fff; font: 600 13px/1.5 system-ui, sans-serif;
+  text-align: center; white-space: nowrap;
+}
+#challenge-hud .bar { display: inline-block; vertical-align: middle; width: 90px; height: 8px; margin: 0 6px; min-width: 0; }
+#challenge-hud .bar .fill { background: #8c6; }
+#challenge-hud .warn { color: #f8b040; }
+#challenge-hud .win { color: #9fe07f; }
+#swarm-markers { position: fixed; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; }
+.swarm-marker { position: absolute; left: 0; top: 0; color: #ffe27a; font: 600 11px/1 system-ui, sans-serif; text-shadow: 0 0 3px #000; white-space: nowrap; }
+.swarm-marker.ring { padding-top: 26px; margin: -16px 0 0 -16px; width: 32px; text-align: center; }
+.swarm-marker.ring::before { content: ''; position: absolute; left: 0; top: 0; width: 28px; height: 28px; border: 2px solid #ffe27a; border-radius: 50%; box-shadow: 0 0 3px #000; }
+.swarm-marker.edge { margin: -8px 0 0 -20px; display: flex; align-items: center; gap: 3px; }
+.swarm-marker.edge span { display: inline-block; font-size: 14px; }
