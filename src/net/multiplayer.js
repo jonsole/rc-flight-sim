@@ -17,6 +17,7 @@ export class Multiplayer {
     this.sendTimer = 0;
     this.onEvent = () => {}; // (type, peer) for join/leave/info/status
     this.wantClose = false;
+    this.extra = null; // () => more fields for each state sent
   }
 
   get connected() {
@@ -35,7 +36,7 @@ export class Multiplayer {
     this.name = name;
     this.aircraft = aircraft;
     if (!server) {
-      this.#setStatus('error', 'No multiplayer server configured.');
+      this.#setStatus('error', 'No server set: enter one under Advanced → Server.');
       return;
     }
     let url;
@@ -172,6 +173,10 @@ export class Multiplayer {
       case 's': {
         const p = this.peers.get(m.id);
         if (p && Array.isArray(m.p) && Array.isArray(m.q)) p.buf.push(m.ts / 1000, now, m);
+        // They cut one of our streamers (src/game/challenges.js).
+        if (p && Array.isArray(m.cut)) {
+          for (const c of m.cut) if (Array.isArray(c) && c[0] === this.myId) this.onEvent('cut', p, { side: c[1] ? 1 : 0, count: Number(c[2]) || 0 });
+        }
         break;
       }
       default:
@@ -191,7 +196,10 @@ export class Multiplayer {
     if (this.sendTimer > 0) return;
     this.sendTimer += 1 / SEND_HZ;
     if (this.sendTimer < 0) this.sendTimer = 0;
-    this.ws.send(JSON.stringify(encodeState(aircraft)));
+    const msg = encodeState(aircraft);
+    // Anything else to go with it (the challenges' streamers).
+    if (this.extra) Object.assign(msg, this.extra());
+    this.ws.send(JSON.stringify(msg));
   }
 }
 

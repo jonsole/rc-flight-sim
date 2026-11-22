@@ -14,6 +14,7 @@
 // trees and buildings are the baked LIDAR ones.
 
 import { heightAt } from './terrain.js';
+import { lakeQ, LAKE } from './lake.js';
 import { CROWN_SEEDS, crownShape, lumpScale, crownOf } from './treeShapes.js';
 import { trunkThickness, coniferBase, coniferWidth } from '../world/species.js';
 import { LOCATION, clubAngle, clubToWorld, inMown } from './location.js';
@@ -62,7 +63,8 @@ function realTrees() {
   const L = LOCATION.layout;
   const t = d.trees;
   const raw = [];
-  for (let i = 0; i < t.length; i += 4) raw.push({ x: t[i], z: t[i + 1], h: t[i + 2], r: t[i + 3] });
+  // (`treeKinds`, where baked: each one's kind seen from above, c conifer.)
+  for (let i = 0; i < t.length; i += 4) raw.push({ x: t[i], z: t[i + 1], h: t[i + 2], r: t[i + 3], kind: d.treeKinds?.[i / 4] });
   for (const g of L.treeGrowth ?? []) {
     for (const t of raw) {
       if (t.x < g.x0 || t.x > g.x1 || t.z < g.z0 || t.z > g.z1) continue;
@@ -74,18 +76,21 @@ function realTrees() {
   for (const group of L.trees ?? []) {
     for (const [x, z] of group.at) raw.push({ x, z, h: group.h * (0.9 + rand() * 0.2), r: group.r * (0.9 + rand() * 0.2), species: group.species });
   }
-  for (const { x, z, h, r, species } of raw) {
+  // Not trees: things the survey saw standing there (the site's tents).
+  const clear = L.noTrees ?? [];
+  for (const { x, z, h, r, species, kind } of raw.filter((t) => !clear.some((c) => Math.hypot(t.x - c.x, t.z - c.z) < c.r))) {
     // Narrow for its height: probably a conifer (or a Lombardy poplar).
-    const conifer = L.conifers !== false && r < h * 0.17 && h > 8;
+    const conifer = kind ? kind === 'c' : L.conifers !== false && r < h * 0.17 && h > 8;
     const t = dressTree({ x, y: heightAt(x, z), z, h, conifer, rot: rand() * Math.PI * 2 }, rand, Math.max(1.2, r));
     // Its species, if the site says (else a natural mix: src/world/species.js).
     const area = (L.treeSpecies ?? []).find((a) => x >= a.x0 && x <= a.x1 && z >= a.z0 && z <= a.z1);
     if (!conifer && (species || area)) t.species = species ?? area.species;
     trees.push(t);
   }
-  // Clumps of woodland on the skyline, outside the baked area.
+  // Clumps of woodland on the skyline, outside the baked area (unless the
+  // site has its real country round about: its map shows the woods).
   const half = d.size / 2;
-  for (let c = 0; c < 40; c++) {
+  for (let c = 0; c < (d.far ? 0 : 40); c++) {
     const a = rand() * Math.PI * 2;
     const r = half + 150 + rand() * 1600;
     const cx = Math.cos(a) * r;
@@ -163,7 +168,11 @@ function makeTrees() {
     const h = 9 + rand() * 12;
     const conifer = rand() < 0.3;
     const rot = rand() * Math.PI * 2;
-    trees.push(dressTree({ x, y, z, h, conifer, rot }, rand));
+    const tree = dressTree({ x, y, z, h, conifer, rot }, rand);
+    // None in the lake or on its banks (src/sim/lake.js). (After drawing its
+    // numbers, so the trees elsewhere stay as they were.)
+    if (LAKE && lakeQ(x, z) < 1.45) continue;
+    trees.push(tree);
   }
   return trees;
 }
@@ -215,6 +224,8 @@ function makeBushes() {
       const size = 0.6 + rand() * 0.9;
       add(x, z, size * 1.4, size * 1.3);
     }
+    // None in the lake or on its banks (src/sim/lake.js).
+    if (LAKE) return out.filter((b) => lakeQ(b.x, b.z) >= 1.4);
   }
   return out;
 }
@@ -353,6 +364,13 @@ export class Obstacles {
     this.table = L.table;
     if (L.table) club.push({ type: 'box', name: 'the table', min: [L.table.x - 1, 0, L.table.z - 0.4], max: [L.table.x + 1, 0.78, L.table.z + 0.4] });
     for (const sh of club) this.shapes.push(clubShapeToWorld(sh));
+    // Marquees (world frame): solid walls and roof.
+    this.tents = L.tents ?? [];
+    for (const t of this.tents) {
+      const y = heightAt(t.x, t.z);
+      this.shapes.push({ type: 'cylinder', name: 'the tent', x: t.x, z: t.z, r: t.r, y0: y, y1: y + t.wall });
+      this.shapes.push({ type: 'cone', name: 'the tent', solid: true, x: t.x, z: t.z, r: t.r, y0: y + t.wall, h: t.h - t.wall });
+    }
     // Cars in the car park, nose to the field (world frame).
     this.cars = L.cars;
     for (const c of this.cars) {
@@ -372,7 +390,7 @@ export class Obstacles {
     // flying through chain link or mesh panels).
     this.fences = applyFenceEdits(L.fences ?? []).map((f) => {
       const path = f.path ?? [f.from, f.to];
-      const name = f.kind === 'panels' ? 'the temporary fence' : 'the chain-link fence';
+      const name = { panels: 'the temporary fence', net: 'the safety net' }[f.kind] ?? 'the chain-link fence';
       for (let i = 1; i < path.length; i++) {
         const [ax, az] = path[i - 1];
         const [bx, bz] = path[i];
@@ -511,7 +529,16 @@ export class Obstacles {
       case 'cone': {
         const t = (y - s.y0) / s.h;
         if (t < 0 || t > 1) return null;
-        return Math.hypot(x - s.x, z - s.z) < s.r * (1 - t) ? { soft: true } : null;
+        const dx = x - s.x;
+        const dz = z - s.z;
+        const r = Math.hypot(dx, dz);
+        const R = s.r * (1 - t);
+        if (r >= R) return null;
+        if (!s.solid) return { soft: true };
+        // (A tent's roof: out through the slope, square to it.)
+        const sl = Math.hypot(s.r, s.h);
+        const inv = r > 1e-6 ? 1 / r : 0;
+        return { depth: ((R - r) * s.h) / sl, nx: (dx * inv * s.h) / sl, ny: s.r / sl, nz: (dz * inv * s.h) / sl };
       }
       default:
         return null;

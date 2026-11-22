@@ -1,7 +1,8 @@
 // What the insect-net challenge looks like (src/sim/net.js): the cord, the
 // net streaming behind it (a fine mesh cone on a thin hoop, folded thin
-// until the air opens it), the figure-of-8 course with its gates, and an
-// on-screen marker on the next gate.
+// until the air opens it), and the figure-of-8 course with its gates. Owned
+// by the challenge's course (src/game/netTow.js); the marker on the next
+// gate is the challenges' own.
 import {
   Group, Mesh, ConeGeometry, TorusGeometry, MeshStandardMaterial, MeshBasicMaterial, CanvasTexture, RepeatWrapping, DoubleSide,
   Line, LineBasicMaterial, LineDashedMaterial, BufferGeometry, BufferAttribute, Vector3, Quaternion,
@@ -33,11 +34,12 @@ function meshTexture() {
 }
 
 export class NetView {
-  constructor(scene, markerRoot) {
-    this.scene = scene;
+  constructor(parent) {
     this.group = new Group();
     this.group.visible = false;
-    scene.add(this.group);
+    parent.add(this.group);
+    // (Not in the course's still shadow: the net moves, and the gates are high up.)
+    this.group.userData.noShadow = true;
 
     // The net: unit cone, mouth at the origin, tail along +y.
     const cone = new ConeGeometry(0.5, 1, 32, 1, true);
@@ -62,12 +64,6 @@ export class NetView {
     this.gateMat = new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false, fog: false });
     this.nextMat = new MeshBasicMaterial({ color: 0xffd23a, transparent: true, opacity: 0.9, depthWrite: false, fog: false });
     this.gates = [];
-
-    // On-screen marker: a ring on the next gate, or an arrow at the edge pointing to it.
-    this.marker = document.createElement('div');
-    this.marker.className = 'swarm-marker';
-    this.marker.style.display = 'none';
-    markerRoot.append(this.marker);
   }
 
   /** Show a challenge (or nothing: null). */
@@ -79,7 +75,6 @@ export class NetView {
       o.geometry.dispose();
     }
     this.gates = [];
-    this.marker.style.display = 'none';
     if (!challenge) return;
     const path = new BufferGeometry().setFromPoints(challenge.path);
     const line = new Line(path, new LineDashedMaterial({ color: 0xffffff, dashSize: 3, gapSize: 3, transparent: true, opacity: 0.5, fog: false }));
@@ -106,7 +101,7 @@ export class NetView {
     if (mid) mid.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), _p.subVectors(lap[4].pos, lap[2].pos).setY(0).normalize());
   }
 
-  update(aircraft, camera, t, width, height) {
+  update(aircraft, t) {
     const ch = this.challenge;
     if (!ch) return;
     const net = ch.net;
@@ -144,37 +139,6 @@ export class NetView {
       const on = g.userData.gate === next;
       g.material = on ? this.nextMat : this.gateMat;
       g.scale.setScalar(on ? 1 + 0.05 * Math.sin(t * 5) : 1);
-    }
-
-    // --- Marker on the next gate ------------------------------------------------------
-    if (!next) {
-      this.marker.style.display = 'none';
-      return;
-    }
-    _p.copy(next.pos).project(camera);
-    const behind = _p.z > 1;
-    let x = _p.x;
-    let y = _p.y;
-    if (behind) {
-      x = -x;
-      y = -y;
-    }
-    const on = !behind && Math.abs(x) < 0.95 && Math.abs(y) < 0.95;
-    const dist = Math.round(aircraft.position.distanceTo(next.pos));
-    this.marker.style.display = '';
-    if (on) {
-      this.marker.className = 'swarm-marker ring';
-      this.marker.style.transform = `translate(${((x + 1) / 2) * width}px, ${((1 - y) / 2) * height}px)`;
-      this.marker.textContent = `${dist} m`;
-    } else {
-      // Pinned to the screen's edge, pointing the way.
-      const k = 0.9 / Math.max(Math.abs(x), Math.abs(y), 1e-6);
-      const ex = x * k;
-      const ey = y * k;
-      const ang = Math.atan2(-ey, ex);
-      this.marker.className = 'swarm-marker edge';
-      this.marker.style.transform = `translate(${((ex + 1) / 2) * width}px, ${((1 - ey) / 2) * height}px)`;
-      this.marker.innerHTML = `<span style="transform: rotate(${ang}rad)">➤</span>${dist} m`;
     }
   }
 }

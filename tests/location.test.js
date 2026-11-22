@@ -91,3 +91,14 @@ describe('Barrack Field (Waterbeach)', () => {
     expect(ob.near(cx, cz, 1)).toContain(shape);
   });
 });
+
+describe('the lists of fields', () => {
+  it('leave the Club field out (unfinished), unless it is the field you are at', async () => {
+    const { listedLocations, LOCATIONS } = await import('../src/sim/location.js');
+    expect(LOCATIONS.some((l) => l.id === 'home')).toBe(true); // still there for ?field=home
+    expect(listedLocations().map((l) => l.id)).not.toContain('home');
+    expect(listedLocations()[0].id).toBe('waterbeach'); // the default
+    expect(listedLocations('home').map((l) => l.id)).toContain('home');
+    expect(listedLocations('impington').map((l) => l.id)).not.toContain('home');
+  });
+});

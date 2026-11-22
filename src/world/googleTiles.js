@@ -21,19 +21,21 @@ const LOGO_URL = 'https://maps.gstatic.com/mapfiles/api-3/images/google_white5_h
 const ERROR_TARGET = { low: 24, medium: 14, high: 8 };
 const ROOT_URL = 'https://tile.googleapis.com/v1/3dtiles/root.json';
 // Height of the geoid above the WGS84 ellipsoid in eastern England (m): the
-// tiles are placed this much plus the site's ground height (above mean sea
-// level) up, then levelled exactly once the ground under the pilot loads.
+// tiles are placed this much (or the site's own `geoid`) plus the site's
+// ground height (above mean sea level) up, then levelled exactly once the
+// ground under the pilot loads.
 const GEOID_UK_EAST = 46;
 
 export class GoogleTiles {
   /**
-   * @param {{ apiKey: string, lat: number, lon: number, groundHeight?: number, trueNorth?: number,
+   * @param {{ apiKey: string, lat: number, lon: number, groundHeight?: number, geoid?: number, trueNorth?: number,
    *   quality: string, creditEl: HTMLElement }} opts
-   *   lat/lon in degrees of the pilot spot; groundHeight: its height above
+   *   lat/lon in degrees of the pilot spot; geoid: the geoid's height there (m);
+   *   groundHeight: its height above
    *   sea level (m); trueNorth: bearing of true north from the sim's north
    *   (grid north), degrees
    */
-  constructor({ apiKey, lat, lon, groundHeight = 0, trueNorth = 0, quality, creditEl }) {
+  constructor({ apiKey, lat, lon, groundHeight = 0, geoid = GEOID_UK_EAST, trueNorth = 0, quality, creditEl }) {
     const tiles = new TilesRenderer();
     tiles.registerPlugin(new GoogleCloudAuthPlugin({ apiToken: apiKey, autoRefreshToken: true, logoUrl: LOGO_URL }));
     const draco = new DRACOLoader().setDecoderPath(DRACO_PATH);
@@ -41,7 +43,7 @@ export class GoogleTiles {
     tiles.registerPlugin(new TileCompressionPlugin());
     tiles.registerPlugin(new UnloadTilesPlugin());
     tiles.registerPlugin(new ReorientationPlugin({
-      lat: MathUtils.degToRad(lat), lon: MathUtils.degToRad(lon), height: groundHeight + GEOID_UK_EAST, recenter: true,
+      lat: MathUtils.degToRad(lat), lon: MathUtils.degToRad(lon), height: groundHeight + geoid, recenter: true,
     }));
     tiles.errorTarget = ERROR_TARGET[quality] ?? ERROR_TARGET.medium;
     // Something failed: ask Google why (only then: each root request is a

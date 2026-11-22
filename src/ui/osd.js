@@ -60,7 +60,8 @@ export class OSD {
       else if (info.paused) this.#message('PAUSED', y, fs);
       return;
     }
-    const y = info.touch ? 150 : 80;
+    // (Below the challenge box when there is one: src/game/challenges.js.)
+    const y = (info.touch ? 150 : 80) + (info.challenge ? 80 : 0);
     const fs = info.touch ? 18 : 22;
     if (ac.crashed) this.#message(`Crashed: ${ac.crashReason} - ${reset}`, y, fs);
     else if (ac.inFoliage) this.#message(`Caught in a tree - ${reset}`, y, fs);

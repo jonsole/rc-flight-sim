@@ -4,6 +4,7 @@
   "name": "HobbyZone AeroScout S 2 1.1m",
   "summary": "Foam beginner trainer, 1.1 m: high wing, pusher prop, tricycle gear with nose-wheel steering. 2306 2250Kv, 3S 2200 mAh, ~850 g. Starts in SAFE.",
   "notes": {
+    "sound": "sound.shaftOrders: the level of each multiple of the prop shaft's rate (1st, 2nd, ... 24th), measured off a recording of one flying (fundamental ~290 Hz, ~17,000 rpm): strongest at every 3rd multiple, out to ~6 kHz; above the 9th, turned down (by (9/n)²) as it sounded tinny. sound.level (default 1) scales it.",
     "units": "Units: metres, kilograms, newtons, seconds; angles in degrees where the name ends in 'Deg'. 'tuning' holds built-in changes in the Tuning tab's terms (paste an Export's \"tuning\" here).",
     "about": "For club beginners. Published: span about 1095 mm (retailers; the manual's spec table says 1033 mm), length about 870 mm, 2306 2250Kv motor, 3S 1300-2200 mAh, CG 60-75 mm behind the leading edge at the root (75 mm suggested), low rates 70% of high, flies level at 50-60% throttle. Estimated: planform and wing area (~0.2 m\u00b2), the prop (6x4), thrust, inertia, airfoil and drag, weight with a 2200 pack.",
     "look": "Drawn from the dimensions and the general layout. Colours as on the real one (white foam, orange and dark grey bands, black canopy, black tyres on grey hubs, grey-blue panels under the wings, an orange pinstripe along the belly); the bands are simple shapes in about the same places, and there are no maker's logos or lettering.",
@@ -52,6 +53,9 @@
   "cd0": 0.026,
   "parasiteX": 0.008,
   "model": "hobbyzone-aeroscout.glb",
+  "sound": {
+    "shaftOrders": [0.22, 0.03, 1.0, 0.03, 0.03, 0.89, 0.03, 0.03, 0.63, 0.03, 0.21, 0.32, 0.03, 0.03, 0.13, 0.03, 0.03, 0.06, 0.03, 0.03, 0.05, 0.03, 0.03, 0.03]
+  },
   "tuning": {},
   "stallDrop": 0.8,
   "tipStallBiasDeg": 1,

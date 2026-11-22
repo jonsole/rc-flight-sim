@@ -46,6 +46,15 @@ const _vt = new Vector3();
 const _tmp = new Vector3();
 const _cp = new Vector3();
 const _fw = new Vector3();
+const _sf = new Vector3();
+// Drag of snow on the airframe ploughing through it (N per m² of surface,
+// per m deep, per (m/s)²-ish: F = K · area · depth · v · (v + 3)): a wing tip
+// dragging in the snow slows the model and swings it round (a brush, a
+// newton or two; not a cartwheel).
+const SNOW_PLOUGH = 15;
+// Points this near a wheel or skid (m) ride on the snow with it (their
+// friction is the contact's own), not through it.
+const SNOW_RIDE = 0.12;
 
 /**
  * Which breakable part a contact / collision point belongs to: prop, wingL,
@@ -135,6 +144,15 @@ export class Aircraft {
     this.crashed = false;
     this.crashReason = '';
     this.propBroken = false;
+    /**
+     * Things hit, for their sounds (src/audio/engine.js takes them):
+     * { kind, speed (m/s) }, kind: 'ground' | 'wheel' | 'wood' | 'hard' |
+     * 'metal' | 'twigs' | 'crunch' (a part breaking) | 'prop' (a prop strike).
+     */
+    this.impacts = [];
+    this._impactAt = {};
+    /** How fast it's pushing through leaves and twigs (m/s), for the rustle. */
+    this.foliageSpeed = 0;
     /** In the pilot's hand before a hand launch: { pos, q } or null. */
     this.held = null;
     /** Towed on a cord from the tail (the insect net, src/sim/net.js), or null. */
@@ -218,10 +236,19 @@ export class Aircraft {
     this.propBroken = false;
     this.broken.clear();
     this.breakEvents.length = 0;
+    this.impacts.length = 0;
+    this._impactAt = {};
     this.battery.used = 0;
     this.time = 0;
     this.held = null;
     for (const s of this.surfaces) s.sep = null; // settles to the steady value on the first step
+  }
+
+  /** Something hit (for its sound): one of a kind every 0.12 s at most. */
+  #impact(kind, speed) {
+    if (this.impacts.length > 12 || this.time - (this._impactAt[kind] ?? -1) < 0.12) return;
+    this._impactAt[kind] = this.time;
+    this.impacts.push({ kind, speed });
   }
 
   crash(reason) {
@@ -243,6 +270,7 @@ export class Aircraft {
       this.broken.add(p);
       if (p === 'prop') this.propBroken = true;
       this.breakEvents.push({ part: p, speed: impactSpeed });
+      this.#impact(p === 'prop' ? 'prop' : 'crunch', impactSpeed);
     }
   }
 
@@ -452,6 +480,7 @@ export class Aircraft {
     const fWorld = _fw.copy(_f).applyQuaternion(q);
     fWorld.y -= this.mass * G;
     this.#groundContacts(fWorld, _m, q, _qi);
+    this.#snowDrag(fWorld, _m, q, _qi);
     if (this.env.obstacles) this.#obstacleContacts(fWorld, _m, q, _qi);
     // Anything towed on a cord (the insect net, src/sim/net.js) pulls on the tail.
     if (this.tow) this.tow.step(this, dt, fWorld, _m, q, _qi);
@@ -561,6 +590,7 @@ export class Aircraft {
     // point-by-point test.
     const near = this.env.obstacles.near(this.position.x, this.position.z, this.reach, this._near);
     this.inFoliage = false;
+    this.foliageSpeed = 0;
     const P = this.position;
     let n = 0;
     for (const s of near) {
@@ -589,12 +619,19 @@ export class Aircraft {
           // gets through them before they bring it down.
           const sparse = hit.sparse ?? 0;
           this.inFoliage = true;
-          if (_vt.length() > 4 * (1 + 1.5 * sparse)) this.crash(`Flew into ${s.name}`);
+          this.foliageSpeed = Math.max(this.foliageSpeed, _vt.length());
+          if (_vt.length() > 4 * (1 + 1.5 * sparse)) {
+            if (!this.crashed) this.#impact('twigs', _vt.length());
+            this.crash(`Flew into ${s.name}`);
+          }
           _f.copy(_vt).multiplyScalar(-cFoliage * (1 - 0.6 * sparse));
         } else {
           _n.set(hit.nx, hit.ny, hit.nz);
           const vn = _vt.dot(_n);
+          // (Its sound: wood, metal or anything else hard.)
+          if (-vn > 0.6) this.#impact(/tree|trunk/.test(s.name) ? 'wood' : /fence|car|container|pole|gazebo|windsock/.test(s.name) ? 'metal' : 'hard', -vn);
           if (c.type === 'prop' && this.motorRpm > 500) {
+            if (!this.propBroken) this.#impact('prop', Math.max(3, -vn));
             this.propBroken = true;
             this.crash(`Prop hit ${s.name}`);
             this.breakAt(c, Math.max(-vn, 1));
@@ -634,6 +671,7 @@ export class Aircraft {
         ? ground.baseHeightAt(px, pz) + ground.bumpAt(px, pz, c.bumpScale)
         : ground.heightAt(px, pz);
       const depth = h - py;
+      const was = c.onGround;
       c.onGround = depth > 0;
       c.depth = Math.max(0, depth); // spring compression, for the 3D model
       if (!c.onGround) {
@@ -646,10 +684,13 @@ export class Aircraft {
       _w.copy(this.omega).applyQuaternion(q);
       _vt.crossVectors(_w, _r).add(this.velocity);
       const vn = _vt.dot(_n);
+      // Its sound, as it touches down (a tyre's bump, or the airframe's thud).
+      if (!was && -vn > 0.7 && c.type !== 'prop') this.#impact(c.type === 'wheel' ? 'wheel' : 'ground', -vn);
 
       // Crash detection on impact speed.
       if (c.type === 'prop') {
         if (this.throttleActual > 0.05 || this.motorRpm > 500) {
+          if (!this.propBroken) this.#impact('prop', Math.max(3, -vn));
           this.propBroken = true;
           if (this.velocity.length() > 2 || this.throttleActual > 0.3) {
             this.crash('Prop strike');
@@ -724,6 +765,46 @@ export class Aircraft {
       mBody.add(_tmp.crossVectors(c.pos, _tmp));
     }
     this.onGround = any;
+  }
+
+  /**
+   * Points over the airframe's surface (body frame, each with its share of
+   * the surface area, m²: src/world/snowTracks.js setModel), for drag in
+   * lying snow. Those by a wheel or skid are left out: the model rides on
+   * the snow there (the contact's own friction).
+   * @param {{ p: Vector3, area: number }[]} samples
+   */
+  setSnowPoints(samples) {
+    this.snowSamples = samples;
+    const riders = this.contacts.filter((c) => c.type === 'wheel' || c.type === 'skid');
+    this.snowPts = samples.filter((s) => !riders.some((c) => c.pos.distanceTo(s.p) < SNOW_RIDE));
+    this.snowRadius = this.snowPts.reduce((r, s) => Math.max(r, s.p.length()), 0);
+  }
+
+  /** Snow ploughed by any part of the airframe down in it (this.snowDepth, m deep). */
+  #snowDrag(fWorld, mBody, q, qi) {
+    const depth = this.snowDepth;
+    if (!(depth > 0) || !this.snowPts?.length) return;
+    const ground = this.env.ground;
+    const hAt = ground.baseHeightAt ?? ground.heightAt;
+    // Nowhere near: nothing to do.
+    if (this.position.y - hAt(this.position.x, this.position.z) > this.snowRadius + depth + 0.5) return;
+    _w.copy(this.omega).applyQuaternion(q);
+    for (const s of this.snowPts) {
+      if (s.part && this.broken.has(s.part)) continue;
+      _r.copy(s.p).applyQuaternion(q);
+      const px = this.position.x + _r.x;
+      const pz = this.position.z + _r.z;
+      const under = Math.min(depth, hAt(px, pz) + depth - (this.position.y + _r.y));
+      if (under <= 0) continue;
+      _vt.crossVectors(_w, _r).add(this.velocity);
+      const v = _vt.length();
+      if (v < 1e-4) continue;
+      _sf.copy(_vt).multiplyScalar(-SNOW_PLOUGH * s.area * under * (v + 3));
+      fWorld.add(_sf);
+      _tmp.copy(_sf).applyQuaternion(qi);
+      mBody.add(_tmp.crossVectors(s.p, _tmp));
+    }
   }
 
   /** Euler angles for display: { heading, pitch, roll } in radians. */

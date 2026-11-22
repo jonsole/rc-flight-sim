@@ -4,11 +4,12 @@ const KEY = 'rcsim.settings.v1';
 export const DEFAULT_SETTINGS = {
   cameraMode: 'los',
   aircraft: 'eflite-se5a-900', // see src/aircraft/index.js
-  startMode: 'runway', // 'runway' | 'air'
-  challenge: 'off',    // 'off' | 'net' (tow an insect net, src/sim/net.js)
-  netDifficulty: 'medium', // 'easy' (small net) | 'medium' | 'hard' (large net)
-  location: 'home',    // flying field, see src/sim/location.js
+  startMode: 'runway', // 'runway' | 'air' | 'saved' (your saved position: X)
+  location: 'waterbeach', // flying field, see src/sim/location.js (the Club field is hidden: ?field=home)
   assist: 'as3x',      // 'off' | 'as3x' | 'safe'
+  challenge: 'none',   // src/game/challenges.js MODES
+  challengeLevel: 'normal', // 'easy' | 'normal' | 'hard'
+  balloonMinutes: 5,   // balloon burst time limit (2, 5 or 10)
   // FPV
   fpvMount: 'cockpit', // 'cockpit' | 'wing'
   fpvTilt: 4,          // degrees of camera uptilt
@@ -26,8 +27,9 @@ export const DEFAULT_SETTINGS = {
   viewDistance: '',      // metres as a string, '0' = unlimited
   treeStyle: 'fluffy',
   sunGlare: true,
-  startSpots: {},        // your own start positions per field (main.js savedStart)
+  startSpots: {},        // your saved start position per field (main.js savedSpot; X saves it)
   mist: 'seasonal',      // 'seasonal' (spring and autumn mornings) | 'off' | 'light' | 'thick'  (src/world/mist.js)
+  snow: 'seasonal',      // 'seasonal' (some winter days) | 'off' | 'dusting' | 'lying' | 'light' | 'heavy'  (src/world/snow.js)
   lowCloud: 'seasonal',  // 'seasonal' | 'off' | 'broken' | 'overcast'        // looking into the sun washes the picture out (src/view/glare.js)
   cardsFaceCamera: true, // leafy trees: leaf cards face the camera's position (false: the screen, as before)   // trees and bushes: 'fluffy' (leafy cards, src/world/fluffy.js) | 'classic' (solid)
   scenery: 'built',      // real sites: 'built' (from the site data) | 'google' (photorealistic 3D tiles)
@@ -39,17 +41,21 @@ export const DEFAULT_SETTINGS = {
   timeOfDay: 14,         // hours, local solar time
   dayOfYear: 172,        // time of year (21 Jun): the sun, and the trees and grass
   cloudCover: 0.35,      // 0 clear .. 1 overcast
+  godRays: true,
+  clouds3d: true,         // 3D clouds on High graphics (src/world/volclouds.js)         // sunbeams through gaps in the clouds
+  cloudType: 'auto',     // src/world/clouds.js CLOUD_TYPES, or 'auto' (changing with the season and day)
   useClock: false,       // follow the computer's clock (time and date) instead
   // Misc
   volume: 0.6,
   showHud: true,
+  fullscreen: true,      // phones and tablets: full screen when you press Fly (src/ui/fullscreen.js)
   // Touch screens
   touchControls: 'auto', // 'auto' | 'on' | 'off'
   stickMode: '2',        // '2' = throttle left, '1' = throttle right
   // Multiplayer
   mpName: '',            // set to "Pilot NNN" on first run
   mpRoom: '',
-  mpServer: '',          // blank = the built-in relay
+  mpServer: '',          // the relay's wss:// address (no built-in one; invite links carry it)
 };
 
 export function loadSettings() {

@@ -8,21 +8,25 @@ import {
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { heightAt, gridHeight, TERRAIN_SIZE, TERRAIN_SEGMENTS, RUNWAY, PILOT_PAD } from '../sim/terrain.js';
 import { buildingsMesh } from './buildings.js';
-import { clubAngle } from '../sim/location.js';
-import { sunPosition, moonPosition } from './sun.js';
-import { CloudLayer, cloudUniforms, addCloudShadows } from './clouds.js';
+import { clubAngle, LOCATION } from '../sim/location.js';
+import { sunPosition, moonPosition, solarHours } from './sun.js';
+import { CloudLayer, cloudUniforms, addCloudShadows, CLOUD_GLSL } from './clouds.js';
+import { VolumetricClouds } from './volclouds.js';
 import { addGroundDetail, groundUniforms } from './ground.js';
 import { seasonFor } from './seasons.js';
 import { broadleafCrown, conifer, trunk, coniferTrunk, simpleTrunk, blobCrown, addLeafShading, leafUniforms } from './trees.js';
-import { fluffyCrown, crownWood, fluffyConifer, coniferWood, makeFluffy, fluffyDepthMaterial, pickAsBall, setLeafDetail, LEAF_ROWS } from './fluffy.js';
+import { fluffyCrown, crownWood, fluffyConifer, coniferWood, makeFluffy, fluffyDepthMaterial, pickAsBall, setLeafDetail, setLeafSpecies, leafTexture, LEAF_ROWS } from './fluffy.js';
 import { CrownLod, addLodFade, addCloseSwitch, closeUniforms } from './lod.js';
 import { LowCloud } from './mist.js';
+import { addSnowCover, snowUniforms, snowVisibility } from './snow.js';
+import { Snowfall } from './snowfall.js';
+import { makeLake, waterUniforms } from './water.js';
 import { installVolumetricFog, fog4, FIELD_GLSL } from './volfog.js';
 import { speciesOf, bushSpeciesAt, barkColor, trunkThickness, SPECIES, WOOD, CONIFER, leafName } from './species.js';
 import { bakeImpostors, impostorGeometry, makeImpostor } from './impostor.js';
 import { QUALITY } from './quality.js';
 import { CROWN_SEEDS, crownOf } from '../sim/treeShapes.js';
-import { clubhouse, shippingContainer, car, gazebo, gravelTexture, bushes, bushMatrix, siteFence, bushShapes, leafyBushShapes, bushTwigShapes } from './props.js';
+import { clubhouse, shippingContainer, car, gazebo, pyramidTent, gravelTexture, bushes, bushMatrix, siteFence, bushShapes, leafyBushShapes, bushTwigShapes } from './props.js';
 
 const smooth = (e0, e1, x) => {
   const t = MathUtils.clamp((x - e0) / (e1 - e0), 0, 1);
@@ -339,6 +343,19 @@ const TRUNK_SEEDS = [3, 41, 67];
 /** The bush shapes' seeds (src/world/props.js). */
 const BUSH_SEEDS = [101, 131];
 
+// Snow on trees and bushes (src/world/snow.js addSnowCover): the tops of
+// branches hold it; leaves and needles catch it in clumps, mostly on the
+// crown's upper side.
+// Branches are thin round tubes: snow along their whole upper side, so it
+// shows from the side too. Twigs (fine branches drawn plain further out)
+// and the distant trees' pictures (one normal for a mass of twigs and
+// leaves) go only part white: dark wood shows between.
+const SNOW_WOOD = { flatness: 0.12, amount: 0.9 };
+const SNOW_TWIGS = { flatness: 0.12, amount: 0.9, strength: 0.6 };
+const SNOW_LEAVES = { foliage: true, amount: 0.8 };
+const SNOW_NEEDLES = { foliage: true, amount: 1 };
+const SNOW_FAR_TREES = { foliage: true, amount: 0.8, strength: 0.8 };
+
 const _mistColour = new Color();
 const _cloudTop = new Color();
 const _cloudSun = new Color();
@@ -360,12 +377,22 @@ export class World {
     this.fluffy = opts.treeStyle !== 'classic';
     this.renderer = opts.renderer; // for drawing the distant trees' pictures (impostors)
     if (this.quality.leafy?.leafPx) setLeafDetail(this.quality.leafy.leafPx);
+    // Only the leaves this site's trees and bushes have are drawn.
+    setLeafSpecies([
+      ...obstacles.trees.map((t) => leafName(speciesOf(t).name)),
+      ...(obstacles.bushes.length ? ['hawthorn'] : []),
+      'beech', // (the distant pictures' broadleaf leaves)
+    ]);
     this.twigMeshes = [];
     this.scene = new Scene();
     this.scene.background = new Color('#9cc3e6');
     // Exponential haze: distant hills fade into the colour of the horizon.
-    // A shorter scenery distance closes the haze in to match.
-    const haze = Math.max(0.00028, 1.3 / (opts.viewDistance ?? Infinity));
+    // A shorter scenery distance closes the haze in to match, except where
+    // the site has the country round about baked (its mountains are cheap
+    // to draw and the woods are on their map). Some sites have clearer air
+    // (layout.haze: mountain air, where you see the peaks).
+    const closeIn = LOCATION.data?.far ? 0 : 1.3 / (opts.viewDistance ?? Infinity);
+    const haze = Math.max(0.00028 * (LOCATION.layout.haze ?? 1), closeIn);
     // Haze, mist and low cloud: src/world/volfog.js.
     installVolumetricFog(haze);
     this.scene.fog = new FogExp2('#c3d5e8', haze);
@@ -381,19 +408,57 @@ export class World {
     this.#sky();
     this.clouds = new CloudLayer();
     this.scene.add(this.clouds.mesh);
+    // High graphics: the low clouds in 3D (src/world/volclouds.js).
+    if (this.quality.volumetricClouds && opts.renderer?.capabilities?.isWebGL2) {
+      this.volClouds = new VolumetricClouds(this.clouds);
+      this.scene.add(this.volClouds.mesh, this.volClouds.raysMesh);
+      this.clouds.setVolumetric(true);
+    }
     // Low cloud you can fly through: its pattern and drift (src/world/mist.js),
     // drawn by the volumetric fog (volfog.js).
     this.lowCloud = new LowCloud();
+    // Snow lying (addSnowCover on the ground, roofs and so on) and falling
+    // (src/world/snow.js, snowfall.js).
+    this.snow = { cover: 0, falling: 0 };
+    this.snowfall = new Snowfall(this.quality === QUALITY.low ? 8000 : this.quality === QUALITY.medium ? 18000 : 30000);
+    this.scene.add(this.snowfall.mesh);
     this.#lights();
-    this.#terrain();
-    // The club's own things (runway, pad, fence, pits) in the club frame.
-    this.club = new Group();
-    this.club.rotation.y = -clubAngle();
-    this.scene.add(this.club);
-    this.#runway();
-    this.#site();
-    this.#props();
-    this.setTime(14, 172);
+    // The rest, in steps (build): all now, or (opts.defer) by the caller,
+    // with the start screen showing how far it's got.
+    this.steps = [
+      // [what, rough share of the time, do it]
+      ['ground', 1, () => {
+        this.#terrain();
+        // The club's own things (runway, pad, fence, pits) in the club frame.
+        this.club = new Group();
+        this.club.rotation.y = -clubAngle();
+        this.scene.add(this.club);
+        this.#runway();
+      }],
+      ['leaves', 3, () => this.fluffy && leafTexture()],
+      ['distant trees', 1, () => this.fluffy && this.#impostorMat()],
+      ['trees and bushes', 4, () => this.#site()],
+      ['the rest', 1, () => {
+        this.#props();
+        this.setTime(14, 172);
+      }],
+    ];
+    if (!opts.defer) for (const [, , run] of this.steps) run();
+  }
+
+  /**
+   * Build the rest of the world (opts.defer), a step at a time, letting the
+   * screen update between them. onProgress(fraction 0-1).
+   */
+  async build(onProgress = () => {}, between = () => Promise.resolve()) {
+    const total = this.steps.reduce((a, [, w]) => a + w, 0);
+    let done = 0;
+    for (const [, w, run] of this.steps) {
+      run();
+      done += w;
+      onProgress(done / total);
+      await between();
+    }
   }
 
   #sky() {
@@ -415,8 +480,17 @@ export class World {
     u.skyFogColor = { value: new Color() };
     // ... and mist and low cloud along each line of sight (volfog.js).
     Object.assign(u, { fogMistA: { value: fog4.a }, fogMistB: { value: fog4.b }, fogSun: { value: fog4.sun }, fogUnder: { value: fog4.under }, fogTop: { value: fog4.top } });
+    // Sunbeams (crepuscular rays) under the clouds, and how strong (0 off).
+    Object.assign(u, cloudUniforms, { godRays: { value: 1 } });
+    // The sun's disc: a little larger than life (it reads better on a
+    // screen), larger still and orange low down (setTime).
+    u.sunDiscCos = { value: Math.cos((0.8 * Math.PI) / 180 / 2) };
+    u.sunDiscTint = { value: new Color(1, 1, 1) };
     sky.material.fragmentShader = sky.material.fragmentShader
-      .replace('void main() {', `uniform float skyGain;\nuniform float skyFog;\nuniform vec3 skyFogColor;\n${FIELD_GLSL}\nvoid main() {`)
+      .replace(/const float sunAngularDiameterCos = [0-9.]+;/, 'uniform float sunDiscCos;\nuniform vec3 sunDiscTint;')
+      .replace('float sundisk = smoothstep( sunAngularDiameterCos, sunAngularDiameterCos + 0.00002, cosTheta );', 'float sundisk = smoothstep( sunDiscCos, sunDiscCos + ( 1.0 - sunDiscCos ) * 0.2, cosTheta );')
+      .replace('L0 += ( vSunE * 19000.0 * Fex ) * sundisk;', 'L0 += ( vSunE * 19000.0 * Fex ) * sunDiscTint * sundisk;')
+      .replace('void main() {', `uniform float skyGain;\nuniform float skyFog;\nuniform vec3 skyFogColor;\nuniform float godRays;\n${FIELD_GLSL}\n${CLOUD_GLSL}\nvoid main() {`)
       .replace('#include <tonemapping_fragment>', `{
         vec3 c = gl_FragColor.rgb * skyGain;
         float l = dot(c, vec3(0.3, 0.55, 0.15));
@@ -433,6 +507,33 @@ export class World {
         vec3 sd = normalize(vWorldPosition - cameraPosition);
         float toHaze = max(skyFog, 1.0 - smoothstep(-0.01, 0.16, sd.y));
         gl_FragColor.rgb = mix(gl_FragColor.rgb, skyFogColor, toHaze);
+        // Sunbeams: looking towards the sun, the hazy air under the clouds
+        // is lit where sunlight comes through the gaps and dark in the
+        // clouds' shadows - shafts fanning out from the sun. Along the line
+        // of sight (up to the cloud base), how much of it is in sunlight.
+        float toSun = dot(sd, cloudSunDir);
+        // (Only within ~50 degrees of the sun, where they show; sampled at
+        // 12 points along the line of sight, each pixel's a little offset
+        // so the samples don't stack up as bands.)
+        if (godRays > 0.0 && cloudCover > 0.01 && toSun > 0.6 && cloudSunDir.y > 0.02) {
+          float phase = (toSun - 0.6) / 0.4;
+          phase *= phase;
+          float base = cloudShape.x;
+          float tMax = sd.y > 0.02 ? min((base - cameraPosition.y) / sd.y, 5000.0) : 5000.0;
+          float sunUp = max(cloudSunDir.y, 0.08);
+          float dither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+          float lit = 0.0;
+          float t = cloudThreshold();
+          for (int i = 0; i < 12; i++) {
+            vec3 p = cameraPosition + sd * tMax * (float(i) + dither) / 12.0;
+            vec2 at = p.xz + cloudSunDir.xz / sunUp * (base - p.y);
+            lit += 1.0 - smoothstep(t, t + cloudShape.w * 2.0, cloudNoise(at));
+          }
+          lit /= 12.0;
+          // Brighter shafts, darker streaks, gently (about the average, so
+          // the sky doesn't change overall).
+          gl_FragColor.rgb *= 1.0 + godRays * cloudShadowStrength * phase * (lit - 0.6) * 0.9;
+        }
         // Mist and low cloud in the way (out to 3 km).
         if (fogMistA.x > 0.0 || fogMistA.z > 0.0) {
           vec4 f = vfAlong(cameraPosition, cameraPosition + sd * 3000.0, skyFogColor);
@@ -462,14 +563,24 @@ export class World {
 
   /**
    * Set the time of day: sun, moon, sky, light colours, haze and stars.
-   * @param {number} hours  local solar time (0-24)
+   * @param {number} hours  UK clock time (0-24: BST in summer)
    * @param {number} day    day of the year (1-366)
    */
   setTime(hours, day) {
-    const sun = sunPosition(hours, day);
-    const moon = moonPosition(hours, day);
+    const solar = solarHours(hours, day);
+    const sun = sunPosition(solar, day);
+    const moon = moonPosition(solar, day);
     this.hours = hours;
     this.sunElevation = sun.elevation;
+    {
+      // The sun's disc: 1° high in the sky (a bit bigger than its real
+      // 0.53°), swelling to ~2.2° and turning orange as it sets.
+      const low = 1 - smooth(0, 18, sun.elevation);
+      const diam = 1.0 + 1.3 * low * low;
+      const su = this.sky.material.uniforms;
+      su.sunDiscCos.value = Math.cos((diam * Math.PI) / 180 / 2);
+      su.sunDiscTint.value.setRGB(1, 1 - 0.4 * low, 1 - 0.75 * low);
+    }
     skyDir(sun.elevation, sun.azimuth, this.sunDir);
     skyDir(moon.elevation, moon.azimuth, this.moonDir);
     const el = sun.elevation;
@@ -533,6 +644,23 @@ export class World {
   }
 
   /** Cloud cover, 0 (clear) to 1 (overcast). */
+  /**
+   * Snow ({ cover, falling }, 0-1 each: src/world/snow.js snowFor), and
+   * a mountain site's snow line (m above the origin, and how much lower
+   * facing north: snowLineFor). Call after setTime (snow on the ground
+   * lights things from below).
+   */
+  setSnow(s, line = Infinity, aspect = 0) {
+    this.snow = s;
+    snowUniforms.uSnow.value = s.cover;
+    snowUniforms.uSnowLine.value = Number.isFinite(line) ? line : 1e5;
+    snowUniforms.uSnowAspect.value = aspect;
+    // Light reflected up off the snow: the sky light from below turns white.
+    const g = this.hemi.groundColor;
+    const lum = Math.max(g.r, g.g, g.b) * 2.2;
+    g.lerp(_mistColour.setRGB(lum * 0.95, lum, lum * 1.05), 0.8 * s.cover);
+  }
+
   /** Mist (0-1) and low cloud ({ amount, base, top }): src/world/mist.js weatherFor. */
   setWeather(w) {
     this.weather = w;
@@ -580,6 +708,12 @@ export class World {
     let far = Infinity;
     if (inMist > 0) far = 6 / (0.7 * mistD) / Math.max(inMist, 1e-3);
     if (inCloud > 0.3) far = Math.min(far, 350 / inCloud);
+    // Falling snow: the air thickens evenly (volfog.js); nothing is seen
+    // much past twice the visibility.
+    const falling = this.snow.falling;
+    const snowVis = snowVisibility(falling);
+    fog4.under.w = falling > 0 ? 3 / snowVis : 0;
+    far = Math.min(far, snowVis * 2.5);
     this.visibleFar = Math.max(250, far);
     const grey = Math.max(veil, inCloud);
     this.fogNow = grey;
@@ -590,7 +724,7 @@ export class World {
     // (No lighter than the haze itself: fogged trees shouldn't glow paler
     // than the sky behind them.)
     _mistColour.setRGB(lum, lum * 1.02, lum * 1.06).lerp(h, 0.35).multiplyScalar(0.92);
-    fog.color.copy(h).lerp(_mistColour, Math.min(1, mist * 1.2));
+    fog.color.copy(h).lerp(_mistColour, Math.min(1, Math.max(mist * 1.2, falling * 1.5)));
     // Low cloud: underneath, the same grey as the mist (a shade darker);
     // on top, brighter in the sun (screen colours, as the fog uses them).
     _mistColour.setRGB(lum, lum * 1.02, lum * 1.06).lerp(h, 0.35).multiplyScalar(0.88);
@@ -601,21 +735,100 @@ export class World {
     Object.assign(fog4.top, { x: _cloudTop.r, y: _cloudTop.g, z: _cloudTop.b });
     this.scene.background.copy(fog.color);
     const su = this.sky.material.uniforms;
-    su.skyFog.value = 0;
+    // (In falling snow the sky is lost in it too.)
+    su.skyFog.value = Math.min(1, falling * 1.4);
     su.skyFogColor.value.copy(fog.color).convertLinearToSRGB(); // (as the scene's fog uses it)
-    this.clouds.uniforms.mistFade.value = Math.min(1, grey * 1.3);
+    this.clouds.uniforms.mistFade.value = Math.min(1, Math.max(grey * 1.3, falling * 1.5));
     // Sunlight through the mist above you, and below the low cloud.
     const overcast = camPos.y < lc.base ? lc.amount * 0.6 : 0;
-    const dim = 1 - Math.max(veil * 0.75, overcast, inCloud * 0.8);
+    const dim = 1 - Math.max(veil * 0.75, overcast, inCloud * 0.8, Math.min(0.85, falling * 1.2));
     this.sun.intensity = (this.sunBase ?? this.sun.intensity) * dim;
     this.hemi.intensity = (this.hemiBase ?? this.hemi.intensity) * (1 + 0.15 * grey);
   }
 
 
 
+  /**
+   * The lake's water (every frame): its ripples run with the wind; it
+   * reflects the sky of the moment and glints in the sun.
+   */
+  updateWater(dt, wind) {
+    if (!this.lake) return;
+    const u = waterUniforms;
+    u.uWaterTime.value = (u.uWaterTime.value + dt) % 10000;
+    // The wind the water feels: the windsock's, with its gusts and swings
+    // smoothed out over ~15 s (waves build and turn slowly; following every
+    // gust, the ripples flicked back and forth).
+    const ww = u.uWaterWind.value;
+    if (!this.waterWindSet) {
+      ww.set(wind.x, wind.z);
+      this.waterWindSet = true;
+    } else {
+      const k = 1 - Math.exp(-dt / 15);
+      ww.x += (wind.x - ww.x) * k;
+      ww.y += (wind.z - ww.y) * k;
+    }
+    // The surface drifts downwind at ~3% of the wind's speed (wind drift:
+    // 2.5-4%), added up as it goes (kept small for the GPU's precision).
+    const drift = u.uWaterDrift.value;
+    drift.x = (drift.x + ww.x * 0.03 * dt) % 2800;
+    drift.y = (drift.y + ww.y * 0.03 * dt) % 2800;
+    // The sky: the haze colour low down, the sky light's colour overhead.
+    u.uSkyHorizon.value.copy(this.scene.fog.color);
+    u.uSkyZenith.value.copy(this.hemi.color).multiplyScalar(0.55 * this.hemi.intensity).lerp(this.scene.fog.color, 0.25);
+    u.uSunDir.value.copy(this.lightDir);
+    u.uSunGlint.value.copy(this.sun.color).multiplyScalar(this.sun.intensity * 0.5);
+    // Trees round the far banks: dark green, lit by the sky and the sun.
+    u.uTreeLine.value.setRGB(0.05, 0.075, 0.035).multiplyScalar(this.hemi.intensity * 0.9 + this.sun.intensity * 0.25).lerp(this.scene.fog.color, 0.12);
+  }
+
+  /**
+   * Falling snow around the camera (every frame).
+   * @param {number} screenH  drawing buffer height (pixels)
+   */
+  updateSnowfall(dt, wind, camera, screenH) {
+    // Flakes take the colour of the light of the moment: the grey-white of
+    // the snowy air, a little brighter.
+    const c = this.scene.fog.color;
+    this.snowfall.setLight(_cloudSun.setRGB(Math.min(1, c.r * 1.7), Math.min(1, c.g * 1.7), Math.min(1, c.b * 1.7)));
+    this.snowfall.update(dt, wind, this.snow.falling, camera, screenH);
+  }
+
   setClouds(cover) {
-    cloudUniforms.cloudCover.value = cover;
-    this.clouds.mesh.visible = cover > 0.01;
+    this.clouds.setCover(cover);
+  }
+
+  /** Draw the 3D clouds for this frame, if they're on (before the scene). */
+  renderClouds(renderer, camera) {
+    this.volClouds?.render(renderer, camera);
+  }
+
+  /** 3D clouds (High graphics only) on or off. */
+  setVolumetricClouds(on) {
+    if (!this.volClouds) return;
+    this.volClouds.enabled = on;
+    this.clouds.setVolumetric(on);
+    this.setGodRays(this.godRays ?? 1);
+  }
+
+  /**
+   * Sunbeams through the gaps in the clouds (0 off .. 1): from the 3D
+   * clouds' shapes when they're on (volclouds.js), else from the flat
+   * clouds' pattern (the sky's shader).
+   */
+  setGodRays(k) {
+    this.godRays = k;
+    const vol = !!this.volClouds?.enabled;
+    this.sky.material.uniforms.godRays.value = vol ? 0 : k;
+    if (this.volClouds) {
+      this.volClouds.rays = k > 0;
+      this.volClouds.raysUniforms.godRays.value = k;
+    }
+  }
+
+  /** The kind of clouds (src/world/clouds.js CLOUD_TYPES). */
+  setCloudType(id) {
+    if (id !== this.clouds.type) this.clouds.setType(id);
   }
 
   /** Let the clouds drift with the wind (world velocity, m/s). */
@@ -670,7 +883,8 @@ export class World {
       p.setY(i, h);
       const n = Math.sin(x * 0.011) * Math.cos(z * 0.013) * 0.5 + 0.5;
       tmp.copy(c1).lerp(c2, n * 0.8);
-      if (h > 40) tmp.lerp(c3, Math.min(1, (h - 40) / 120));
+      // (Hills paler, except where a site's map has the real colours.)
+      if (h > 40 && !LOCATION.data?.farGround) tmp.lerp(c3, Math.min(1, (h - 40) / 120));
       colors.push(tmp.r, tmp.g, tmp.b);
     }
     geo.setAttribute('color', new Float32BufferAttribute(colors, 3));
@@ -678,13 +892,20 @@ export class World {
     const tex = grassTexture();
     tex.repeat.set(size / 6, size / 6);
     // Matte (no plastic sheen).
-    const mat = addCloudShadows(addGroundDetail(new MeshLambertMaterial({ map: tex, vertexColors: true })));
+    const mat = addSnowCover(addCloudShadows(addGroundDetail(new MeshLambertMaterial({ map: tex, vertexColors: true }))));
     const ground = new Mesh(geo, mat);
     ground.receiveShadow = true;
     this.scene.add(ground);
     this.terrainMesh = ground;
     ground.userData.kind = 'terrain';
     this.builtScenery.push(ground);
+    // A lake (src/sim/lake.js): its bed and banks, and the water (water.js).
+    const lake = makeLake(tex);
+    if (lake) {
+      this.scene.add(lake.bed, lake.water);
+      this.builtScenery.push(lake.bed, lake.water);
+      this.lake = lake;
+    }
   }
 
   #runway() {
@@ -693,7 +914,7 @@ export class World {
       const g = new PlaneGeometry(RUNWAY.length, RUNWAY.width);
       g.rotateX(-Math.PI / 2);
       const tex = RUNWAY.style === 'cricket' ? cricketPitchTexture(RUNWAY) : runwayTexture();
-      const rw = new Mesh(g, addCloudShadows(new MeshLambertMaterial({ map: tex, polygonOffset: true, polygonOffsetFactor: -2 })));
+      const rw = new Mesh(g, addSnowCover(addCloudShadows(new MeshLambertMaterial({ map: tex, polygonOffset: true, polygonOffsetFactor: -2 }))));
       // Just above the physics ground (y = 0); polygonOffset prevents z-fighting.
       rw.position.set(RUNWAY.x, 0.002, RUNWAY.z);
       rw.receiveShadow = true;
@@ -704,7 +925,7 @@ export class World {
 
     // Pilot box (gravel pad) and safety fence line, where the club has them.
     if (PILOT_PAD) {
-      const pad = new Mesh(new PlaneGeometry(PILOT_PAD.length, PILOT_PAD.width), addCloudShadows(new MeshLambertMaterial({ map: gravelTexture(), polygonOffset: true, polygonOffsetFactor: -2 })));
+      const pad = new Mesh(new PlaneGeometry(PILOT_PAD.length, PILOT_PAD.width), addSnowCover(addCloudShadows(new MeshLambertMaterial({ map: gravelTexture(), polygonOffset: true, polygonOffsetFactor: -2 }))));
       pad.rotation.x = -Math.PI / 2;
       pad.position.set(PILOT_PAD.x, 0.002, PILOT_PAD.z);
       pad.receiveShadow = true;
@@ -830,7 +1051,7 @@ export class World {
     }
     if (ob.buildings.length) {
       const houses = buildingsMesh(ob.buildings);
-      addCloudShadows(houses.material);
+      addSnowCover(addCloudShadows(houses.material));
       houses.userData.kind = 'building';
       this.scene.add(houses);
     }
@@ -842,7 +1063,7 @@ export class World {
         if (!m.isMesh) return;
         m.userData.kind = 'fence';
         if (m.material && !m.material.userData.clouds) {
-          addCloudShadows(m.material);
+          addSnowCover(addCloudShadows(m.material));
           m.material.userData.clouds = true;
         }
       });
@@ -924,35 +1145,37 @@ export class World {
       if (d > this.viewDistance) continue;
       (d <= nearR ? near : far).push(t);
     }
-    const leafMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })));
+    const leafMat = addSnowCover(addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true }))), SNOW_LEAVES);
     this.leafMat = leafMat;
-    const cardMat = this.fluffy ? addLodFade(makeFluffy(addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true }))), { smooth: q.leafy.smooth, detail: q.leafy.detail, softDepth: q.leafy.softDepth }), false) : null;
+    const cardMat = this.fluffy ? addLodFade(makeFluffy(addSnowCover(addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true }))), SNOW_LEAVES), { smooth: q.leafy.smooth, detail: q.leafy.detail, softDepth: q.leafy.softDepth }), false) : null;
     this.cardMat = cardMat;
     // Bark: its colour per tree (instance colour, by species).
-    const barkMat = addCloudShadows(new MeshLambertMaterial({ vertexColors: true }));
+    const barkMat = addSnowCover(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })), SNOW_WOOD);
     this.barkMat = barkMat;
-    const broadTrunkMat = this.fluffy ? addCloseSwitch(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })), false) : barkMat;
+    const broadTrunkMat = this.fluffy ? addCloseSwitch(addSnowCover(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })), SNOW_WOOD), false) : barkMat;
     if (this.fluffy) closeUniforms.uCloseR.value = q.leafy.close ?? 0;
     // Conifers are open tiers of boughs: double-sided so their undersides show.
-    const needleMat = addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true, side: DoubleSide })));
+    const needleMat = addSnowCover(addLeafShading(addCloudShadows(new MeshLambertMaterial({ vertexColors: true, side: DoubleSide }))), SNOW_NEEDLES);
     needleMat.defines = { CONIFER: '' };
     const conTrunk = coniferTrunk();
-    const sets = [
-      { trees: near, crowns: CROWN_SEEDS.map((s) => broadleafCrown(s, q.nearDetail)), trunks: [trunk(3), trunk(41), trunk(67)], conifers: [conifer(5), conifer(17), conifer(29)] },
-      { trees: far, crowns: CROWN_SEEDS.map((s) => (q.farDetail === 'blob' ? blobCrown(s) : broadleafCrown(s, q.farDetail))), trunks: [simpleTrunk()], conifers: [conifer(5)] },
-    ];
-    // Leafy: the broadleaf crowns are drawn by the level-of-detail sorter
-    // (leafy near the camera, solid beyond), not with their sets.
+    // Leafy: the crowns are drawn by the level-of-detail sorters (leafy near
+    // the camera, pictures beyond), so the classic solid crowns and conifers
+    // aren't made at all (they took a good part of start-up).
+    const SP = Object.keys(WOOD);
+    const sets = this.fluffy
+      ? [
+        // Near trunks grown as their species grows them (where it forks, its
+        // main limbs): a design per trunk pick and species.
+        { trees: near, crowns: [], conifers: [], trunks: TRUNK_SEEDS.flatMap((seed) => SP.map((sp) => trunk(seed, false, WOOD[sp].trunk))),
+          trunkIndex: (t) => (t.pick % 3) * SP.length + Math.max(0, SP.indexOf(speciesOf(t).name)) },
+        { trees: far, crowns: [], conifers: [], trunks: [simpleTrunk()] },
+      ]
+      : [
+        { trees: near, crowns: CROWN_SEEDS.map((s) => broadleafCrown(s, q.nearDetail)), trunks: [trunk(3), trunk(41), trunk(67)], conifers: [conifer(5), conifer(17), conifer(29)] },
+        { trees: far, crowns: CROWN_SEEDS.map((s) => (q.farDetail === 'blob' ? blobCrown(s) : broadleafCrown(s, q.farDetail))), trunks: [simpleTrunk()], conifers: [conifer(5)] },
+      ];
     const lodTrees = [];
     const lodConifers = [];
-    if (this.fluffy) {
-      for (const set of sets) set.crowns = [];
-      // Near trunks grown as their species grows them (where it forks, its
-      // main limbs): a design per trunk pick and species.
-      const SP = Object.keys(WOOD);
-      sets[0].trunks = TRUNK_SEEDS.flatMap((seed) => SP.map((sp) => trunk(seed, false, WOOD[sp].trunk)));
-      sets[0].trunkIndex = (t) => (t.pick % 3) * SP.length + Math.max(0, SP.indexOf(speciesOf(t).name));
-    }
     this.trees = { trunks: [], conTrunks: [], crowns: [], conifers: [] };
     for (const set of sets) {
       if (!set.trees.length) continue;
@@ -1038,7 +1261,7 @@ export class World {
           trunk: (kind, sp) => this.#wood('trunk', TRUNK_SEEDS[kind], sp),
           plainMat: this.#plainWoodMat(),
           closeMat: this.#closeWoodMat(),
-          trunkMat: this.closeTrunkMat ||= addCloseSwitch(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })), true),
+          trunkMat: this.closeTrunkMat ||= addCloseSwitch(addSnowCover(addCloudShadows(new MeshLambertMaterial({ vertexColors: true })), SNOW_WOOD), true),
           trunkMatrix: (t, out) => {
             treeMatrices(t, o, out, _crownM);
             return out;
@@ -1159,7 +1382,7 @@ export class World {
 
   /** The plain branches: bark coloured, fading with their crowns, away from the camera. */
   #plainWoodMat() {
-    return (this.twigMat ||= addCloseSwitch(addLodFade(addCloudShadows(new MeshLambertMaterial({ color: 0xaaaaaa, vertexColors: true })), false), false));
+    return (this.twigMat ||= addCloseSwitch(addLodFade(addSnowCover(addCloudShadows(new MeshLambertMaterial({ color: 0xaaaaaa, vertexColors: true })), SNOW_TWIGS), false), false));
   }
 
   #syncTwigs(lod) {
@@ -1171,7 +1394,7 @@ export class World {
 
   /** Close-up branches: bark coloured, only near the camera. */
   #closeWoodMat() {
-    return (this.closeWoodMat ||= addCloseSwitch(addCloudShadows(new MeshLambertMaterial({ color: 0xaaaaaa, vertexColors: true })), true));
+    return (this.closeWoodMat ||= addCloseSwitch(addSnowCover(addCloudShadows(new MeshLambertMaterial({ color: 0xaaaaaa, vertexColors: true })), SNOW_WOOD), true));
   }
 
   /** The distant trees' material: pictures of the leafy crowns, drawn once. */
@@ -1198,7 +1421,7 @@ export class World {
       ...CONIFER_NAMES.map((sp) => (has.has(sp) ? { leafy: fluffyConifer(CONIFER[sp], 11, this.quality.leafy.detail), twigs: coniferWood(CONIFER[sp], 11), leafRow: LEAF_ROWS.indexOf(leafName(sp)), stretch: coniferR(sp) } : null)),
     ];
     const atlas = bakeImpostors(this.renderer, shapes, this.quality.leafy.tile);
-    this.impMat = addLodFade(makeImpostor(addLeafShading(addCloudShadows(new MeshLambertMaterial())), atlas), true);
+    this.impMat = addLodFade(makeImpostor(addSnowCover(addLeafShading(addCloudShadows(new MeshLambertMaterial())), SNOW_FAR_TREES), atlas), true);
     return this.impMat;
   }
 
@@ -1253,7 +1476,7 @@ export class World {
       m.castShadow = true;
       m.receiveShadow = true;
       if (m.material && !m.material.userData.clouds) {
-        addCloudShadows(m.material);
+        addSnowCover(addCloudShadows(m.material));
         m.material.userData.clouds = true;
       }
     });
@@ -1264,6 +1487,12 @@ export class World {
     for (const o of clubThings) {
       shadowy(o);
       this.club.add(o);
+    }
+    for (const o of ob.tents.map(pyramidTent)) {
+      shadowy(o);
+      o.userData.kind = 'tent';
+      this.scene.add(o);
+      this.builtScenery.push(o);
     }
     for (const o of ob.cars.map(car)) {
       shadowy(o);
@@ -1279,6 +1508,7 @@ export class World {
     const table = new Mesh(new BoxGeometry(2, 0.06, 0.8), new MeshStandardMaterial({ color: '#c8c8c8' }));
     table.position.set(tx, 0.75, tz);
     table.castShadow = true;
+    shadowy(table);
     this.club.add(table);
     for (const dx of [-0.9, 0.9]) {
       for (const dz of [-0.3, 0.3]) {

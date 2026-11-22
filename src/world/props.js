@@ -348,7 +348,7 @@ export const bushTwigShapes = () => BUSH_SEEDS.map((s) => crownBranches(s, { fro
 export function siteFence(f) {
   const g = new Group();
   for (let i = 1; i < f.path.length; i++) {
-    const stretch = f.kind === 'panels' ? tempPanels : chainLink;
+    const stretch = { panels: tempPanels, net: safetyNet }[f.kind] ?? chainLink;
     g.add(stretch(f.path[i - 1], f.path[i], f.height));
   }
   // Hundreds of panels, tubes and posts: one draw call per material.
@@ -506,5 +506,92 @@ function chainLink([ax, az], [bx, bz], height) {
     post.receiveShadow = true;
     g.add(post);
   }
+  return g;
+}
+
+/**
+ * A tall safety net between the pits and the flight line: dark knotted
+ * netting (100 mm squares) on galvanised steel poles every 6 m, with a
+ * cable along the top.
+ */
+function safetyNet([ax, az], [bx, bz], height) {
+  const g = new Group();
+  const len = Math.hypot(bx - ax, bz - az);
+  const yaw = Math.atan2(-(bz - az), bx - ax);
+  const steel = new MeshStandardMaterial({ color: '#b9bec2', roughness: 0.45, metalness: 0.6 });
+  const TILE = 0.5;
+  const net = canvasTex(128, 128, (c, w, h) => {
+    c.clearRect(0, 0, w, h);
+    c.strokeStyle = 'rgba(48,52,50,1)';
+    c.lineWidth = 2;
+    const n = 5; // squares across a tile
+    c.beginPath();
+    for (let i = 0; i <= n; i++) {
+      c.moveTo((i * w) / n, 0);
+      c.lineTo((i * w) / n, h);
+      c.moveTo(0, (i * h) / n);
+      c.lineTo(w, (i * h) / n);
+    }
+    c.stroke();
+  });
+  const netMat = new MeshStandardMaterial({ map: net, transparent: true, depthWrite: false, side: DoubleSide, roughness: 0.9 });
+  const steps = Math.max(1, Math.round(len / 6));
+  const bayLen = len / steps;
+  for (let i = 0; i < steps; i++) {
+    const t = (i + 0.5) / steps;
+    const xm = ax + (bx - ax) * t;
+    const zm = az + (bz - az) * t;
+    const bay = new Mesh(new PlaneGeometry(bayLen, height - 0.1), netMat);
+    const uv = bay.geometry.attributes.uv.array;
+    for (let k = 0; k < uv.length; k += 2) {
+      uv[k] *= bayLen / TILE;
+      uv[k + 1] *= (height - 0.1) / TILE;
+    }
+    bay.position.set(xm, heightAt(xm, zm) + 0.05 + (height - 0.1) / 2, zm);
+    bay.rotation.y = yaw;
+    g.add(bay);
+  }
+  const poleGeo = new CylinderGeometry(0.04, 0.045, height, 8);
+  for (let i = 0; i <= steps; i++) {
+    const x = ax + ((bx - ax) * i) / steps;
+    const z = az + ((bz - az) * i) / steps;
+    const pole = new Mesh(poleGeo, steel);
+    pole.position.set(x, heightAt(x, z) + height / 2, z);
+    pole.castShadow = true;
+    g.add(pole);
+  }
+  const cable = new Mesh(new CylinderGeometry(0.008, 0.008, len, 4), steel);
+  cable.rotation.set(0, yaw, Math.PI / 2);
+  cable.position.set((ax + bx) / 2, Math.max(heightAt(ax, az), heightAt(bx, bz)) + height - 0.05, (az + bz) / 2);
+  g.add(cable);
+  return g;
+}
+
+/**
+ * A big pyramid marquee (an event tent): `sides` straight walls `wall` m
+ * high round a circle of radius `r`, and a pointed roof up to `h`, in
+ * panels of alternating colours.
+ */
+export function pyramidTent(t) {
+  const g = new Group();
+  const sides = t.sides ?? 8;
+  const [c1, c2] = t.colors ?? ['#f4f4ef', '#2f9a4a'];
+  // Two panels a side, alternating colours.
+  const tex = canvasTex(256, 16, (c, w, h) => {
+    for (let i = 0; i < sides * 2; i++) {
+      c.fillStyle = i % 2 ? c2 : c1;
+      c.fillRect((i * w) / (sides * 2), 0, w / (sides * 2) + 1, h);
+    }
+  });
+  const canvas = new MeshLambertMaterial({ map: tex, side: DoubleSide });
+  const y = heightAt(t.x, t.z);
+  const walls = new Mesh(new CylinderGeometry(t.r, t.r, t.wall, sides, 1, true), canvas);
+  walls.position.set(t.x, y + t.wall / 2, t.z);
+  const roof = new Mesh(new ConeGeometry(t.r * 1.04, t.h - t.wall, sides, 1, true), canvas);
+  roof.position.set(t.x, y + t.wall + (t.h - t.wall) / 2, t.z);
+  const pole = new Mesh(new CylinderGeometry(0.06, 0.06, 0.8, 6), lambert({ color: '#cfcfcf' }));
+  pole.position.set(t.x, y + t.h + 0.3, t.z);
+  for (const m of [walls, roof]) m.rotation.y = Math.PI / sides;
+  g.add(walls, roof, pole);
   return g;
 }

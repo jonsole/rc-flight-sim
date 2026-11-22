@@ -65,12 +65,18 @@ export class Debris {
       for (let i = 0; i < pos.count; i += step) pts.push(new Vector3().fromBufferAttribute(pos, i).applyMatrix4(_m));
     });
     const every = Math.ceil(pts.length / 200); // keep it cheap
-    this.items.push({ group, vel, spin, pts: pts.filter((_, i) => i % every === 0), resting: false });
+    // Tracks in the snow (src/world/snowTracks.js): where it touches (touch),
+    // where it landed hard (thud), and how wide a groove it leaves.
+    const markHalf = Math.min(0.08, Math.max(0.02, Math.min(_size.x, _size.z) * 0.25));
+    this.items.push({ group, vel, spin, pts: pts.filter((_, i) => i % every === 0), resting: false, touch: null, thud: null, markHalf });
   }
 
   update(dt) {
     for (const it of this.items) {
-      if (it.resting) continue;
+      if (it.resting) {
+        it.touch = null;
+        continue;
+      }
       const g = it.group;
       it.vel.y -= GRAVITY * dt;
       it.vel.multiplyScalar(1 - Math.min(1, 0.6 * dt)); // air drag on light foam
@@ -84,11 +90,20 @@ export class Debris {
       // How far the lowest point is below the ground.
       g.updateMatrix();
       let under = 0;
+      let lx = 0;
+      let lz = 0;
       for (const p of it.pts) {
         _p.copy(p).applyMatrix4(g.matrix);
-        under = Math.max(under, this.ground.heightAt(_p.x, _p.z) - _p.y);
+        const u = this.ground.heightAt(_p.x, _p.z) - _p.y;
+        if (u > under) {
+          under = u;
+          lx = _p.x;
+          lz = _p.z;
+        }
       }
+      it.touch = under > 0 ? { x: lx, z: lz } : null;
       if (under > 0) {
+        if (it.vel.y < -2) it.thud = { x: lx, z: lz };
         g.position.y += under;
         if (it.vel.y < 0) it.vel.y *= -0.3;
         it.vel.x *= 0.6;

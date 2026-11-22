@@ -23,8 +23,8 @@ describe('insect net', () => {
   it('bigger nets for harder difficulties, and for more powerful models', () => {
     const se5a = getAircraft('eflite-se5a-900').def;
     const easystar = getAircraft('multiplex-easystar').def;
-    expect(defaultNetSize(se5a, 'easy')).toBeLessThan(defaultNetSize(se5a, 'medium'));
-    expect(defaultNetSize(se5a, 'medium')).toBeLessThan(defaultNetSize(se5a, 'hard'));
+    expect(defaultNetSize(se5a, 'easy')).toBeLessThan(defaultNetSize(se5a, 'normal'));
+    expect(defaultNetSize(se5a, 'normal')).toBeLessThan(defaultNetSize(se5a, 'hard'));
     expect(defaultNetSize(easystar, 'hard')).toBeLessThan(defaultNetSize(se5a, 'hard'));
   });
 
@@ -47,8 +47,8 @@ describe('insect net', () => {
         speeds[d] = ac.velocity.length();
       }
       expect(speeds.easy).toBeLessThan(speeds.none);
-      expect(speeds.medium).toBeLessThan(speeds.easy);
-      expect(speeds.hard).toBeLessThan(speeds.medium);
+      expect(speeds.normal).toBeLessThan(speeds.easy);
+      expect(speeds.hard).toBeLessThan(speeds.normal);
     });
   }
 
@@ -56,7 +56,7 @@ describe('insect net', () => {
     const def = getAircraft('eflite-se5a-900').def;
     const ac = new Aircraft(def, { ground });
     ac.resetOnGround(0, 0, 0);
-    const net = new NetTow(cfg(def, 'medium'), ac);
+    const net = new NetTow(cfg(def, 'normal'), ac);
     ac.tow = net;
     net.place(ac);
     expect(net.open).toBe(0);
@@ -70,7 +70,7 @@ describe('insect net', () => {
 
   it('figure of 8: two loops, one each way, gates in order, only at height', () => {
     const def = getAircraft('eflite-se5a-900').def;
-    const ac = flying(def, cfg(def, 'medium'));
+    const ac = flying(def, cfg(def, 'normal'));
     const ch = course(ac.tow);
     expect(ch.turnA).not.toBe(ch.turnB);
     // Low: the start gate doesn't count.
@@ -98,7 +98,7 @@ describe('insect net', () => {
 
   it('says which way to turn for the next gate', () => {
     const def = getAircraft('eflite-se5a-900').def;
-    const ac = flying(def, cfg(def, 'medium'));
+    const ac = flying(def, cfg(def, 'normal'));
     const ch = course(ac.tow);
     ch.reachedHeight = true;
     // The start gate is at the origin. Heading +x (0) from z = +50 (south of
@@ -110,7 +110,7 @@ describe('insect net', () => {
 
   it('the loops turn the way the directions say', () => {
     const def = getAircraft('eflite-se5a-900').def;
-    const ac = flying(def, cfg(def, 'medium'));
+    const ac = flying(def, cfg(def, 'normal'));
     const ch = course(ac.tow);
     // Going round loop A (gates 0, 1, 2): the heading from gate to gate turns towards turnA.
     const hd = (a, b) => Math.atan2(-(b.z - a.z), b.x - a.x);
@@ -121,7 +121,7 @@ describe('insect net', () => {
 
   it('catches insects at height with the net open, and none folded', () => {
     const def = getAircraft('eflite-se5a-900').def;
-    const ac = flying(def, cfg(def, 'medium'));
+    const ac = flying(def, cfg(def, 'normal'));
     const ch = course(ac.tow);
     ac.tow.position.set(0, COURSE.height, 0);
     ac.tow.open = 1;

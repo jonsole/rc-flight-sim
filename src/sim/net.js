@@ -1,4 +1,5 @@
-// Insect-net challenge (Menu → Flying → Challenge): tow a drag net on a cord
+// Insect-net challenge (Menu → Challenges → Insect net tow; the course is
+// src/game/netTow.js): tow a drag net on a cord
 // from the tail, climb to the sampling height and fly figure-of-8 circuits
 // through the gates, catching the insects drifting up there.
 //
@@ -24,14 +25,14 @@ const REF_Q = 0.5 * RHO * 10 * 10; // dynamic pressure at 10 m/s
 
 export const DIFFICULTIES = {
   easy: { name: 'Easy (small net)', short: 'easy', share: 0.12 },
-  medium: { name: 'Medium', short: 'medium', share: 0.22 },
+  normal: { name: 'Normal', short: 'normal', share: 0.22 },
   hard: { name: 'Hard (large net)', short: 'hard', share: 0.35 },
 };
 export const DEFAULT_CORD = 3; // m
 
 /** The net's mouth diameter (m) for a model and difficulty, before any tuning. */
 export function defaultNetSize(def, difficulty) {
-  const share = (DIFFICULTIES[difficulty] ?? DIFFICULTIES.medium).share;
+  const share = (DIFFICULTIES[difficulty] ?? DIFFICULTIES.normal).share;
   const area = (share * def.motor.staticThrust) / (NET_CD * REF_Q);
   return Math.sqrt((4 * area) / Math.PI);
 }
@@ -380,32 +381,4 @@ export class FigureEightChallenge {
     }
     return { text, turn, climb };
   }
-}
-
-// --- Best times, per model and difficulty (untuned nets only) --------------------
-const BEST_KEY = 'rcsim.netBest.v1';
-export function bestTime(id, difficulty) {
-  try {
-    return JSON.parse(localStorage.getItem(BEST_KEY))?.[`${id}/${difficulty}`] ?? null;
-  } catch {
-    return null;
-  }
-}
-/** Record a time; true if it's a new best. */
-export function recordTime(id, difficulty, seconds) {
-  let all = {};
-  try {
-    all = JSON.parse(localStorage.getItem(BEST_KEY)) ?? {};
-  } catch {
-    /* none */
-  }
-  const k = `${id}/${difficulty}`;
-  if (all[k] != null && all[k] <= seconds) return false;
-  all[k] = seconds;
-  try {
-    localStorage.setItem(BEST_KEY, JSON.stringify(all));
-  } catch {
-    /* storage blocked */
-  }
-  return true;
 }

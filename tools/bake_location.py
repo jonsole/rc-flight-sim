@@ -1,16 +1,24 @@
 #!/usr/bin/env python3
 """Bake a real flying site into a data file the simulator loads.
 
-Sources (England only, all free):
+Sources (all free):
+  England:
   - Environment Agency LIDAR composite, 1 m (Open Government Licence):
       DTM  bare ground height          -> terrain
       DSM  first-return surface height -> building heights
       VOM  Vegetation Object Model     -> tree positions, heights and crowns
+  Austria (source 'bev', tools/bev.py):
+  - BEV ALS DTM and DSM, 1 m (CC BY 4.0): terrain, buildings, and trees
+    from the surface height above the ground off the buildings; also the
+    mountains round about, from the files' coarser levels (`far`)
+  - basemap.at orthophoto (CC BY 4.0): the ground's colours, round the
+    field (`ground`) and out to the mountains (`farGround`)
+  Both:
   - OpenStreetMap (ODbL): building footprints, roads, paths, water, land use
       -> buildings and the colour map painted on the ground
 
 Usage:
-  pip install numpy scipy pyproj tifffile pillow
+  pip install numpy scipy pyproj tifffile pillow imagecodecs
   python3 tools/bake_location.py waterbeach --cache /tmp/waterbeach-data
 
 Writes src/locations/<id>.json. The local frame matches the sim: origin at the
@@ -47,6 +55,16 @@ SITES = {
         'centre': (544587.4, 262930.1),  # middle of the baked area
         'pilot': (544662.4, 262900.1),   # middle of the main playing field
         'half': 1000,
+    },
+    # Modellflugplatz Glocknerhof, Berg im Drautal (Carinthia, Austria): the
+    # hotel's field in the Drau valley below it.
+    'glocknerhof': {
+        'name': 'Modellflugplatz Glocknerhof',
+        'source': 'bev',
+        'pilot_ll': (46.7437090, 13.1528585),  # lat, lon: at the net in front of the pits
+        'half': 1000,
+        'far_half': 7040,  # the mountains: out to here, every 32 m
+        'far_cell': 32,
     },
 }
 
@@ -555,6 +573,9 @@ def main():
                     help='also add structures the LIDAR shows that OSM does not have (they may since have been demolished)')
     args = ap.parse_args()
     site = SITES[args.site]
+    if site.get('source') == 'bev':
+        from bev import bake_bev
+        return bake_bev(args, site)
     box, files = download(site, args.cache)
     e0, n0 = site['pilot']
     n = int(box[2] - box[0])

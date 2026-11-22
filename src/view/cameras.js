@@ -16,6 +16,8 @@ function hToVFov(hDeg, aspect) {
   return MathUtils.radToDeg(2 * Math.atan(Math.tan(h / 2) / aspect));
 }
 
+const GROUND_CLEAR = 0.15; // m: how close to the ground any camera may come
+
 export class CameraRig {
   constructor(settings) {
     this.walk = { x: 0, z: 0 }; // where the pilot has walked from their spot (m: hand launch)
@@ -94,10 +96,12 @@ export class CameraRig {
         fov = MathUtils.clamp(wanted, Math.min(fov, strong ? 10 : 20), fov);
       }
       cam.fov = MathUtils.lerp(cam.fov, fov, 1 - Math.exp(-dt * 4));
-      // Nothing is ever this close to the pilot. Every bit nearer costs depth
-      // precision far away (where leaf cards of trees, only centimetres
-      // apart, would flicker through each other).
-      cam.near = 0.5;
+      // Nothing is ever this close to the pilot, except a model in your hand
+      // for a hand launch (its wing and tail come within half a metre).
+      // Every bit nearer costs depth precision far away (where leaf cards of
+      // trees, only centimetres apart, would flicker through each other), so
+      // only then.
+      cam.near = aircraft.held || dist < 2.5 ? 0.08 : 0.5;
     } else if (this.mode === 'fpv') {
       const mount = _m.fromArray(s.fpvMount === 'wing' ? this.views.pod : this.views.cockpit);
       _v.copy(mount).applyQuaternion(aircraft.orientation).add(aircraft.position);
@@ -134,6 +138,12 @@ export class CameraRig {
       cam.fov = hToVFov(80, aspect);
       cam.near = 0.25; // (as LOS: depth precision for the trees)
     }
+    // Never under the ground (the ground is only drawn from above, so from
+    // below you'd see through it): a wreck on its back or nose can put the
+    // cockpit camera below the grass, and the chase camera can sink into
+    // rising ground behind it.
+    const floor = heightAt(cam.position.x, cam.position.z) + GROUND_CLEAR;
+    if (cam.position.y < floor) cam.position.y = floor;
     cam.updateProjectionMatrix();
   }
 }
