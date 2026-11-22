@@ -25,7 +25,7 @@ function meshTexture() {
   const c = document.createElement('canvas');
   c.width = c.height = 64;
   const g = c.getContext('2d');
-  g.fillStyle = 'rgba(255,255,255,0.22)'; // the fine mesh between the threads
+  g.fillStyle = 'rgba(255,255,255,0.5)'; // the fine mesh between the threads (veils what's behind it)
   g.fillRect(0, 0, 64, 64);
   g.fillStyle = 'rgba(255,255,255,0.9)';
   for (let i = 0; i < 64; i += 8) {
