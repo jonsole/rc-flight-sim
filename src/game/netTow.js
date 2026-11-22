@@ -59,7 +59,7 @@ export class NetTowCourse {
     }
     const ch = this.ch;
     const net = ch.net;
-    this.view.update(ac, ctx.time);
+    this.view.update(ac, ctx.time, ctx.dt);
     if (this.state === 'done' || ac.crashed || net.snapped) {
       if (net.snapped && !this.snapSaid) {
         this.snapSaid = true;
