@@ -133,4 +133,13 @@ describe('insect net', () => {
     ch.update(1, new Vector3(500, 0, 0));
     expect(ch.caught - before).toBeLessThan(1e-9);
   });
+
+  it('pulls through the CG: the tow slows the model without pitching it over', () => {
+    const def = getAircraft('eflite-se5a-900').def;
+    const ac = flying(def, cfg(def, 'hard'), 1);
+    for (let i = 0; i < 6 * 60; i++) ac.update(1 / 60);
+    const nose = new Vector3(1, 0, 0).applyQuaternion(ac.orientation);
+    expect(Math.abs(Math.asin(nose.y))).toBeLessThan(0.15); // SAFE holds it about level
+    expect(ac.tow.tension).toBeGreaterThan(1);
+  });
 });

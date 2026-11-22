@@ -142,8 +142,8 @@ drifting up there on the way round (the count is shown), and the clock runs
 from the start gate. The course is laid out over the most open part of the
 field, like the other challenges (`src/game/netTow.js`).
 
-The difficulty is the net's size: its drag at 10 m/s is 12% (easy), 22%
-(medium) or 35% (hard) of the model's static thrust, so each difficulty asks
+The difficulty is the net's size: its drag at 10 m/s is 24% (easy), 44%
+(normal) or 70% (hard) of the model's static thrust, so each difficulty asks
 about as much of every model. Trees snag the net, and a hard enough pull
 snaps the cord. Best times are kept with the other challenges'. While the
 challenge is on, *Menu → Tuning* has an *Insect net* group: net size, drag

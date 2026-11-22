@@ -12,7 +12,7 @@
 // the cord.
 //
 // Difficulty is the net's size: its open-mouth drag at 10 m/s is a share of
-// the model's static thrust (12%, 22% or 35%), so each difficulty asks about
+// the model's static thrust (24%, 44% or 70%), so each difficulty asks about
 // as much of every model. The Tuning tab can change the net's size, its
 // drag and the cord's length, per model and difficulty.
 import { Vector3 } from 'three';
@@ -20,7 +20,10 @@ import { Obstacles } from './obstacles.js';
 
 const RHO = 1.225;
 const G = 9.81;
-const NET_CD = 0.5; // open mesh cone, on its mouth area
+const NET_CD = 1.0; // open mesh cone, on its mouth area (at drag factor 1)
+// The nets are sized as if they dragged half that (Cd 0.5): the drag was
+// doubled after flying it, keeping the same nets.
+const SIZE_CD = 0.5;
 const REF_Q = 0.5 * RHO * 10 * 10; // dynamic pressure at 10 m/s
 
 export const DIFFICULTIES = {
@@ -33,7 +36,7 @@ export const DEFAULT_CORD = 3; // m
 /** The net's mouth diameter (m) for a model and difficulty, before any tuning. */
 export function defaultNetSize(def, difficulty) {
   const share = (DIFFICULTIES[difficulty] ?? DIFFICULTIES.normal).share;
-  const area = (share * def.motor.staticThrust) / (NET_CD * REF_Q);
+  const area = (share * def.motor.staticThrust) / (SIZE_CD * REF_Q);
   return Math.sqrt((4 * area) / Math.PI);
 }
 
@@ -111,7 +114,7 @@ export class NetTow {
     // Snaps well above anything the model can pull in the air: a tree has it.
     this.breakStrength = Math.max(25, 4 * aircraft.mass * G, 2.5 * aircraft.def.motor.staticThrust);
     // Tied on under the belly, right below the CG (the body frame's origin),
-    // so the pull hardly turns the model: the bottom of the fuselage is the
+    // pulling through the CG so it doesn't turn the model: the bottom of the fuselage is the
     // lowest of its centre-line touch points (not the wheels or the prop).
     const belly = aircraft.def.contacts.filter((c) => Math.abs(c.pos[2]) < 0.05 && c.type !== 'wheel' && c.type !== 'prop' && !/prop/.test(c.name));
     const y = belly.length ? Math.min(...belly.map((c) => c.pos[1])) : -0.05;
@@ -191,8 +194,10 @@ export class NetTow {
           // The same pull on the model, towards the net.
           _u.copy(_d).multiplyScalar(t);
           fWorld.add(_u);
-          _u.applyQuaternion(qi);
-          mBody.add(_u.crossVectors(this.attach, _u));
+          // (No turning moment: the pull is taken through the CG. The hook's
+          // few centimetres below it would pitch the nose down hard under
+          // the net's drag, as a real one does; this tows as if it were
+          // rigged to pull through the CG.)
         }
       }
     }

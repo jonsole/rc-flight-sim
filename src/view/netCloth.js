@@ -165,11 +165,14 @@ export class NetCloth {
     const fy = speed > 0.1 ? -vy / speed : -n.y;
     const fz = speed > 0.1 ? -vz / speed : -n.z;
     const inflate = (INFLATE * q) / AREAL;
-    const flutter = (FLUTTER * q) / AREAL;
-    const billow = (BILLOW * q) / AREAL;
+    // Flutter, billow and swing build up with speed: barely any when slow
+    // (from 3 m/s, in full by 12).
+    const lively = Math.min(1, Math.max(0, (speed - 3) / 9)) ** 1.5;
+    const flutter = (FLUTTER * q * lively) / AREAL;
+    const billow = (BILLOW * q * lively) / AREAL;
     const wobble = 6 + speed * 0.8; // quick flutter (rad/s-ish)
     const wave = 2 * Math.PI * (0.8 + speed * 0.12); // billowing waves, rad/s
-    const sway = (SWAY * q) / AREAL;
+    const sway = (SWAY * q * lively) / AREAL;
     // Two directions across the flow, for the tail's swing.
     let ax = -fz;
     let ay = 0;
