@@ -1,13 +1,13 @@
 // Insect-net challenge (Menu → Challenges → Insect net tow; the course is
 // src/game/netTow.js): tow a drag net on a cord
-// from the tail, climb to the sampling height and fly figure-of-8 circuits
+// from under the belly, climb to the sampling height and fly figure-of-8 circuits
 // through the gates, catching the insects drifting up there.
 //
 // The net is a small mass on the end of an elastic cord. It starts folded up
 // and opens in the airflow: its mouth opens with the dynamic pressure on it,
 // a fraction of a second behind, and folds up again when it goes slack or
 // slow. Open, it drags hard (a mesh cone, about Cd 0.5 on its mouth). The
-// cord pulls on the aeroplane's tail only when taut. Dragged along the
+// cord pulls on the aeroplane (tied on under the CG) only when taut. Dragged along the
 // ground it rubs; caught in a tree it holds, and a hard enough pull snaps
 // the cord.
 //
@@ -110,9 +110,12 @@ export class NetTow {
     this.damping = 3;
     // Snaps well above anything the model can pull in the air: a tree has it.
     this.breakStrength = Math.max(25, 4 * aircraft.mass * G, 2.5 * aircraft.def.motor.staticThrust);
-    // Tied on at the tail: the rearmost point of the model, on the centre line.
-    const tail = aircraft.def.contacts.reduce((a, c) => (c.pos[0] < a.pos[0] ? c : a));
-    this.attach = new Vector3(tail.pos[0], tail.pos[1], 0);
+    // Tied on under the belly, right below the CG (the body frame's origin),
+    // so the pull hardly turns the model: the bottom of the fuselage is the
+    // lowest of its centre-line touch points (not the wheels or the prop).
+    const belly = aircraft.def.contacts.filter((c) => Math.abs(c.pos[2]) < 0.05 && c.type !== 'wheel' && c.type !== 'prop' && !/prop/.test(c.name));
+    const y = belly.length ? Math.min(...belly.map((c) => c.pos[1])) : -0.05;
+    this.attach = new Vector3(0, y - 0.01, 0);
     this.position = new Vector3();
     this.velocity = new Vector3();
     this.open = 0; // 0 folded up .. 1 fully open
@@ -163,7 +166,7 @@ export class NetTow {
    */
   step(aircraft, dt, fWorld, mBody, q, qi) {
     const env = aircraft.env;
-    // The tail's position and velocity.
+    // The tie-on point's position and velocity.
     _r.copy(this.attach).applyQuaternion(q);
     const a = _a.copy(_r).add(aircraft.position);
     _w.copy(aircraft.omega).applyQuaternion(q);
@@ -185,7 +188,7 @@ export class NetTow {
           this.tension = 0;
         } else {
           _f.addScaledVector(_d, -t);
-          // The same pull on the tail, towards the net.
+          // The same pull on the model, towards the net.
           _u.copy(_d).multiplyScalar(t);
           fWorld.add(_u);
           _u.applyQuaternion(qi);

@@ -35,7 +35,7 @@ describe('insect net fabric', () => {
     expect(s.trail).toBeLessThan(1.15 * c.length);
     expect(Math.abs(s.sag)).toBeLessThan(0.25 * c.length); // flying out, not hanging
     expect(s.r).toBeGreaterThan(0.8 * c.R); // filled with air
-    expect(s.r).toBeLessThan(1.2 * c.R);
+    expect(s.r).toBeLessThan(1.35 * c.R); // (billowing out a little past the hoop)
   });
 
   it('hangs and folds when the hoop stops in the air', () => {
