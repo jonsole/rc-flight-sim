@@ -61,6 +61,7 @@ export class NetView {
     this.group.add(this.bridle);
     this.facing = new Vector3(1, 0, 0); // the way the mouth faces
     this.hoopAt = new Vector3(); // where it's drawn (lifted clear of the ground)
+    this.knot = new Vector3(); // where the bridle meets the cord
 
     const cg = new BufferGeometry();
     cg.setAttribute('position', new BufferAttribute(new Float32Array(CORD_POINTS * 3), 3));
@@ -174,22 +175,7 @@ export class NetView {
     if (!ch) return;
     const net = ch.net;
 
-    // --- Cord: straight when taut, sagging when slack -----------------------
     const a = net.attachPoint(aircraft, _a);
-    const pos = this.cord.geometry.attributes.position;
-    this.cord.visible = !net.snapped;
-    if (!net.snapped) {
-      const d = a.distanceTo(net.position);
-      const sag = 0.5 * Math.sqrt(Math.max(0, net.cordLength * net.cordLength - d * d));
-      for (let i = 0; i < CORD_POINTS; i++) {
-        const f = i / (CORD_POINTS - 1);
-        _p.lerpVectors(a, this.knot ?? net.position, f);
-        _p.y -= sag * 4 * f * (1 - f);
-        _p.y = Math.max(_p.y, aircraft.env.ground.heightAt(_p.x, _p.z) + 0.02); // (lying on the grass)
-        pos.setXYZ(i, _p.x, _p.y, _p.z);
-      }
-      pos.needsUpdate = true;
-    }
 
     // --- Hoop: faces up the cord when it pulls; dropped, it lies flat ---------
     const floor = aircraft.env.ground.heightAt(net.position.x, net.position.z);
@@ -227,7 +213,26 @@ export class NetView {
         this.hoopAt.z + R * (Math.cos(ang) * _e1.z + Math.sin(ang) * _e2.z));
     }
     bp.needsUpdate = true;
-    this.knot = knot.clone();
+    this.knot.copy(knot);
+
+    // --- Cord: from the tail to the bridle's knot (this frame's: drawn after
+    // the hoop, so the two meet); straight when taut, sagging when slack ---
+    const pos = this.cord.geometry.attributes.position;
+    this.cord.visible = !net.snapped;
+    if (!net.snapped) {
+      const d = a.distanceTo(this.knot);
+      // (The cord's tied to the hoop's middle; the bridle takes up the last bit.)
+      const L = Math.max(d, net.cordLength - R * 0.9);
+      const sag = 0.5 * Math.sqrt(Math.max(0, L * L - d * d));
+      for (let i = 0; i < CORD_POINTS; i++) {
+        const f = i / (CORD_POINTS - 1);
+        _p.lerpVectors(a, this.knot, f);
+        _p.y -= sag * 4 * f * (1 - f);
+        _p.y = Math.max(_p.y, aircraft.env.ground.heightAt(_p.x, _p.z) + 0.02); // (lying on the grass)
+        pos.setXYZ(i, _p.x, _p.y, _p.z);
+      }
+      pos.needsUpdate = true;
+    }
 
     // --- Bag: soft fabric in the airflow -------------------------------------------------
     const wind = aircraft.env.wind ? aircraft.env.wind.at(this.hoopAt, aircraft.time, _wind, this.hoopAt.y - floor) : _wind.set(0, 0, 0);
