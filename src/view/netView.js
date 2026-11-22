@@ -1,30 +1,34 @@
 // What the insect-net challenge looks like (src/sim/net.js): the cord, the
-// net streaming behind it (a mesh cone on a hoop, folded thin until the air
-// opens it), the swarms of insects, and on-screen markers to find them.
+// net streaming behind it (a fine mesh cone on a thin hoop, folded thin
+// until the air opens it), the figure-of-8 course with its gates, and an
+// on-screen marker on the next gate.
 import {
-  Group, Mesh, ConeGeometry, TorusGeometry, MeshStandardMaterial, CanvasTexture, RepeatWrapping, DoubleSide,
-  Line, LineBasicMaterial, BufferGeometry, BufferAttribute, Points, PointsMaterial, Vector3, Quaternion,
+  Group, Mesh, ConeGeometry, TorusGeometry, MeshStandardMaterial, MeshBasicMaterial, CanvasTexture, RepeatWrapping, DoubleSide,
+  Line, LineBasicMaterial, LineDashedMaterial, BufferGeometry, BufferAttribute, Vector3, Quaternion,
 } from 'three';
 
 const CORD_POINTS = 16;
-const INSECTS = 140; // dots drawn per swarm
 const _up = new Vector3(0, 1, 0);
 const _a = new Vector3();
 const _p = new Vector3();
 const _q = new Quaternion();
 
+/** Fine netting: thin threads on a faint gauze, many to the metre. */
 function meshTexture() {
   const c = document.createElement('canvas');
-  c.width = c.height = 32;
+  c.width = c.height = 64;
   const g = c.getContext('2d');
-  g.fillStyle = 'rgba(255,255,255,0.12)'; // the fine mesh between the cords
-  g.fillRect(0, 0, 32, 32);
-  g.strokeStyle = 'rgba(255,255,255,1)';
-  g.lineWidth = 3;
-  g.strokeRect(0, 0, 32, 32);
+  g.fillStyle = 'rgba(255,255,255,0.22)'; // the fine mesh between the threads
+  g.fillRect(0, 0, 64, 64);
+  g.fillStyle = 'rgba(255,255,255,0.9)';
+  for (let i = 0; i < 64; i += 8) {
+    g.fillRect(i, 0, 1, 64);
+    g.fillRect(0, i, 64, 1);
+  }
   const t = new CanvasTexture(c);
   t.wrapS = t.wrapT = RepeatWrapping;
-  t.repeat.set(10, 6);
+  t.repeat.set(8, 6); // (64 threads round, 48 along)
+  t.anisotropy = 4;
   return t;
 }
 
@@ -36,12 +40,12 @@ export class NetView {
     scene.add(this.group);
 
     // The net: unit cone, mouth at the origin, tail along +y.
-    const cone = new ConeGeometry(0.5, 1, 20, 1, true);
+    const cone = new ConeGeometry(0.5, 1, 32, 1, true);
     cone.translate(0, 0.5, 0); // the open base (the mouth) at 0, the closed end at +1
-    this.netMat = new MeshStandardMaterial({ color: 0xf2f2ea, map: meshTexture(), transparent: true, depthWrite: false, side: DoubleSide, roughness: 0.9 });
+    this.netMat = new MeshStandardMaterial({ color: 0xf4f4ee, map: meshTexture(), transparent: true, depthWrite: false, side: DoubleSide, roughness: 0.9 });
     this.bag = new Mesh(cone, this.netMat);
-    this.bag.castShadow = true;
-    this.hoop = new Mesh(new TorusGeometry(0.5, 0.025, 6, 24).rotateX(Math.PI / 2), new MeshStandardMaterial({ color: 0x303030, roughness: 0.6 }));
+    // A thin wire hoop holds the mouth open.
+    this.hoop = new Mesh(new TorusGeometry(0.5, 0.006, 6, 48).rotateX(Math.PI / 2), new MeshStandardMaterial({ color: 0x8a8a84, metalness: 0.6, roughness: 0.4 }));
     this.net = new Group();
     this.net.add(this.bag, this.hoop);
     this.group.add(this.net);
@@ -52,11 +56,14 @@ export class NetView {
     this.cord.frustumCulled = false;
     this.group.add(this.cord);
 
-    this.swarmMat = new PointsMaterial({ color: 0x151510, size: 2.5, sizeAttenuation: false, transparent: true, opacity: 0.9, depthWrite: false });
-    this.swarmViews = [];
+    // The course: a dashed figure of 8 at the sampling height, and a ring at each gate.
+    this.course = new Group();
+    this.group.add(this.course);
+    this.gateMat = new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false, fog: false });
+    this.nextMat = new MeshBasicMaterial({ color: 0xffd23a, transparent: true, opacity: 0.9, depthWrite: false, fog: false });
+    this.gates = [];
 
-    // On-screen markers: a ring on the nearest swarm, or an arrow at the
-    // edge pointing to it.
+    // On-screen marker: a ring on the next gate, or an arrow at the edge pointing to it.
     this.marker = document.createElement('div');
     this.marker.className = 'swarm-marker';
     this.marker.style.display = 'none';
@@ -67,31 +74,36 @@ export class NetView {
   set(challenge) {
     this.challenge = challenge;
     this.group.visible = !!challenge;
-    for (const v of this.swarmViews) {
-      this.group.remove(v.points);
-      v.points.geometry.dispose();
+    for (const o of [...this.course.children]) {
+      this.course.remove(o);
+      o.geometry.dispose();
     }
-    this.swarmViews = [];
+    this.gates = [];
     this.marker.style.display = 'none';
-  }
-
-  #swarmView(s) {
-    let v = this.swarmViews.find((x) => x.swarm === s);
-    if (v) return v;
-    const geo = new BufferGeometry();
-    geo.setAttribute('position', new BufferAttribute(new Float32Array(INSECTS * 3), 3));
-    const points = new Points(geo, this.swarmMat);
-    points.frustumCulled = false;
-    // Each insect: a spot in the swarm (Gaussian, σ 2 m) and its own buzz.
-    const g = () => {
-      const u = Math.random() || 1e-9;
-      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random()) * 2;
-    };
-    const spots = Array.from({ length: INSECTS }, () => [g(), g() * 0.7, g(), Math.random() * 10, 2 + Math.random() * 4]);
-    v = { swarm: s, points, spots };
-    this.swarmViews.push(v);
-    this.group.add(points);
-    return v;
+    if (!challenge) return;
+    const path = new BufferGeometry().setFromPoints(challenge.path);
+    const line = new Line(path, new LineDashedMaterial({ color: 0xffffff, dashSize: 3, gapSize: 3, transparent: true, opacity: 0.5, fog: false }));
+    line.computeLineDistances();
+    this.course.add(line);
+    // A gate ring, as tall as the height band, standing across the course.
+    const lap = challenge.lap;
+    for (let i = 0; i < lap.length; i++) {
+      if (i === 3) continue; // (the centre is one gate, passed twice a lap)
+      const g = lap[i];
+      const ring = new Mesh(new TorusGeometry(challenge.course.band, 0.15, 6, 48), this.gateMat);
+      ring.position.copy(g.pos);
+      // Facing along the course: from the gate before to the one after.
+      const prev = lap[(i + 7) % 8].pos;
+      const next = lap[(i + 1) % 8].pos;
+      const dir = _p.subVectors(next, prev).setY(0).normalize();
+      ring.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), dir);
+      ring.userData.gate = g;
+      this.course.add(ring);
+      this.gates.push(ring);
+    }
+    // The middle one: across the crossing (both loops pass it the same way).
+    const mid = this.gates.find((m) => m.userData.gate === lap[7]);
+    if (mid) mid.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), _p.subVectors(lap[4].pos, lap[2].pos).setY(0).normalize());
   }
 
   update(aircraft, camera, t, width, height) {
@@ -119,46 +131,27 @@ export class NetView {
     // --- Net: the mouth opens, the bag streams behind --------------------------
     const open = net.open;
     const across = net.diameter * (0.12 + 0.88 * open);
-    const length = net.diameter * (1.6 + 1.2 * (1 - open));
+    const length = net.diameter * (1.8 + 1.2 * (1 - open));
     this.net.position.copy(net.position);
     _q.setFromUnitVectors(_up, net.axis);
     this.net.quaternion.copy(_q);
     this.bag.scale.set(across, length, across);
     this.hoop.scale.set(across, net.diameter, across);
-    // (A snapped cord leaves the net where it fell.)
 
-    // --- Swarms ---------------------------------------------------------------
-    const live = new Set(ch.swarms);
-    for (let i = this.swarmViews.length - 1; i >= 0; i--) {
-      const v = this.swarmViews[i];
-      if (!live.has(v.swarm)) {
-        this.group.remove(v.points);
-        v.points.geometry.dispose();
-        this.swarmViews.splice(i, 1);
-      }
-    }
-    for (const s of ch.swarms) {
-      const v = this.#swarmView(s);
-      const p = v.points.geometry.attributes.position;
-      // Fewer as the net takes them; the last few scatter as it disperses.
-      const n = Math.round(INSECTS * Math.min(1, (s.left / s.capacity) * 1.2));
-      const spread = 1 + s.fade * 2;
-      for (let k = 0; k < n; k++) {
-        const [x, y, z, ph, fr] = v.spots[k];
-        const w = t * fr + ph;
-        p.setXYZ(k, s.pos.x + (x + 0.35 * Math.sin(w)) * spread, s.pos.y + (y + 0.25 * Math.sin(w * 1.7)) * spread, s.pos.z + (z + 0.35 * Math.cos(w * 1.3)) * spread);
-      }
-      p.needsUpdate = true;
-      v.points.geometry.setDrawRange(0, n);
+    // --- Gates: the next one lit, pulsing ------------------------------------------
+    const next = ch.done ? null : ch.nextGate();
+    for (const g of this.gates) {
+      const on = g.userData.gate === next;
+      g.material = on ? this.nextMat : this.gateMat;
+      g.scale.setScalar(on ? 1 + 0.05 * Math.sin(t * 5) : 1);
     }
 
-    // --- Marker on the nearest swarm ---------------------------------------------
-    const target = ch.done ? null : ch.nearest(net.position);
-    if (!target) {
+    // --- Marker on the next gate ------------------------------------------------------
+    if (!next) {
       this.marker.style.display = 'none';
       return;
     }
-    _p.copy(target.pos).project(camera);
+    _p.copy(next.pos).project(camera);
     const behind = _p.z > 1;
     let x = _p.x;
     let y = _p.y;
@@ -167,7 +160,7 @@ export class NetView {
       y = -y;
     }
     const on = !behind && Math.abs(x) < 0.95 && Math.abs(y) < 0.95;
-    const dist = Math.round(camera.position.distanceTo(target.pos));
+    const dist = Math.round(aircraft.position.distanceTo(next.pos));
     this.marker.style.display = '';
     if (on) {
       this.marker.className = 'swarm-marker ring';

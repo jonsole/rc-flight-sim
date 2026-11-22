@@ -3,7 +3,7 @@ import { Vector3 } from 'three';
 import { Aircraft } from '../src/sim/aircraft.js';
 import { AIRCRAFT, getAircraft } from '../src/aircraft/index.js';
 import { ground } from '../src/sim/terrain.js';
-import { NetTow, InsectChallenge, defaultNetSize, DIFFICULTIES } from '../src/sim/net.js';
+import { NetTow, FigureEightChallenge, COURSE, defaultNetSize, DIFFICULTIES } from '../src/sim/net.js';
 
 const cfg = (def, difficulty, extra = {}) => ({ diameter: defaultNetSize(def, difficulty), dragFactor: 1, cordLength: 3, ...extra });
 
@@ -66,42 +66,71 @@ describe('insect net', () => {
     expect(net.tension).toBe(0); // slack while parked
   });
 
-  it('catches insects flying through a swarm, and none when folded', () => {
+  const course = (net) => new FigureEightChallenge(net, { ground, base: 0, center: { x: 0, z: 0 }, axis: { x: 1, z: 0 }, side: { x: 0, z: -1 } });
+
+  it('figure of 8: two loops, one each way, gates in order, only at height', () => {
     const def = getAircraft('eflite-se5a-900').def;
     const ac = flying(def, cfg(def, 'medium'));
-    const ch = new InsectChallenge(ac.tow, { ground, center: { x: 0, z: 0 }, rand: () => 0.5 });
-    ch.started = true;
-    const s = ch.swarms[0];
-    ac.tow.position.copy(s.pos);
+    const ch = course(ac.tow);
+    expect(ch.turnA).not.toBe(ch.turnB);
+    // Low: the start gate doesn't count.
+    const p = new Vector3(0, 5, 0);
+    ch.update(0.1, p);
+    expect(ch.started).toBe(false);
+    expect(ch.directions(p, 0).climb).toBe(1);
+    // Fly every gate at height, in order: done after COURSE.laps figure-8s.
+    let n = 0;
+    while (!ch.done && n < 100) {
+      const g = ch.nextGate().pos;
+      ch.update(0.5, new Vector3(g.x + 3, COURSE.height, g.z));
+      n++;
+    }
+    expect(ch.done).toBe(true);
+    expect(n).toBe(1 + 8 * COURSE.laps);
+    expect(ch.time).toBeGreaterThan(0);
+    // Skipping a gate doesn't count the one after it.
+    const ch2 = course(ac.tow);
+    ch2.update(0.1, ch2.nextGate().pos.clone());
+    const skip = ch2.lap[1].pos.clone();
+    ch2.update(0.1, skip);
+    expect(ch2.gateIndex).toBe(1);
+  });
+
+  it('says which way to turn for the next gate', () => {
+    const def = getAircraft('eflite-se5a-900').def;
+    const ac = flying(def, cfg(def, 'medium'));
+    const ch = course(ac.tow);
+    ch.reachedHeight = true;
+    // The start gate is at the origin. Heading +x (0) from z = +50 (south of
+    // it, seen from above with -z north): it's off to the left.
+    expect(ch.directions(new Vector3(-50, COURSE.height, 50), 0).turn).toBe('left');
+    expect(ch.directions(new Vector3(-50, COURSE.height, -50), 0).turn).toBe('right');
+    expect(ch.directions(new Vector3(-50, COURSE.height, 0), 0).turn).toBe(null);
+  });
+
+  it('the loops turn the way the directions say', () => {
+    const def = getAircraft('eflite-se5a-900').def;
+    const ac = flying(def, cfg(def, 'medium'));
+    const ch = course(ac.tow);
+    // Going round loop A (gates 0, 1, 2): the heading from gate to gate turns towards turnA.
+    const hd = (a, b) => Math.atan2(-(b.z - a.z), b.x - a.x);
+    const l = ch.lap.map((g) => g.pos);
+    const d = Math.atan2(Math.sin(hd(l[1], l[2]) - hd(l[0], l[1])), Math.cos(hd(l[1], l[2]) - hd(l[0], l[1])));
+    expect(d > 0 ? 'left' : 'right').toBe(ch.turnA);
+  });
+
+  it('catches insects at height with the net open, and none folded', () => {
+    const def = getAircraft('eflite-se5a-900').def;
+    const ac = flying(def, cfg(def, 'medium'));
+    const ch = course(ac.tow);
+    ac.tow.position.set(0, COURSE.height, 0);
     ac.tow.open = 1;
     ac.tow.airspeed = 12;
-    ch.update(0.05);
+    ch.update(1, new Vector3(500, 0, 0));
     expect(ch.caught).toBeGreaterThan(0);
     const before = ch.caught;
     ac.tow.open = 0;
-    ch.update(0.05);
+    ch.update(1, new Vector3(500, 0, 0));
     expect(ch.caught - before).toBeLessThan(1e-9);
-  });
-
-  it('a pass through a swarm catches up to about an eighth of the target', () => {
-    const def = getAircraft('eflite-se5a-900').def;
-    const ac = flying(def, cfg(def, 'medium'), 0.8);
-    const ch = new InsectChallenge(ac.tow, { ground, center: { x: 0, z: 0 }, rand: () => 0.5 });
-    ch.started = true;
-    // Line up 40 m short of a swarm, flying straight at it at its height; hold the
-    // swarm still and fly on through.
-    const s = ch.swarms[0];
-    s.home.set(60, 100, 0);
-    ac.resetInAir(new Vector3(20, 100, 0), 0, 13);
-    ac.tow.place(ac);
-    for (let i = 0; i < 6 * 60; i++) {
-      ac.update(1 / 60);
-      s.phase = 0;
-      s.home.set(60, ac.tow.position.y, 0); // (level with the net, wherever it sags to)
-      ch.update(1 / 60);
-    }
-    expect(ac.tow.position.x).toBeGreaterThan(70);
-    expect(ch.caught / ch.target).toBeGreaterThan(0.06); // (the swarm drifts, and thins as it's caught)
-    expect(ch.caught / ch.target).toBeLessThan(0.17);
   });
 });

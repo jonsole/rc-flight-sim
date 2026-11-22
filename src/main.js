@@ -32,7 +32,7 @@ import { SunGlare } from './view/glare.js';
 import { weatherFor } from './world/mist.js';
 import { loadEdits } from './sim/edits.js';
 import { Editor } from './editor/editor.js';
-import { NetTow, InsectChallenge, netConfig, recordTime, bestTime, DIFFICULTIES } from './sim/net.js';
+import { NetTow, FigureEightChallenge, COURSE, netConfig, recordTime, bestTime, DIFFICULTIES } from './sim/net.js';
 import { NetView } from './view/netView.js';
 
 // The version running: the GitHub commit it was built from, and its date.
@@ -422,13 +422,20 @@ function resetAircraft() {
   startChallenge();
 }
 
-/** Room for a swarm of insects here: nothing solid or leafy within a few metres. */
-function clearForSwarm(x, y, z) {
-  const near = obstacles.near(x, z, 4);
-  for (const [dx, dy, dz] of [[0, 0, 0], [3, 0, 0], [-3, 0, 0], [0, 0, 3], [0, 0, -3], [0, 2, 0], [0, -2, 0]]) {
-    for (const s of near) if (Obstacles.test(s, x + dx, y + dy, z + dz)) return false;
-  }
-  return true;
+/**
+ * Where the figure-of-8 goes: along the runway, its middle over the runway
+ * pushed a loop's radius further from the pilot, so neither loop passes over
+ * your head.
+ */
+function figureEightCourse() {
+  const A = clubAngle();
+  const [rx, rz] = clubToWorld(RUNWAY.x, RUNWAY.z);
+  const [px, pz] = pilotSpot();
+  const axis = { x: Math.cos(A), z: Math.sin(A) }; // along the runway (club +x)
+  let side = { x: -axis.z, z: axis.x };
+  if ((rx - px) * side.x + (rz - pz) * side.z < 0) side = { x: -side.x, z: -side.z }; // away from the pilot
+  const off = Math.max(0, COURSE.radius - ((rx - px) * side.x + (rz - pz) * side.z)) + 10;
+  return { center: { x: rx + side.x * off, z: rz + side.z * off }, axis, side, base: ground.heightAt(px, pz) };
 }
 
 /** (Re)start the challenge chosen in the menu, if any, from the aircraft's start. */
@@ -444,8 +451,7 @@ function startChallenge() {
   const net = new NetTow(challengeCfg, aircraft);
   aircraft.tow = net;
   net.place(aircraft);
-  const [cx, cz] = pilotSpot();
-  challenge = new InsectChallenge(net, { ground, center: { x: cx, z: cz }, clear: clearForSwarm });
+  challenge = new FigureEightChallenge(net, { ground, ...figureEightCourse() });
   netView.set(challenge);
   challengeHud.style.display = 'block';
 }
@@ -464,20 +470,26 @@ function retuneNet() {
 
 const fmtTime = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 let hudText = '';
-/** The challenge's line at the top of the screen. */
+/** The challenge's lines at the top of the screen: progress, then what to do. */
 function updateChallengeHud() {
   if (!challenge) return;
   const c = challenge;
   const net = c.net;
-  let status;
-  if (c.done) status = `<span class="win">Net full in ${fmtTime(c.time)}!</span> R to go again`;
-  else if (net.snapped) status = '<span class="warn">Cord snapped: net lost.</span> R to retry';
-  else if (aircraft.crashed) status = '<span class="warn">Crashed.</span> R to retry';
-  else if (net.snagged) status = '<span class="warn">Net caught in a tree!</span>';
-  else if (!c.started) status = 'Take off and find the swarms';
-  else status = `${fmtTime(c.time)} · net ${Math.round(net.open * 100)}% open`;
-  const frac = c.caught / c.target;
-  const text = `Insects ${Math.floor(c.caught)} / ${c.target}<span class="bar"><span class="fill" style="width:${(frac * 100).toFixed(1)}%"></span></span>${status}`;
+  const frac = c.done ? 1 : c.started ? Math.min(1, (c.gateIndex - 1) / (8 * c.course.laps)) : 0;
+  const progress = `Figure 8 ${Math.min(c.course.laps, c.lapsDone + 1)} / ${c.course.laps}<span class="bar"><span class="fill" style="width:${(frac * 100).toFixed(1)}%"></span></span>${fmtTime(c.time)} · ${Math.floor(c.caught)} insects · net ${Math.round(net.open * 100)}% open`;
+  let say;
+  if (c.done) say = `<span class="win">Course complete in ${fmtTime(c.time)}, ${Math.floor(c.caught)} insects caught!</span> R to fly it again`;
+  else if (net.snapped) say = '<span class="warn">Cord snapped: net lost.</span> R to retry';
+  else if (aircraft.crashed) say = '<span class="warn">Crashed.</span> R to retry';
+  else if (net.snagged) say = '<span class="warn">Net caught in a tree!</span>';
+  else if (aircraft.held || (aircraft.onGround && !c.reachedHeight)) say = `Take off and climb to ${c.course.height} m`;
+  else {
+    const d = c.directions(aircraft.position, headingOf(aircraft.orientation));
+    const arrows = `${d.climb > 0 ? '<b class="dir">⬆</b>' : d.climb < 0 ? '<b class="dir">⬇</b>' : ''}${d.turn === 'left' ? '<b class="dir">⬅</b>' : d.turn === 'right' ? '<b class="dir">➡</b>' : ''}`;
+    const turn = d.turn ? ` · turn ${d.turn}` : ' · straight on';
+    say = `${arrows}${d.text}${c.reachedHeight ? turn : ''}`;
+  }
+  const text = `<div>${progress}</div><div class="say">${say}</div>`;
   if (text !== hudText) {
     hudText = text;
     challengeHud.innerHTML = text;
@@ -835,17 +847,16 @@ function frame(now) {
     debris.update(dt);
     osd.update(dt, aircraft);
     if (challenge) {
-      // The clock starts once it's moving, and stops on a crash or a lost net.
-      if (!aircraft.held && aircraft.velocity.length() > 2) challenge.started = true;
+      // The clock runs from the first gate; it stops on a crash or a lost net.
       const wasDone = challenge.done;
-      challenge.update(aircraft.crashed || challenge.net.snapped ? 0 : dt);
+      if (!aircraft.crashed && !challenge.net.snapped) challenge.update(dt, aircraft.position);
       if (challenge.done && !wasDone) {
         const name = DIFFICULTIES[settings.netDifficulty]?.name ?? settings.netDifficulty;
-        if (challengeCfg.tuned) toast(`Net full in ${fmtTime(challenge.time)} (tuned net: not counted as a best)`);
+        if (challengeCfg.tuned) toast(`Course complete in ${fmtTime(challenge.time)} (tuned net: not counted as a best)`);
         else {
           const prev = bestTime(entry.id, settings.netDifficulty);
           if (recordTime(entry.id, settings.netDifficulty, challenge.time)) toast(`New best for ${name}: ${fmtTime(challenge.time)}${prev != null ? ` (was ${fmtTime(prev)})` : ''}`);
-          else toast(`Net full in ${fmtTime(challenge.time)} (best ${fmtTime(prev)})`);
+          else toast(`Course complete in ${fmtTime(challenge.time)} (best ${fmtTime(prev)})`);
         }
       }
     }

@@ -128,20 +128,27 @@ saves them to a file (send it in to have them built into the model) and
 
 ## Insect-net challenge
 
-*Menu → Flying → Challenge → Insect net tow* ties a drag net on a cord to
-the model's tail. The net starts folded (on the grass behind the model, or
-trailing if you start in the air) and opens in the airflow; open, it drags
-hard. Fly it through the swarms of insects around the field (a yellow marker
-points to the nearest) until it's full. The difficulty is the net's size:
-its drag at 10 m/s is 12% (easy), 22% (medium) or 35% (hard) of the model's
-static thrust, so each difficulty asks about as much of every model, and the
-number of insects to catch grows with the net. A swarm thins as you catch
-from it and disperses after about three good passes. Trees snag the net, and
-a hard enough pull snaps the cord. Your best time is kept per model and
-difficulty. While the challenge is on, *Menu → Tuning* has an *Insect net*
-group: net size, drag factor and cord length, per model and difficulty
-(best times only count with the standard net). The physics is in
-`src/sim/net.js`, the drawing in `src/view/netView.js`.
+*Menu → Flying → Challenge → Insect net tow* ties a fine insect-sampling net
+on a cord to the model's tail. The net starts folded (on the grass behind
+the model, or trailing if you start in the air) and opens in the airflow;
+open, it drags hard. Climb to the sampling height (40 m, ±10), then fly
+three figure-of-8 circuits over the field: through the start gate where the
+two loops meet, round one loop, back through the middle and round the other
+the opposite way. Directions at the top of the screen say whether to climb
+or descend, which way to turn and which gate is next; the next gate is lit
+yellow and marked on screen, and the course is drawn as a dashed line.
+Gates only count at the sampling height. The net catches the insects
+drifting up there on the way round (the count is shown), and the clock runs
+from the start gate.
+
+The difficulty is the net's size: its drag at 10 m/s is 12% (easy), 22%
+(medium) or 35% (hard) of the model's static thrust, so each difficulty asks
+about as much of every model. Trees snag the net, and a hard enough pull
+snaps the cord. Your best time is kept per model and difficulty. While the
+challenge is on, *Menu → Tuning* has an *Insect net* group: net size, drag
+factor and cord length, per model and difficulty (best times only count with
+the standard net). The course's height, loop size and number of circuits
+are `COURSE` in `src/sim/net.js`; the drawing is in `src/view/netView.js`.
 
 ## Flying fields
 

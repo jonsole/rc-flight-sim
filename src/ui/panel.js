@@ -127,7 +127,7 @@ export class Panel {
     const id = this.settings.aircraft;
     const best = bestTime(id, this.settings.netDifficulty);
     const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
-    return `Tow a drag net on a cord from the tail and fly it through the swarms of insects (follow the yellow marker). The net starts folded and opens in the airflow, and drags hard: the harder the difficulty, the bigger the net. Fill it to finish; a tree will snag it. Net size, drag and cord length are under Tuning. ${best != null ? `Your best with the ${getAircraft(id).name} on this difficulty: ${fmt(best)}.` : ''}`;
+    return `Tow a fine insect-sampling net on a cord from the tail: climb to the sampling height, then fly figure-of-8 circuits through the gates, following the directions at the top of the screen and the yellow marker. The net starts folded and opens in the airflow, and drags hard: the harder the difficulty, the bigger the net. Keep it clear of trees. Net size, drag and cord length are under Tuning. ${best != null ? `Your best with the ${getAircraft(id).name} on this difficulty: ${fmt(best)}.` : ''}`;
   }
 
   /** Tuning: the flight settings of the model you're flying (src/sim/tuning.js), in collapsible groups. */
@@ -500,7 +500,8 @@ export class Panel {
       el('ul', {},
         el('li', {}, 'Choose it under Flying → Challenge. Take off gently: the folded net drags along the grass until it lifts and opens.'),
         el('li', {}, 'Open, the net drags hard: keep the power up and the speed above the stall, and turn wide and gently.'),
-        el('li', {}, 'The net hangs a few metres behind and below: fly a little above a swarm so the net goes through the middle. Follow the yellow marker to the nearest one.'),
+        el('li', {}, 'Climb to the sampling height, then fly the figure of 8: through the start gate where the loops meet, round one loop, back through the middle, round the other. The top of the screen says which way to turn and whether to climb; the yellow ring marks the next gate.'),
+        el('li', {}, 'Gates only count within the height band, so hold your height round the turns: with the net out a model sinks fast in a steep turn.'),
         el('li', {}, 'Keep the net clear of trees: it snags, and a hard pull snaps the cord.')),
       el('h3', {}, 'Views'),
       el('ul', {},

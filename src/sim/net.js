@@ -1,5 +1,6 @@
 // Insect-net challenge (Menu → Flying → Challenge): tow a drag net on a cord
-// from the tail and sweep it through swarms of insects.
+// from the tail, climb to the sampling height and fly figure-of-8 circuits
+// through the gates, catching the insects drifting up there.
 //
 // The net is a small mass on the end of an elastic cord. It starts folded up
 // and opens in the airflow: its mouth opens with the dynamic pressure on it,
@@ -249,110 +250,135 @@ export class NetTow {
   }
 }
 
-// --- Insect swarms and the score ----------------------------------------------
-// Swarms hang a few metres up around the field, drifting a little. Each is a
-// fuzzy ball (a Gaussian, σ = 2 m) of insects. Flying the open net through
-// one catches what it sweeps: about 1000 per m² of mouth for a pass through
-// the middle when it's full. A swarm runs out after about three good passes
-// and disperses; a new one forms somewhere else. The target is eight good
-// passes' worth, so it takes about as much flying with any net.
-const SIGMA = 2;
-const PEAK = 1000 / (SIGMA * Math.sqrt(2 * Math.PI)); // insects / m³ at the middle
-const SWARMS = 5;
+// --- The course: climb, then figure-of-8 circuits --------------------------------
+// Insect-sampling flights tow a net at height. Climb to the sampling height
+// (40 m, ±10), then fly figure-of-8 circuits over the field: two touching
+// loops, one flown to the left and one to the right, through gates around
+// them, in order, at that height. A gate counts when the model passes
+// within 15 m of it (across) while in the height band. The net catches the
+// insects drifting at that height on the way round.
+export const COURSE = {
+  height: 40, // m above the pilot's ground
+  band: 10, // ± m
+  radius: 45, // each loop's radius (m)
+  gate: 15, // how near a gate to pass (m, across)
+  laps: 3, // figure-of-8s to fly
+};
+const AERIAL_DENSITY = 0.6; // insects per m³ drifting at height (fewer lower down)
 
-export class InsectChallenge {
+export class FigureEightChallenge {
   /**
-   * @param {object} opts { ground, center: {x, z}, radius, rand, clear(x, y, z): is there room for a swarm here }
+   * @param {NetTow} net
+   * @param {object} opts { ground, base: ground height to measure from, center: {x, z}, axis: {x, z}
+   *   (along the 8, unit), side: {x, z} (across it, unit), course: overrides of COURSE }
    */
   constructor(net, opts) {
     this.net = net;
     this.ground = opts.ground;
-    this.center = opts.center;
-    this.radius = opts.radius ?? 140;
-    this.rand = opts.rand ?? Math.random;
-    this.clear = opts.clear ?? (() => true);
-    this.target = Math.max(10, Math.round((8 * 1000 * net.mouthArea) / 10) * 10);
+    this.course = { ...COURSE, ...opts.course };
+    const c = this.course;
+    this.base = opts.base ?? 0;
+    this.y = this.base + c.height;
+    // Two loops touching at the centre: A on the +axis side flown one way,
+    // B on the −axis side the other, both crossing the centre going +side.
+    const { center: o, axis: u, side: v } = opts;
+    const R = c.radius;
+    const at = (cx, cz, th) => new Vector3(cx + R * (Math.cos(th) * u.x + Math.sin(th) * v.x), this.y, cz + R * (Math.cos(th) * u.z + Math.sin(th) * v.z));
+    const ax = o.x + u.x * R;
+    const az = o.z + u.z * R;
+    const bx = o.x - u.x * R;
+    const bz = o.z - u.z * R;
+    const mid = new Vector3(o.x, this.y, o.z);
+    // Gates: A at 90°, 0°, −90° (its far side), the centre, B at 90°, 180°, 270°, the centre.
+    this.lap = [
+      at(ax, az, Math.PI / 2), at(ax, az, 0), at(ax, az, -Math.PI / 2), mid,
+      at(bx, bz, Math.PI / 2), at(bx, bz, Math.PI), at(bx, bz, 1.5 * Math.PI), mid,
+    ].map((p, i) => ({ pos: p, loop: i < 3 ? 'A' : i === 3 ? 'mid' : i < 7 ? 'B' : 'mid' }));
+    // The whole route, for drawing: both circles.
+    this.path = [];
+    for (let i = 0; i <= 64; i++) this.path.push(at(ax, az, Math.PI - (2 * Math.PI * i) / 64));
+    for (let i = 0; i <= 64; i++) this.path.push(at(bx, bz, (2 * Math.PI * i) / 64));
+    // The A loop turns one way and B the other, seen from above.
+    this.turnA = u.x * v.z - u.z * v.x < 0 ? 'right' : 'left';
+    this.turnB = this.turnA === 'left' ? 'right' : 'left';
+    this.gateIndex = 0; // the centre gate first, then round loop A …
+    this.started = false; // the clock starts at the first gate
+    this.reachedHeight = false;
+    this.lapsDone = 0;
     this.caught = 0;
     this.time = 0;
     this.done = false;
-    this.started = false; // the clock starts once the model's moving (set by the caller)
-    this.swarms = [];
-    for (let i = 0; i < SWARMS; i++) this.swarms.push(this.#newSwarm());
   }
 
-  #newSwarm() {
-    // Somewhere around the field, clear of trees and buildings if it can be.
-    let x;
-    let y;
-    let z;
-    for (let tries = 0; tries < 12; tries++) {
-      const a = this.rand() * Math.PI * 2;
-      const r = this.radius * (0.3 + 0.7 * Math.sqrt(this.rand()));
-      x = this.center.x + Math.cos(a) * r;
-      z = this.center.z + Math.sin(a) * r;
-      y = this.ground.heightAt(x, z) + 4 + this.rand() * 12;
-      if (this.clear(x, y, z)) break;
-    }
-    // Enough for about three good passes.
-    const capacity = 3 * 1000 * this.net.mouthArea;
-    return { pos: new Vector3(x, y, z), home: new Vector3(x, y, z), phase: this.rand() * 10, capacity, left: capacity, fade: 0 };
+  /** The gate to fly through next (the first is the centre, where the loops touch). */
+  nextGate() {
+    return this.gateIndex === 0 ? this.lap[7] : this.lap[(this.gateIndex - 1) % 8];
   }
 
-  /** Insect density (per m³) at a point. */
-  densityAt(p) {
-    let d = 0;
-    for (const s of this.swarms) {
-      const r2 = p.distanceToSquared(s.pos);
-      if (r2 > 25 * SIGMA * SIGMA) continue;
-      d += PEAK * (s.left / s.capacity) * Math.exp(-r2 / (2 * SIGMA * SIGMA));
-    }
-    return d;
+  get gatesPerLap() {
+    return 8;
   }
 
-  /** Advance by dt (seconds of flying). */
-  update(dt) {
-    for (let i = 0; i < this.swarms.length; i++) {
-      const s = this.swarms[i];
-      s.phase += dt;
-      // Drifting about its spot.
-      s.pos.set(s.home.x + Math.sin(s.phase * 0.31) * 1.5, s.home.y + Math.sin(s.phase * 0.53) * 0.6, s.home.z + Math.cos(s.phase * 0.23) * 1.5);
-      if (s.left < 0.05 * s.capacity) {
-        s.fade += dt;
-        if (s.fade > 2) this.swarms[i] = this.#newSwarm();
+  /** Height above the field. */
+  heightOf(p) {
+    return p.y - this.base;
+  }
+
+  /**
+   * Advance by dt with the aircraft at `pos` (world): gates passed, insects
+   * caught, the clock.
+   */
+  update(dt, pos) {
+    if (this.done) return;
+    const c = this.course;
+    const h = this.heightOf(pos);
+    const inBand = Math.abs(h - c.height) <= c.band;
+    if (inBand) this.reachedHeight = true;
+    const g = this.nextGate();
+    if (inBand && Math.hypot(pos.x - g.pos.x, pos.z - g.pos.z) < c.gate) {
+      if (this.gateIndex === 0) this.started = true;
+      else if (this.gateIndex % 8 === 0) this.lapsDone++;
+      this.gateIndex++;
+      if (this.lapsDone >= c.laps) {
+        this.done = true;
+        return;
       }
     }
-    if (this.done || !this.started) return;
-    this.time += dt;
+    if (this.started) this.time += dt;
+    // Insects drift thicker the higher you go, up to the sampling height.
     const net = this.net;
-    if (net.snapped) return;
-    const swept = net.sweptArea() * net.airspeed * dt; // m³ of air through the mouth
-    if (swept <= 0) return;
-    for (const s of this.swarms) {
-      const r2 = net.position.distanceToSquared(s.pos);
-      if (r2 > 25 * SIGMA * SIGMA) continue;
-      const got = Math.min(s.left, swept * PEAK * (s.left / s.capacity) * Math.exp(-r2 / (2 * SIGMA * SIGMA)));
-      s.left -= got;
-      this.caught += got;
-    }
-    if (this.caught >= this.target) {
-      this.caught = this.target;
-      this.done = true;
+    if (!net.snapped && !net.snagged) {
+      const nh = this.heightOf(net.position);
+      const density = AERIAL_DENSITY * Math.max(0, Math.min(1, (nh - 3) / (c.height - 3)));
+      this.caught += density * net.sweptArea() * net.airspeed * dt;
     }
   }
 
-  /** The nearest swarm with insects left (for the HUD's pointer). */
-  nearest(p) {
-    let best = null;
-    let bd = Infinity;
-    for (const s of this.swarms) {
-      if (s.left < 0.05 * s.capacity) continue;
-      const d = p.distanceToSquared(s.pos);
-      if (d < bd) {
-        bd = d;
-        best = s;
-      }
+  /**
+   * What to do now, in words: { text, turn: 'left' | 'right' | null, climb: −1 | 0 | 1 },
+   * for the model at `pos` heading `heading` (world radians about the vertical, 0 = +x).
+   */
+  directions(pos, heading) {
+    const c = this.course;
+    const h = this.heightOf(pos);
+    const climb = h < c.height - c.band ? 1 : h > c.height + c.band ? -1 : 0;
+    if (this.done) return { text: 'Course complete! Land, or R to fly it again', turn: null, climb: 0 };
+    const g = this.nextGate();
+    // Which way to the gate.
+    const want = Math.atan2(-(g.pos.z - pos.z), g.pos.x - pos.x);
+    let d = want - heading;
+    d = Math.atan2(Math.sin(d), Math.cos(d));
+    const turn = Math.abs(d) < 0.3 ? null : d > 0 ? 'left' : 'right';
+    let text;
+    if (!this.reachedHeight) text = `Climb to ${c.height} m (now ${Math.max(0, Math.round(h))} m)`;
+    else if (climb > 0) text = `Too low: climb to ${c.height} m`;
+    else if (climb < 0) text = `Too high: down to ${c.height} m`;
+    else if (this.gateIndex === 0) text = 'Fly through the start gate, where the loops meet';
+    else {
+      const loop = g.loop === 'mid' ? 'to the crossing' : `${g.loop === 'A' ? this.turnA : this.turnB}-hand loop`;
+      text = `Gate ${((this.gateIndex - 1) % 8) + 1} of 8, ${loop}`;
     }
-    return best;
+    return { text, turn, climb };
   }
 }
 

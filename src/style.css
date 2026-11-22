@@ -253,3 +253,5 @@ body.touch #splash .keys-only { display: none; }
 .swarm-marker.ring::before { content: ''; position: absolute; left: 0; top: 0; width: 28px; height: 28px; border: 2px solid #ffe27a; border-radius: 50%; box-shadow: 0 0 3px #000; }
 .swarm-marker.edge { margin: -8px 0 0 -20px; display: flex; align-items: center; gap: 3px; }
 .swarm-marker.edge span { display: inline-block; font-size: 14px; }
+#challenge-hud .say { font-size: 16px; margin-top: 2px; }
+#challenge-hud .dir { display: inline-block; margin-right: 6px; color: #ffe27a; font-size: 18px; }
