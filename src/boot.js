@@ -12,7 +12,26 @@ const asked = new URLSearchParams(location.search).get('field');
 const site = LOCATIONS.find((l) => l.id === asked)
   || listedLocations().find((l) => l.id === settings.location)
   || listedLocations()[0];
-if (settings.location !== site.id) saveSettings({ ...settings, location: site.id });
+if (settings.location !== site.id) settings.location = site.id;
+// Shareable links: ?plane=<id>, ?challenge=<id>, ?level=easy|normal|hard and
+// ?minutes= (balloon burst) choose them for this visit and after (main.js
+// checks them and keeps the address up to date as they change).
+{
+  const q = new URLSearchParams(location.search);
+  const word = (k) => {
+    const v = q.get(k);
+    return v && /^[a-z0-9-]{1,40}$/i.test(v) ? v.toLowerCase() : null;
+  };
+  const plane = word('plane');
+  if (plane && plane !== settings.aircraft) {
+    settings.aircraft = plane;
+    settings.assist = ''; // (the model's own flight assist: main.js)
+  }
+  if (word('challenge')) settings.challenge = word('challenge');
+  if (word('level')) settings.challengeLevel = word('level');
+  if (Number(q.get('minutes')) > 0) settings.balloonMinutes = Number(q.get('minutes'));
+}
+saveSettings(settings);
 
 const start = document.getElementById('start');
 // Not until the site and the aircraft have loaded.

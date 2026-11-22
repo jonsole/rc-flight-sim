@@ -245,6 +245,32 @@ function retune() {
 // The 3D model files (src/aircraft/models/*.glb) were loaded before this
 // module (src/boot.js).
 loadAircraft(settings.aircraft);
+// A plane chosen by link (?plane=): with its own flight assist.
+if (!settings.assist) settings.assist = entry.defaultAssist;
+// Checked: an unknown challenge is free flying, an unknown level normal.
+if (!MODES[settings.challenge]) settings.challenge = 'none';
+if (!LEVELS[settings.challengeLevel]) settings.challengeLevel = 'normal';
+saveSettings(settings);
+
+/**
+ * The address shows what you're flying, to share or bookmark:
+ * ?field=&plane=&challenge=&level= (and &minutes= for the balloon burst),
+ * keeping anything else there (a room). Updated as they change.
+ */
+function syncUrl() {
+  const q = new URLSearchParams(location.search);
+  q.set('field', LOCATION.id);
+  q.set('plane', entry.id);
+  const ch = MODES[settings.challenge] && settings.challenge !== 'none' ? settings.challenge : null;
+  for (const k of ['challenge', 'level', 'minutes']) q.delete(k);
+  if (ch) {
+    q.set('challenge', ch);
+    q.set('level', settings.challengeLevel);
+    if (ch === 'balloons') q.set('minutes', String(settings.balloonMinutes));
+  }
+  const url = `${location.pathname}?${q.toString()}${location.hash}`;
+  if (url !== `${location.pathname}${location.search}${location.hash}`) history.replaceState(null, '', url);
+}
 const osd = new OSD(document.getElementById('osd'));
 const sound = new EngineSound();
 // Challenges: hoops, balloons, limbo, pylon race, streamer cutting (src/game/).
@@ -529,6 +555,7 @@ function selectAircraft(id) {
   resetAircraft();
   if (panel?.visible) panel.render();
   updateSplash();
+  syncUrl();
 }
 
 // --- Multiplayer -------------------------------------------------------------
@@ -664,6 +691,7 @@ const panel = new Panel(document.getElementById('panel'), {
       challenges.restart();
       resetAircraft();
       panel?.render(); // (the tab's options and description depend on the challenge)
+      syncUrl();
     }
   },
   onReset: resetAircraft,
@@ -785,6 +813,7 @@ splashChallenge.addEventListener('change', (e) => {
   challenges.setMode(settings.challenge, false);
   challenges.restart();
   resetAircraft();
+  syncUrl();
 });
 const splashLevel = document.getElementById('splash-level');
 for (const [k, t] of Object.entries(LEVELS)) splashLevel.append(new Option(t, k));
@@ -799,6 +828,7 @@ splashLevel.addEventListener('change', (e) => {
   challenges.setLevel(settings.challengeLevel, settings.balloonMinutes);
   challenges.restart();
   resetAircraft();
+  syncUrl();
 });
 splashGraphics.addEventListener('change', (e) => {
   settings.graphics = e.target.value;
@@ -866,6 +896,7 @@ applySettings();
 rig.setMode(settings.cameraMode);
 challenges.setMode(settings.challenge, false);
 challenges.setLevel(settings.challengeLevel, settings.balloonMinutes);
+syncUrl();
 resetAircraft();
 paused = true; // until the splash is dismissed
 
