@@ -153,6 +153,18 @@ the standard net). The net's bag is drawn as soft fabric
 about behind, and crumples in a heap when dropped. The course's height, loop size and number of circuits
 are `COURSE` in `src/sim/net.js`; the drawing is in `src/view/netView.js`.
 
+## Links
+
+The address shows what you're flying, so it can be bookmarked or shared:
+`?field=waterbeach&plane=multiplex-easystar&challenge=net&level=hard` opens
+Barrack Field with the EasyStar set up for the insect net tow on hard. It
+follows along as you change the plane, the challenge or its difficulty
+(`&minutes=` too for the balloon burst's time limit). `plane` is the
+aircraft's id (`src/aircraft/index.js`), `challenge` one of `hoops`,
+`balloons`, `limbo`, `pylons`, `streamers`, `spot` (spot landing) or `net`, and `level`
+`easy`, `normal` or `hard`; anything not recognised falls back to the
+default. A multiplayer invite (`room=`) can be added to the same link.
+
 ## Flying fields
 
 Pick the field on the start screen or under *Menu → Flying → Flying field*
