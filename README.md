@@ -129,7 +129,7 @@ saves them to a file (send it in to have them built into the model) and
 ## Insect-net challenge
 
 *Menu → Challenges → Insect net tow* ties a fine insect-sampling net
-on a cord to the model's tail. The net starts folded (on the grass behind
+on a cord tied on under the model, below its CG. The net starts folded (on the grass behind
 the model, or trailing if you start in the air) and opens in the airflow;
 open, it drags hard. Climb to the sampling height (40 m, ±10), then fly
 three figure-of-8 circuits over the field: through the start gate where the

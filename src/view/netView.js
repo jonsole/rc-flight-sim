@@ -215,7 +215,7 @@ export class NetView {
     bp.needsUpdate = true;
     this.knot.copy(knot);
 
-    // --- Cord: from the tail to the bridle's knot (this frame's: drawn after
+    // --- Cord: from under the model to the bridle's knot (this frame's: drawn after
     // the hoop, so the two meet); straight when taut, sagging when slack ---
     const pos = this.cord.geometry.attributes.position;
     this.cord.visible = !net.snapped;

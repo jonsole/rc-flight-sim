@@ -14,7 +14,7 @@ import { formatTime } from './courses.js';
 export class NetTowCourse {
   static id = 'net';
   static title = 'Insect net tow';
-  static about = 'Tow a fine insect net on a cord from the tail: climb to the sampling height, then fly three figures of 8 through the gates, following the directions on screen. The net starts folded and opens in the airflow, and drags hard: the harder the difficulty, the bigger the net. Gates only count at the sampling height. Keep the net out of the trees: it snags, and a hard pull snaps the cord. Net size, drag and cord length are under Tuning.';
+  static about = 'Tow a fine insect net on a cord tied on under the model: climb to the sampling height, then fly three figures of 8 through the gates, following the directions on screen. The net starts folded and opens in the airflow, and drags hard: the harder the difficulty, the bigger the net. Gates only count at the sampling height. Keep the net out of the trees: it snags, and a hard pull snaps the cord. Net size, drag and cord length are under Tuning.';
 
   constructor(env) {
     this.env = env;
