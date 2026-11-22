@@ -32,6 +32,7 @@ import { SunGlare } from './view/glare.js';
 import { weatherFor } from './world/mist.js';
 import { loadEdits } from './sim/edits.js';
 import { Editor } from './editor/editor.js';
+import { AiFlyers } from './ml/aiFlyers.js';
 
 // The version running: the GitHub commit it was built from, and its date.
 {
@@ -437,6 +438,16 @@ peers.addShadow = (model, span) => {
   s.setModel(model, span);
   return s;
 };
+// AI flyers (Menu → Flying): aeroplanes flown by trained neural networks
+// (src/ml/), round the middle of the field. Drawn like other players.
+const aiArea = (() => {
+  const [x, z] = clubToWorld(RUNWAY.x, RUNWAY.z);
+  return { x, z, radius: 150 };
+})();
+const ai = new AiFlyers({ ground, wind, obstacles }, aiArea, getAircraft);
+function applyAi() {
+  ai.set(Number(settings.aiFlyers) || 0, settings.aiAircraft, entry.id).catch((e) => console.warn('AI flyers:', e));
+}
 const mpBadge = document.getElementById('mp-badge');
 const mpToast = document.getElementById('mp-toast');
 const mpServer = () => settings.mpServer || DEFAULT_MP_SERVER;
@@ -540,6 +551,8 @@ const panel = new Panel(document.getElementById('panel'), {
     applySettings();
     saveSettings(settings);
     if (key === 'aircraft') selectAircraft(value);
+    if (key === 'aircraft' || key === 'aiFlyers' || key === 'aiAircraft') applyAi();
+    if (key === 'aiFlyers') panel.render(); // shows or hides the AI aircraft choice
     if (key === 'location') changeField(value);
     // The scenery is built for these once, so they take effect on a reload.
     if (key === 'graphics' || key === 'viewDistance' || key === 'treeStyle') reloadKeepingRoom();
@@ -700,6 +713,7 @@ resize();
 applySettings();
 rig.setMode(settings.cameraMode);
 resetAircraft();
+applyAi();
 paused = true; // until the splash is dismissed
 
 // --- Main loop -------------------------------------------------------------------
@@ -757,6 +771,7 @@ function frame(now) {
       debris.spawn(model.parts?.[ev.part], aircraft, ev.speed);
     }
     debris.update(dt);
+    ai.update(dt);
     osd.update(dt, aircraft);
   }
   // Following the clock: move the sun along every 20 s.
@@ -779,19 +794,22 @@ function frame(now) {
   if (googleTiles?.visible) googleTiles.update(rig.camera, renderer, dt);
   // Other players (after the camera has moved, so their labels line up).
   rig.camera.updateMatrixWorld();
-  const solid = mp.connected && !paused && !aircraft.crashed && now / 1000 > mpGraceUntil;
+  const solid = !paused && !aircraft.crashed && now / 1000 > mpGraceUntil;
   peers.night = world.night;
   // Aeroplane shadows as dark as the scenery's.
   const shadowDark = world.shadowDarkness();
   peers.shadowCtx = { renderer, lightDir: world.lightDir, strength: shadowDark };
-  const hit = peers.update(mp.peers, dt, rig.camera, { aircraft, id: entry.id, solid });
+  // (AI flyers are drawn the same way, alongside them.)
+  const others = ai.peers.size ? new Map([...mp.peers, ...ai.peers]) : mp.peers;
+  const hit = peers.update(others, dt, rig.camera, { aircraft, id: entry.id, solid });
   if (hit) {
     // Mid-air (or on the ground): the part that hit breaks off, and the other
     // player is told so they crash too (their view of us is a little older).
     aircraft.crash(`Collided with ${hit.peer.name}`);
     aircraft.breakAt({ part: hit.sample.part, crashSpeed: 3 }, hit.relSpeed);
     aircraft.velocity.lerp(hit.velocity, 0.5);
-    mp.sendHit(hit.peer.id, hit.theirPart, hit.relSpeed);
+    if (hit.peer.ai) ai.hit(hit.peer.id, hit.theirPart, hit.relSpeed);
+    else mp.sendHit(hit.peer.id, hit.theirPart, hit.relSpeed);
   }
   world.updateShadows();
   world.updateTrees(now / 1000, wind.speed + wind.gust.length() * 0.5, wind.directionDeg);
@@ -846,6 +864,8 @@ window.sim = {
   renderer,
   rig,
   mp,
+  /** AI flyers (src/ml/aiFlyers.js). */
+  ai,
   input,
   settings,
   selectAircraft,

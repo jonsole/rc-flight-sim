@@ -38,6 +38,9 @@ export const DEFAULT_SETTINGS = {
   dayOfYear: 172,        // time of year (21 Jun): the sun, and the trees and grass
   cloudCover: 0.35,      // 0 clear .. 1 overcast
   useClock: false,       // follow the computer's clock (time and date) instead
+  // AI flyers (src/ml/aiFlyers.js)
+  aiFlyers: '0',         // how many, '0'..'6'
+  aiAircraft: 'mix',     // 'mix' | 'same' (as yours) | an aircraft id
   // Misc
   volume: 0.6,
   showHud: true,

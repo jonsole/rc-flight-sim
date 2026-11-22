@@ -8,6 +8,7 @@ import { LOCATIONS, LOCATION } from '../sim/location.js';
 import { QUALITY, DISTANCES } from '../world/quality.js';
 import { googleSessions } from '../world/googleTiles.js';
 import { tunablesFor, loadTuning, saveTuning, tunedDef, powerSummary } from '../sim/tuning.js';
+import { AI_AIRCRAFT } from '../ml/aiFlyers.js';
 
 const CH_LABEL = { roll: 'Aileron (roll)', pitch: 'Elevator (pitch)', yaw: 'Rudder (yaw)', throttle: 'Throttle' };
 
@@ -106,6 +107,7 @@ export class Panel {
       this.#select('Start position', 'startMode', { runway: 'On the runway', air: 'In the air (30 m)' }),
       this.#select('Camera', 'cameraMode', CAMERA_LABELS),
       el('div', { class: 'row' }, el('button', { onclick: () => { this.opts.onReset(); this.opts.onClose(); } }, 'Reset aircraft (R)')),
+      ...this.#aiRows(),
       el('div', { class: 'row' },
         el('button', { onclick: () => this.opts.onStartHere() }, 'Start here next time'),
         el('button', { onclick: () => { this.opts.onDefaultStart(); this.opts.onClose(); } }, 'Default start')),
@@ -114,6 +116,20 @@ export class Panel {
       el('p', { class: 'hint' }, 'Move, resize or delete trees, buildings and fences, or add new ones. Edits are saved in this browser for this field.'),
       this.#range('Volume', 'volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`),
       this.#check('Show HUD / OSD (H)', 'showHud'),
+    ];
+  }
+
+  /** AI flyers: how many, and which aircraft (only those with a trained policy). */
+  #aiRows() {
+    if (!AI_AIRCRAFT.length) return [];
+    const kinds = { mix: AI_AIRCRAFT.length > 1 ? 'A mix' : getAircraft(AI_AIRCRAFT[0]).name };
+    if (AI_AIRCRAFT.includes(this.settings.aircraft) && AI_AIRCRAFT.length > 1) kinds.same = 'Same as mine';
+    if (AI_AIRCRAFT.length > 1) for (const id of AI_AIRCRAFT) kinds[id] = getAircraft(id).name;
+    if (!(this.settings.aiAircraft in kinds)) this.settings.aiAircraft = 'mix';
+    return [
+      this.#select('AI flyers', 'aiFlyers', Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((n) => [String(n), n ? String(n) : 'None']))),
+      ...(Number(this.settings.aiFlyers) ? [this.#select('AI aircraft', 'aiAircraft', kinds)] : []),
+      el('p', { class: 'hint' }, `Aeroplanes flown round the field by small neural networks trained in this simulator (see ml/ on GitHub). Only you see them, and you can collide with them. Trained so far: ${AI_AIRCRAFT.map((id) => getAircraft(id).name).join(', ')}.`),
     ];
   }
 

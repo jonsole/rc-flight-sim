@@ -25,12 +25,5 @@ export function getEntry(id) {
   return e;
 }
 
-/**
- * A comfortable cruising airspeed (m/s) for a model: the speed at which its
- * wing carries its weight at a lift coefficient of 0.7. Used to scale
- * starting and target speeds so the same task suits every model.
- */
-export function cruiseSpeed(def) {
-  const S = def.surfaces.filter((s) => s.wing).reduce((a, s) => a + s.area, 0);
-  return Math.sqrt((2 * def.mass * 9.81) / (1.225 * S * 0.7));
-}
+// Cruising speed: shared with the game's AI flyers.
+export { cruiseSpeed } from '../src/ml/aiPilot.js';

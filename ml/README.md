@@ -125,6 +125,19 @@ Speed: the flight model takes 4–15 µs per physics step depending on the
 model, so a 20 s flight is roughly 50–200 ms. With the defaults (48
 candidates × 4 flights) a generation takes about 6 s on 4 cores.
 
+## Using a policy in the game
+
+`node ml/export-policy.js ml/runs/<run>/best.json` copies a trained `hold`
+policy to `src/ml/policies/<aircraft id>.json` (weights rounded to 5
+significant figures, ~17 KB), which makes that model available as an AI
+flyer (*Menu → Flying → AI flyers*). In the game `src/ml/aiPilot.js` gives
+the policy a point 150 m along the way to its next waypoint, at the
+waypoint's height above the ground (never below 30 m over the ground under
+or just ahead of it): the same kind of target it trained on, now over the
+real field with its hills, trees and wind. `tests/ai-flyers.test.js` flies
+every exported policy round the club field for two minutes and fails if it
+crashes.
+
 ## Evaluating
 
 `ml/eval.js --policy <file>` flies 20 unseen flights (seeds from 5 000 000)
