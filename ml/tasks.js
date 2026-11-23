@@ -103,9 +103,11 @@ const takeoff = {
 };
 
 /**
- * The nose-up attitude (rad) to touch down in: a tail-dragger's three-point
- * attitude (main wheels and tail on the ground together), a tricycle a few
- * degrees nose-up on its mains, a belly-lander nearly level.
+ * The nose-up attitude (rad) to touch down in: a tail-dragger halfway to its
+ * three-point attitude (a "wheel landing", mains first, as RC pilots land
+ * them: the full three-point attitude is near the stall on these foamies,
+ * and training for it ended in wing-tip strikes), a tricycle a few degrees
+ * nose-up on its mains, a belly-lander nearly level.
  */
 export function touchdownPitch(def) {
   const gear = def.contacts.filter((c) => c.type === 'wheel' || c.type === 'skid');
@@ -113,7 +115,7 @@ export function touchdownPitch(def) {
   const front = gear.reduce((a, b) => (b.pos[0] > a.pos[0] ? b : a));
   const back = gear.reduce((a, b) => (b.pos[0] < a.pos[0] ? b : a));
   const sitting = Math.atan2(back.pos[1] - front.pos[1], front.pos[0] - back.pos[0]);
-  return Math.max(4 * deg, sitting);
+  return Math.max(4 * deg, sitting / 2);
 }
 
 // --- Landing ----------------------------------------------------------------------
@@ -124,7 +126,9 @@ const land = {
   reset(env, rng) {
     const ac = env.ac;
     const strip = (env.strip = randomStrip(env, rng));
-    const s0 = strip.aimS - (90 + rng() * 70);
+    // Half from the full approach (90-160 m out, as the AI flyers hand over),
+    // half from short final (40-90 m), for more practice at the touchdown.
+    const s0 = strip.aimS - (rng() < 0.5 ? 90 + rng() * 70 : 40 + rng() * 50);
     const lat = (rng() - 0.5) * 24;
     const p = strip.point(s0, lat);
     const h = glideHeight(strip, s0) + (rng() - 0.5) * 8;
@@ -167,8 +171,10 @@ const land = {
       // The last few metres: in the touchdown attitude (tail-draggers tail
       // down, or the prop hits the ground), motor at idle.
       if (agl < 3 && s > strip.aimS - 40) {
-        const pitch = ac.attitude().pitch;
-        r -= dtc * (clamp01(Math.abs(pitch - st.flarePitch) / (8 * deg)) + ac.throttleActual);
+        const at = ac.attitude();
+        r -= dtc * (clamp01(Math.abs(at.pitch - st.flarePitch) / (8 * deg)) + ac.throttleActual);
+        // Wings level (or a tip hits) and sinking gently.
+        r -= dtc * (clamp01(Math.abs(at.roll) / (10 * deg)) + clamp01((-ac.velocity.y - 1) / 2));
       }
       // Over the far end still flying: overshot.
       if (s > strip.length / 2) return { reward: r - 10, done: true, reason: 'overshot' };
