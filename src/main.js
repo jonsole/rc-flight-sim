@@ -582,7 +582,7 @@ let aiStripNow = aiStrip();
 const ai = (() => {
   const [x, z] = clubToWorld(RUNWAY.x, RUNWAY.z);
   const [px, pz] = pilotSpot();
-  return new AiFlyers({ ground, wind, obstacles }, { x, z, radius: 150, strip: aiStripNow, pilot: { x: px, z: pz }, windSpeed: settings.windSpeed }, getAircraft);
+  return new AiFlyers({ ground, wind, obstacles }, { x, z, radius: 90, strip: aiStripNow, pilot: { x: px, z: pz }, windSpeed: settings.windSpeed }, getAircraft);
 })();
 // You on the runway (rolling, or sat on it): they hold short, or go around.
 ai.field.blocked = () => {

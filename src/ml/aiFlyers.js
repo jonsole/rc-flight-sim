@@ -80,8 +80,8 @@ export class AiFlyers {
       if (old && old.aircraft === aircraft) return old;
       const def = this.getEntry(aircraft).def;
       const id = `ai${i + 1}`;
-      // Every other one starts in the circuit, so there's something to watch at once.
-      return { id, aircraft, pilot: new AiPilot(def, policies[i], this.env, this.field, Math.random, { id, slot: i, airborne: i % 2 === 1 }) };
+      // Each starts in the pits and takes off in turn.
+      return { id, aircraft, pilot: new AiPilot(def, policies[i], this.env, this.field, Math.random, { id, slot: i }) };
     });
     this.pilots = next;
     this.peers.clear();

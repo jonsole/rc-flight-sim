@@ -33,8 +33,14 @@ const CARROT = 150; // m: how far ahead the "fly" target point is (as in trainin
 const REACHED = 30; // m (horizontally) from a waypoint to go on to the next
 const RESPAWN = 4; // s after a crash (or a belly landing) before it's back
 const MIN_AGL = 30; // m: when wandering, below this the target is raised
-const CIRCUIT = 40; // m: circuit height
-const SIDE = 65; // m: downwind leg out from the centreline
+const CIRCUIT = 35; // m: circuit height
+const SIDE = 55; // m: downwind leg out from the centreline
+const LOS = 180; // m from the pilots: further than this and it turns back (line of sight)
+// Circuit corners, in metres along the strip from the aim point (negative:
+// before it) and out to the circuit side: the end of the downwind leg, and
+// the base point final starts from. (Also checked clear by fieldStrip.js.)
+export const DOWNWIND_END = { s: -85, l: SIDE, h: CIRCUIT };
+export const BASE_POINT = { s: -105, l: 8, above: 5 }; // (above the glide path)
 const deg = Math.PI / 180;
 
 const cruiseCache = new WeakMap();
@@ -136,8 +142,9 @@ export class AiPilot {
     this.landings = 0;
     this.done = []; // manoeuvres flown, latest last
     this.ac = null;
+    // Every flight starts on the ground (or in the hand) with a take-off, if
+    // it has the skill; only without one does it start in the air.
     if (this.circuits && o.airborne) this.startInCircuit();
-    else if (this.circuits) this.#park();
     else this.spawn();
   }
 
@@ -178,6 +185,11 @@ export class AiPilot {
     return this.canCircuit && !!this.field.strip && (this.field.windSpeed ?? 0) <= 0.7 * this.vCruise;
   }
 
+  /** Can it take off (and so start every flight on the ground)? Without landing it then just flies round. */
+  get canLaunch() {
+    return !!(this.skills.takeoff && this.field.strip);
+  }
+
   /** What it's doing, for labels and debugging. */
   get status() {
     const m = this.runner ? ` (${MANEUVERS[this.runner.key].name})` : '';
@@ -188,7 +200,7 @@ export class AiPilot {
 
   /** Into the air at the edge of the area, heading across it. */
   spawn() {
-    if (this.circuits) {
+    if (this.canLaunch) {
       this.#park();
       return;
     }
@@ -306,7 +318,10 @@ export class AiPilot {
     }
     this.ac.step(1e-6);
     this.phase = 'parked';
-    this.wait = 4 + this.rng() * 10;
+    // The first time, one after another by parking slot (the runway takes
+    // one at a time anyway); after that a rest of 4-14 s between flights.
+    this.wait = this.parkedBefore ? 4 + this.rng() * 10 : 2 + 6 * this.slot + this.rng() * 3;
+    this.parkedBefore = true;
   }
 
   /** The runway, shared with the other AI flyers: one on it (or landing) at a time. */
@@ -354,6 +369,14 @@ export class AiPilot {
     const lat = strip.lateral(ac.position);
     const agl = ac.position.y - this.groundY(ac.position.x, ac.position.z);
     const speed = 1.3 * this.vCruise;
+    // Line of sight: wandering off past LOS from the pilots (blown away
+    // after a manoeuvre, a long go-around), head back to the downwind leg.
+    const pilot = this.field.pilot;
+    if (pilot && Math.hypot(ac.position.x - pilot.x, ac.position.z - pilot.z) > LOS) {
+      if (['crosswind', 'goAround', 'recover', 'lowPass'].includes(this.phase)) this.#goto('downwind', { aeroPlanned: null });
+      // (Not downwind: it's already heading back; cutting to base from far
+      // away flew it straight across the trees.)
+    }
     switch (this.phase) {
       case 'parked': {
         // Waiting in the pits (or in the hand), motor off.
@@ -427,17 +450,28 @@ export class AiPilot {
       case 'takeoff': {
         takeoffTarget(ac, strip, this.groundY, this.vCruise, t);
         if (agl > 10) this.#release();
-        if (agl > 30) {
+        // Up, or well past the end of the strip and clear of the trees (a slow
+        // climb-out otherwise takes it far out of sight before turning).
+        if (agl > 30 || (agl > 15 && sNow > L / 2 + 60)) {
           this.flights++;
+          this.#release();
+          if (!this.circuits) {
+            // No landing skill (or too windy for circuits): fly round.
+            this.phase = 'wander';
+            this.#nextWanderPoint();
+            return this.#wander();
+          }
           this.laps = 1 + Math.floor(this.rng() * 3);
           this.#goto('crosswind');
         }
         return 'takeoff';
       }
       case 'crosswind': {
-        const c = this.#pt(L / 2 + 60, SIDE, CIRCUIT);
+        const c = this.#pt(L / 2 + 40, SIDE, CIRCUIT);
         this.#flyTo(c.x, c.z, c.y, speed);
-        if (Math.hypot(c.x - ac.position.x, c.z - ac.position.z) < REACHED || this.legT > 40) {
+        // Done once near the corner or out past it to the side (not just near
+        // it: swinging round to get to a point it missed took it far away).
+        if (Math.hypot(c.x - ac.position.x, c.z - ac.position.z) < REACHED || lat * this.#side > SIDE - 10 || this.legT > 40) {
           // Now and then something aerobatic on the way down the far side,
           // higher and further out.
           const aero = this.maneuvers.length && this.rng() < 0.6;
@@ -447,18 +481,18 @@ export class AiPilot {
       }
       case 'downwind': {
         const planned = this.aeroPlanned;
-        const end = this.#pt(strip.aimS - 110, planned ? SIDE + 35 : SIDE, planned ? 90 : CIRCUIT - 5);
+        const end = this.#pt(strip.aimS + DOWNWIND_END.s, planned ? SIDE + 30 : SIDE, planned ? 80 : CIRCUIT);
         this.#flyTo(end.x, end.z, end.y, planned ? 1.6 * this.vCruise : speed);
         // Halfway along, high and fast enough, heading down the leg: go.
         const along = -(ac.velocity.x * strip.dir.x + ac.velocity.z * strip.dir.z) / Math.max(1, Math.hypot(ac.velocity.x, ac.velocity.z));
-        const minH = MANEUVERS[planned]?.minHeight ?? 70;
+        const minH = MANEUVERS[planned]?.minHeight ?? 65;
         if (planned && sNow < L / 2 && agl > minH && ac.airspeed > 1.25 * this.vCruise && along > 0.9) {
           this.aeroPlanned = null;
           this.runner = new ManeuverRunner(planned, rateLimits(this.def, this.vCruise));
           this.#goto('aerobatics');
           return this.#plan(0);
         }
-        if (Math.hypot(end.x - ac.position.x, end.z - ac.position.z) < REACHED || this.legT > 50) {
+        if (Math.hypot(end.x - ac.position.x, end.z - ac.position.z) < REACHED || sNow < strip.aimS + DOWNWIND_END.s || this.legT > 50) {
           this.laps--;
           this.#goto('base');
         }
@@ -499,9 +533,11 @@ export class AiPilot {
       case 'base': {
         // To a point nearly on the centreline well out, so final starts lined up.
         // (5 m above the glide path there, so final starts high, not low.)
-        const b = this.#pt(strip.aimS - 190, 8, glideHeight(strip, strip.aimS - 190) + 5);
+        const b = this.#pt(strip.aimS + BASE_POINT.s, BASE_POINT.l, glideHeight(strip, strip.aimS + BASE_POINT.s) + BASE_POINT.above);
         this.#flyTo(b.x, b.z, b.y, speed);
-        if (Math.hypot(b.x - ac.position.x, b.z - ac.position.z) < 20 || this.legT > 40) {
+        // Done near the base point, or once past it along the strip (rather
+        // than circling back to it from a wide turn, far away).
+        if (Math.hypot(b.x - ac.position.x, b.z - ac.position.z) < 20 || sNow < strip.aimS + BASE_POINT.s - 10 || this.legT > 40) {
           // Landing this time (if the runway's free), or round again.
           const landing = this.laps <= 0 && this.#claim();
           this.#goto(landing ? 'final' : 'lowPass');
@@ -520,12 +556,12 @@ export class AiPilot {
           return this.#plan(0);
         }
         const align = Math.abs(this.#alignError());
-        // (The landing skill trained from 90-160 m out: it takes over at about 110.)
-        if (Math.abs(lat) < 12 && align < 20 * deg && sNow > strip.aimS - 115) {
+        // (The landing skill trained from 40-160 m out: it takes over from 100.)
+        if (Math.abs(lat) < 12 && align < 20 * deg && sNow > strip.aimS - 100) {
           this.#goto('landing', { down: false });
           return this.#plan(0);
         }
-        if (sNow > strip.aimS - 70 || this.legT > 45) this.#goAround();
+        if (sNow > strip.aimS - 45 || this.legT > 45) this.#goAround();
         return 'fly';
       }
       case 'landing': {
@@ -634,7 +670,7 @@ export class AiPilot {
     if (this.nextControl <= 0) {
       this.nextControl += CONTROL_DT;
       if (this.nextControl < 0) this.nextControl = 0;
-      const skillName = this.circuits ? this.#plan(CONTROL_DT) : this.#wander();
+      const skillName = this.phase === 'wander' ? this.#wander() : this.#plan(CONTROL_DT);
       const skill = skillName && (this.skills[skillName] ?? (skillName === 'aero' ? null : this.skills.fly));
       if (skillName === 'aero' && !skill) {
         this.rateCtl.act(this.ac, this.target.rates, this.act);

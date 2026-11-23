@@ -146,7 +146,7 @@ export const MANEUVERS = {
   rollLeft: { name: 'Aileron roll (left)', needsRoll: true, steps: [{ roll: -0.6, until: { roll: T } }] },
   twoRolls: { name: 'Two rolls', needsRoll: true, steps: [{ roll: 0.75, until: { roll: 2 * T } }] },
   immelmann: { name: 'Immelmann', needsRoll: true, steps: [{ pitch: 'loop', until: { pitch: T / 2 } }, { roll: 0.6, until: { roll: T / 2 } }] },
-  splitS: { name: 'Split S', needsRoll: true, minHeight: 80, steps: [{ roll: 0.6, until: { roll: T / 2 } }, { pitch: 'loop', until: { pitch: T / 2 } }] },
+  splitS: { name: 'Split S', needsRoll: true, minHeight: 75, steps: [{ roll: 0.6, until: { roll: T / 2 } }, { pitch: 'loop', until: { pitch: T / 2 } }] },
   cuban8: {
     name: 'Cuban eight',
     needsRoll: true,

@@ -59,7 +59,7 @@ if (o.stripOnly) {
   else console.log(`${o.field}, wind ${o.wind} m/s from ${o.windDir}°: ${strip.kind}, ${strip.length} m, centre ${strip.x.toFixed(0)},${strip.z.toFixed(0)}, rolling toward ${Math.round((compass + 360) % 360)}°`);
   process.exit(0);
 }
-const field = { x: cx, z: cz, radius: 150, strip, pilot: { x: px, z: pz }, runway: { owner: null }, windSpeed: o.wind };
+const field = { x: cx, z: cz, radius: 90, strip, pilot: { x: px, z: pz }, runway: { owner: null }, windSpeed: o.wind };
 const rng = makeRng(o.seed);
 const pilots = ids.map((id, i) => new AiPilot(getEntry(id).def, skillsFor(id), { ground, wind, obstacles }, field, rng, { id: `ai${i + 1}`, slot: i, airborne: o.airborne }));
 
@@ -68,12 +68,18 @@ log(`${ids.join(', ')} | ${strip?.kind ?? 'no'} strip ${strip?.length ?? 0} m he
 const dt = 1 / 60;
 const last = pilots.map(() => '');
 const crashes = pilots.map(() => 0);
+const farthest = pilots.map(() => 0); // horizontal distance from the pilots (line of sight)
 const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 for (let t = 0; t < o.minutes * 60; t += dt) {
   wind.update(dt);
   pilots.forEach((p, i) => {
     p.update(dt);
     const ac = p.ac;
+    const dist = Math.hypot(ac.position.x - px, ac.position.z - pz);
+    if (dist > farthest[i]) {
+      farthest[i] = dist;
+      p._farPhase = p.status;
+    }
     if (p.crashes > crashes[i]) {
       crashes[i] = p.crashes;
       log(`${fmt(t)}  ai${i + 1}  CRASHED (${p.lastCrash ?? 'see above'})`);
@@ -96,5 +102,5 @@ for (let t = 0; t < o.minutes * 60; t += dt) {
     }
   });
 }
-console.log('\nai    aircraft                  flights  landings  crashes  manoeuvres');
-pilots.forEach((p, i) => console.log(`ai${i + 1}   ${ids[i].padEnd(24)}  ${String(p.flights).padStart(7)}  ${String(p.landings).padStart(8)}  ${String(p.crashes + (p.ac.crashed ? 1 : 0)).padStart(7)}  ${p.done.join(' ')}`));
+console.log('\nai    aircraft                  flights  landings  crashes  furthest  manoeuvres');
+pilots.forEach((p, i) => console.log(`ai${i + 1}   ${ids[i].padEnd(24)}  ${String(p.flights).padStart(7)}  ${String(p.landings).padStart(8)}  ${String(p.crashes + (p.ac.crashed ? 1 : 0)).padStart(7)}  ${String(Math.round(farthest[i])).padStart(6)} m (${p._farPhase})  ${p.done.join(' ')}`));
