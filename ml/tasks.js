@@ -135,11 +135,17 @@ const land = {
       r += (0.5 * (sc - (st.sPrev ?? sc))) / env.vApproach;
       st.sPrev = sc;
       r -= dtc * 0.5 * clamp01(Math.abs(lat) / 15);
-      // Below the glide path costs most: at a real field there are trees under it.
+      // Below the glide path costs more than above (at a real field there
+      // are trees under it), but not so much that staying up is safer.
       if (s < strip.aimS - 15) {
         const e = agl - glideHeight(strip, s);
-        r -= dtc * (e < 0 ? 1.5 * clamp01(-e / 4) : 0.5 * clamp01(e / 8));
+        r -= dtc * (e < 0 ? clamp01(-e / 6) : 0.5 * clamp01(e / 8));
+      } else {
+        // Near and past the aim point: being up at all costs (get it down).
+        r -= dtc * clamp01(agl / 4);
       }
+      // Over the far end still flying: overshot.
+      if (s > strip.length / 2) return { reward: r - 10, done: true, reason: 'overshot' };
       if (agl > 3) r -= dtc * 0.3 * ac.wingStall;
       if (touching) {
         st.down = true;
@@ -167,7 +173,7 @@ const land = {
       if (groundSpeed(ac) < 0.5) return { reward: r + 5, done: true, reason: 'stopped', success: true };
     }
     if (ac.crashed) return { reward: r - 15, done: true, reason: ac.crashReason };
-    if (env.t >= env.seconds) return { reward: r - (st.down ? 0 : 5), done: true, reason: st.down ? 'still rolling' : 'never landed' };
+    if (env.t >= env.seconds) return { reward: r - (st.down ? 0 : 15), done: true, reason: st.down ? 'still rolling' : 'never landed' };
     return { reward: r, done: false };
   },
   summary(env) {
