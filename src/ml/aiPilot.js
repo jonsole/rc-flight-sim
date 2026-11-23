@@ -307,11 +307,12 @@ export class AiPilot {
   #wander() {
     // Battery getting low and it can land: come in, on the strip it took off
     // from or, if that's for take-off only (trees on its approaches), on the
-    // landing strip found for it (fieldStrip.js landAt). With neither, there
-    // is nowhere safe to land, and it flies on.
-    const landable = this.field.strip && (this.field.strip.landing !== false || this.field.strip.landAt);
-    if (this.lowBattery && this.canCircuit && landable && this.ac.position.y - this.groundY(this.ac.position.x, this.ac.position.z) > 20) {
-      this.diverted = this.field.strip.landing === false;
+    // landing strip found for it (fieldStrip.js landAt), or failing that on
+    // the take-off strip anyway.
+    // (With nowhere clear to land, on the take-off strip anyway, over the
+    // trees: better than flying until the battery is flat.)
+    if (this.lowBattery && this.canCircuit && this.field.strip && this.ac.position.y - this.groundY(this.ac.position.x, this.ac.position.z) > 20) {
+      this.diverted = this.field.strip.landing === false && !!this.field.strip.landAt;
       this.laps = 0;
       this.#goto('downwind', { aeroPlanned: null });
       return this.#plan(0);
