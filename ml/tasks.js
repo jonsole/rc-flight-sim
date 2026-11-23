@@ -158,26 +158,30 @@ const land = {
       const sc = Math.min(s, strip.aimS);
       r += (0.5 * (sc - (st.sPrev ?? sc))) / env.vApproach;
       st.sPrev = sc;
-      r -= dtc * 0.5 * clamp01(Math.abs(lat) / 15);
+      // (Steering costs, kept small: summed over a whole flight they must
+      // stay well short of the cost of crashing.)
+      r -= dtc * 0.15 * clamp01(Math.abs(lat) / 15);
       // Below the glide path costs more than above (at a real field there
       // are trees under it), but not so much that staying up is safer.
       if (s < strip.aimS - 15) {
         const e = agl - glideHeight(strip, s);
-        r -= dtc * (e < 0 ? clamp01(-e / 6) : 0.5 * clamp01(e / 8));
+        r -= dtc * (e < 0 ? 0.3 * clamp01(-e / 6) : 0.15 * clamp01(e / 8));
       } else {
         // Near and past the aim point: being up at all costs (get it down).
-        r -= dtc * clamp01(agl / 4);
+        r -= dtc * 0.15 * clamp01(agl / 4);
       }
       // The last few metres: in the touchdown attitude (tail-draggers tail
       // down, or the prop hits the ground), motor at idle.
       if (agl < 3 && s > strip.aimS - 40) {
         const at = ac.attitude();
-        r -= dtc * (clamp01(Math.abs(at.pitch - st.flarePitch) / (8 * deg)) + ac.throttleActual);
+        // (Guidance, not the goal: 0.3 at most each, or a network that skims
+        // the strip without landing collects more cost than crashing.)
+        r -= dtc * 0.3 * (clamp01(Math.abs(at.pitch - st.flarePitch) / (8 * deg)) + ac.throttleActual);
         // Wings level (or a tip hits) and sinking gently.
-        r -= dtc * (clamp01(Math.abs(at.roll) / (10 * deg)) + clamp01((-ac.velocity.y - 1) / 2));
+        r -= dtc * 0.3 * (clamp01(Math.abs(at.roll) / (10 * deg)) + clamp01((-ac.velocity.y - 1) / 2));
       }
       // Over the far end still flying: overshot.
-      if (s > strip.length / 2) return { reward: r - 10, done: true, reason: 'overshot' };
+      if (s > strip.length / 2) return { reward: r - 20, done: true, reason: 'overshot' };
       if (agl > 3) r -= dtc * 0.3 * ac.wingStall;
       if (touching) {
         st.down = true;
@@ -207,8 +211,11 @@ const land = {
       if (scraping(ac)) r -= dtc * 2;
       if (groundSpeed(ac) < 0.5) return { reward: r + 5, done: true, reason: 'stopped', success: true };
     }
-    if (ac.crashed) return { reward: r - 15, done: true, reason: ac.crashReason };
-    if (env.t >= env.seconds) return { reward: r - (st.down ? 0 : 15), done: true, reason: st.down ? 'still rolling' : 'never landed' };
+    // Crashing must always be the worst outcome: worse than not landing at
+    // all (-20 plus small steering costs), else a network that can't yet land learns to crash quickly
+    // rather than pile up the costs of staying up (the ShockCub did).
+    if (ac.crashed) return { reward: r - 50, done: true, reason: ac.crashReason };
+    if (env.t >= env.seconds) return { reward: r - (st.down ? 0 : 20), done: true, reason: st.down ? 'still rolling' : 'never landed' };
     return { reward: r, done: false };
   },
   summary(env) {
