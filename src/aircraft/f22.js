@@ -266,6 +266,7 @@ export function buildF22(style) {
     downwashGain: style.downwashGain,
     motor: {
       prop: { diameterIn: style.prop.diameterIn, pitchIn: style.prop.pitchIn, blades: style.prop.blades },
+      pusher: true, // in its slot behind the wing: chops through the wing's wake (sound only)
       kv: 2600, noLoadCurrent: 0.6, // 2204 2600Kv
       staticThrust: style.prop.staticThrust,
       pitchSpeed: style.prop.pitchSpeed,
@@ -293,14 +294,14 @@ export function buildF22(style) {
     // Thrown from shoulder height once the motor is up to speed.
     handLaunch: { height: 1.5, speed: 7.5, pitch: 12 * deg, throttle: 0.6 },
     contacts: [
-      // Belly-landed on the belly pan and the side plates.
-      { name: 'belly-front', pos: [U.plate[0][0] - 0.02, bottomY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
-      { name: 'belly-rear', pos: [U.plate[2][0] + 0.01, bottomY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
+      // Belly-landed on the belly pan and the side plates (a ~6 cm track in snow).
+      { name: 'belly-front', pos: [U.plate[0][0] - 0.02, bottomY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5, trackWidth: 0.06 },
+      { name: 'belly-rear', pos: [U.plate[2][0] + 0.01, bottomY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5, trackWidth: 0.06 },
       // The pusher prop hangs below the wing in its slot.
       { name: 'prop-low', pos: [propX, propY - radius, 0], type: 'prop', k: 600, c: 5, crashSpeed: 0 },
       hard('nose', [O.nose - 0.002, under + O.fuselage.stations[0][1], 0], 3),
-      { name: 'chin', pos: [O.fuselage.stations[20][0], keelY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
-      { name: 'keel-rear', pos: [O.fuselage.stations[22][0] + 0.005, keelY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5 },
+      { name: 'chin', pos: [O.fuselage.stations[20][0], keelY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5, trackWidth: 0.035 },
+      { name: 'keel-rear', pos: [O.fuselage.stations[22][0] + 0.005, keelY, 0], type: 'skid', k: 300, c: 4, mu: 0.45, crashSpeed: 3.5, trackWidth: 0.035 },
       hard('wing-tip-L', [tip[0] - 0.02, wingY, -tip[1]]),
       hard('wing-tip-R', [tip[0] - 0.02, wingY, tip[1]]),
       // Trailing corner of each tip too.
@@ -325,9 +326,10 @@ export function buildF22(style) {
     geometry,
     views: {
       span: SPAN,
-      // Under the canopy, and a camera on top of the fuselage box.
-      // Under the canopy, and a camera on the box behind it.
-      cockpit: [O.canopy.back + 0.02, under + 0.002, 0],
+      // A camera on top of the canopy (lower down, between its sides, the
+      // view was a channel of foam with a strip of sky), and one on the box
+      // behind it.
+      cockpit: [O.canopy.back + 0.02, under + 0.037, 0],
       pod: [0.0, under + 0.012, 0],
       chase: { back: 1.4, up: 0.45 },
     },

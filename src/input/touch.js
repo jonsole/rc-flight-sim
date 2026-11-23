@@ -4,6 +4,7 @@
 // Mode 2 (default): left = throttle (stays put) + rudder, right = elevator + aileron.
 // Mode 1:           left = elevator + rudder,              right = throttle + aileron.
 
+import { canFullscreen, isFullscreen, toggleFullscreen, onFullscreenChange } from '../ui/fullscreen.js';
 const clamp = (v) => Math.max(-1, Math.min(1, v));
 
 class Stick {
@@ -114,6 +115,12 @@ export class TouchControls {
     button('CAM', 'Change camera', () => opts.onAction('KeyC'));
     button('RESET', 'Reset aircraft', () => opts.onAction('KeyR'));
     button('ASSIST', 'Flight assist: manual / AS3X / SAFE', () => opts.onAction('KeyG'));
+    // Full screen on and off (src/ui/fullscreen.js), where the browser can.
+    if (canFullscreen()) {
+      button(isFullscreen() ? 'WINDOW' : 'FULL', 'Full screen on and off', () => toggleFullscreen(), true);
+      const fs = bar.lastChild;
+      onFullscreenChange(() => (fs.textContent = isFullscreen() ? 'WINDOW' : 'FULL'));
+    }
     button('☰', 'Menu', () => opts.onMenu(), true);
     this.root.append(bar);
     this.bar = bar;

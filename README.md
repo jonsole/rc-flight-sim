@@ -126,33 +126,83 @@ your browser per model (↺ puts one back, *Reset all* the lot). *Export*
 saves them to a file (send it in to have them built into the model) and
 *Import* loads one.
 
+## Insect-net challenge
+
+*Menu → Challenges → Insect net tow* ties a fine insect-sampling net
+on a cord tied on under the model, below its CG. The net starts folded (on the grass behind
+the model, or trailing if you start in the air) and opens in the airflow;
+open, it drags hard. Climb to the sampling height (40 m, ±10), then fly
+three figure-of-8 circuits over the field: through the start gate where the
+two loops meet, round one loop, back through the middle and round the other
+the opposite way. Directions at the top of the screen say whether to climb
+or descend, which way to turn and which gate is next; the next gate is lit
+yellow and marked on screen, and the course is drawn as a dashed line.
+Gates only count at the sampling height. The net catches the insects
+drifting up there on the way round (the count is shown), and the clock runs
+from the start gate. The course is laid out over the most open part of the
+field, like the other challenges (`src/game/netTow.js`).
+
+The difficulty is the net's size: its drag at 10 m/s is 24% (easy), 44%
+(normal) or 70% (hard) of the model's static thrust, so each difficulty asks
+about as much of every model. Trees snag the net, and a hard enough pull
+snaps the cord. Best times are kept with the other challenges'. While the
+challenge is on, *Menu → Tuning* has an *Insect net* group: net size, drag
+factor and cord length, per model and difficulty (best times only count with
+the standard net). The net's bag is drawn as soft fabric
+(`src/view/netCloth.js`): it billows and flutters in the airflow, swings
+about behind, and crumples in a heap when dropped. The course's height, loop size and number of circuits
+are `COURSE` in `src/sim/net.js`; the drawing is in `src/view/netView.js`.
+
+## Links
+
+The address shows what you're flying, so it can be bookmarked or shared:
+`?field=waterbeach&plane=multiplex-easystar&challenge=net&level=hard` opens
+Barrack Field with the EasyStar set up for the insect net tow on hard. It
+follows along as you change the plane, the challenge or its difficulty
+(`&minutes=` too for the balloon burst's time limit). `plane` is the
+aircraft's id (`src/aircraft/index.js`), `challenge` one of `hoops`,
+`balloons`, `limbo`, `pylons`, `streamers`, `spot` (spot landing) or `net`, and `level`
+`easy`, `normal` or `hard`; anything not recognised falls back to the
+default. A multiplayer invite (`room=`) can be added to the same link.
+
 ## Flying fields
 
 Pick the field on the start screen or under *Menu → Flying → Flying field*
-(changing it reloads the page; `?field=waterbeach` in the URL opens Barrack Field):
+(changing it reloads the page; `?field=waterbeach` in the URL opens Barrack Field).
+Barrack Field is the default. The Club field is left out of the lists while its
+lake is unfinished; `?field=home` still opens it:
 
 | Field | Notes |
 | --- | --- |
-| **Club field** | Made up: a mown field in rolling country. |
+| **Club field** | Made up: a mown field in rolling country. Hidden from the lists for now (`?field=home`). |
 | **Barrack Field** | The real field at Waterbeach, Cambridgeshire: the cricket pitch is the runway, with the grass mown about 32 m round it, and you stand 10 m south of it. 2 × 2 km of scenery around it is built from Environment Agency 1 m LIDAR (ground, ~5000 trees at their measured heights and crown sizes, hedges, building heights) and OpenStreetMap (building outlines, roads, paths, water, gardens, farmland), touched up from what's there now: bigger trees, the chain-link and temporary fences, demolished buildings left out. |
+| **Hotel Glocknerhof** | The hotel's model airfield at Berg im Drautal, Carinthia (Austria), in the Drau valley under the hotel: a 200 m mown grass runway running roughly north-south between the access road and a maize field, the pits behind a 5 m safety net, the big green and white pyramid tent, cars along the road. You stand at the net near the north end, facing east. 2 × 2 km round it from the BEV's 1 m laser-scan heights (ground, ~5000 trees, conifers told from broadleaves by how dark they are from above, building heights), coloured from basemap.at aerial photos, with OpenStreetMap building outlines; and 14 × 14 km of the mountains round the valley (up to ~2500 m) from the same heights every 32 m, coloured from the aerial photos. `?field=glocknerhof`. |
 
 Real fields are baked by `tools/bake_location.py` into `src/locations/<id>.json`
 (about 2.6 MB), so nothing is fetched at run time and no API key is needed:
 
 ```bash
-pip install numpy scipy pyproj tifffile pillow
+pip install numpy scipy pyproj tifffile pillow imagecodecs
 python3 tools/bake_location.py waterbeach --cache /tmp/waterbeach-data
 ```
 
 To add a field in England, add it to `SITES` in the script (the OSGB
 easting/northing where the pilot stands) and its layout (runway and its
 heading, mown areas, pilot box, fences, trees grown since the survey) to
-`src/sim/location.js`. Players in multiplayer only meet others at the same
+`src/sim/location.js`.
+
+Austrian fields (`source: 'bev'`, `tools/bev.py`) take the pilot's
+latitude and longitude instead, and read the BEV's ALS DTM and DSM (CC BY 4.0)
+straight from its 6 GB files over HTTP, only the parts they need (a few
+hundred MB the first time, kept in the cache folder). They are laid out in a
+local frame with true north up. With `far_half` and `far_cell` they also bake
+the mountains round about (`far`, `farGround`), which the terrain then covers
+instead of fading into made-up country. Players in multiplayer only meet others at the same
 field.
 
 ### Scenery editor
 
-Press **E** (or *Menu → Flying → Edit scenery*) to fix up a field: fly
+Press **E** to fix up a field (it isn't in the menu): fly
 around with W A S D, Q / E (down / up), Shift (faster), right-drag to look
 and the wheel to zoom. Click a tree, bush, building, fence or the windsock to
 select it, drag its arrows to move it, and set its size or type in the
@@ -211,7 +261,9 @@ be assigned to *reset* and *change camera*. Settings are saved in the browser.
 
 Keyboard fallback: arrows = aileron/elevator, A/D = rudder, W/S = throttle,
 Hand launch: before throttling up, aileron or rudder turns you round and elevator walks you forward or back, to aim clear of trees.
-R = reset, C = camera, G = flight assist, P = pause, H = HUD, M = mute, Esc = menu.
+R = reset, X = save start position, C = camera, G = flight assist, P = pause, H = HUD, M = mute, Esc = menu.
+
+*Start* (Menu → Flying) is *On the runway* (the field's own take-off spot), *In the air* (30 m up) or *Saved position* (greyed out until there is one): press X wherever you are, on the ground and stopped, in the air (height, heading and speed), or with a hand-launch model in your hand after walking and turning, and you start there from then on. One saved position per field, kept in this browser.
 
 ## Phones and tablets
 
@@ -221,6 +273,44 @@ throttle stays where you leave it, the others spring back) and buttons for
 camera, reset, flight assist and the menu. Turn the phone sideways. Stick mode
 and showing or hiding the sticks are under **Menu → Transmitter**; a connected
 transmitter or gamepad still takes priority.
+
+## Challenges
+
+Pick one on the start screen or under *Menu → Challenges* (*Free flying* for
+none). The course is set out in the most open part of the field, in front of
+you, worked out from the trees and buildings there (your scenery edits too).
+A box at the top shows the clock and progress, a yellow ring or edge arrow
+points to what's next, and **R** starts it again. Your best for each
+challenge is kept in this browser, per field and difficulty.
+
+Each challenge has three difficulty levels (*Easy*, *Normal*, *Hard*), set
+next to the challenge on the start screen or in the Challenges tab:
+
+| Challenge | Easy | Normal | Hard |
+| --- | --- | --- | --- |
+| Hoops | 7 m hoops, gentle height changes | 5 m | 3.2 m, big climbs and dives |
+| Balloon burst | 15 big balloons (1.6 m) up at once, all 8–11 m up | 12, 1 m across, 4–18 m up | 9 small ones (0.6 m), 2–25 m up |
+| Limbo | 14 m between the poles | 10 m | 7 m |
+| Pylon race | 2 laps | 3 | 5 |
+| Streamer cutting | planes at ~7 m/s, 12 m streamers | 8–9 m/s, 8 m | 11–12 m/s, 6 m |
+| Spot landing | climb to 10 m, 360° turn at least 10 m wide | 10 m up, 15 m wide | 20 m up, 20 m wide |
+
+| Challenge | What to do |
+| --- | --- |
+| **Hoops** | Eight floating hoops round a loop at different heights. Fly through them in order, either way through; the next one is lit. The clock runs from the first to the last. |
+| **Balloon burst** | Against the clock (2, 5 or 10 minutes; 5 to start with): burst as many helium balloons as you can. They're tied to pegs on strings and dance about in the wind: each has its own gusts and swirls, they sway across the wind, and a gust can push one down so its string goes slack. Your aeroplane leaves turbulence behind it too (air dragged along, downwash, and swirl from the tip vortices and prop, spreading and dying away over a couple of seconds), so a near miss sets a balloon bouncing. and a new one is tied up a couple of seconds after each one goes. Clip a string and the balloon rises away downwind trailing its string: chase it and burst it before it gets out of reach (120 m up or 350 m away). The clock starts when you take off; if you crash, R puts you back in the air and the clock keeps running (*Start again* in the menu starts a new game). |
+| **Limbo** | A bar between two poles, starting at 8 m. Fly under it (either way) and it drops, down to 32 cm. Over the top doesn't count; touch it and it falls, ending the run; the poles are solid. Scored by passes. |
+| **Pylon race** | Three laps round three inflatable pylons: cross the start line (the white line between two black flags) either way, which sets which way round you race, then round the lit pylon each time, on the outside, on the side its yellow flag sticks out, the way the curved yellow arrow round it points. Later laps must cross the line the same way. Cutting inside one means going back round it, and hitting one is a crash. |
+| **Streamer cutting** | Three model aeroplanes fly loops towing a crepe-paper streamer from each wing tip. Cut them with your wings, prop or fuselage, again and again, until only stubs are left; don't hit the aeroplanes. In multiplayer you tow streamers too, and everyone can cut everyone's (the streamer aeroplanes are your own, not shared). |
+| **Spot landing** | Take off and climb to 10 m, fly a nice gentle 360° turn anywhere (it only counts while the turn is wide enough: a quick spin round doesn't), then cut the throttle right back and glide in to the spot (a red bullseye with white rings at 2, 5 and 10 m and orange cones, painted on the runway). A checklist on the left of the screen ticks off each step and shows the one to do now (with the throttle setting, and why the turn isn't counting when it isn't: too low, too tight), while the box at the top shows the height, degrees flown (of 360°) or distance to go; phones and small windows show just the current step. Scored by how far from the middle you first touch down (a blue flag marks it): within 1 m is a bullseye. Opening the throttle again after cutting it, or crashing on landing, means no score. |
+
+Everything in a course casts a shadow: what stays put (pylons, hoops, poles, cones, flags) through one sharp shadow for the course, laid over the ground and redrawn only when something in it moves or the sun does; the streamer planes like your own aeroplane; and each balloon a soft round shadow, fainter the higher it is.
+
+The code is in `src/game/`: `courses.js` (the courses), `challenges.js`
+(clock, scores, HUD, sounds, multiplayer streamers), `ribbon.js` (the
+streamers: light paper that drifts with the air, flutters and is towed),
+`arena.js` (finding open sky), `shadow.js` (the courses' shadows) and `geom.js` (through a hoop, touching a
+streamer or a ball).
 
 ## Views
 
@@ -312,6 +402,7 @@ src/world/     sky, terrain, runway, trees, windsock
 src/view/      camera rig (LOS / FPV / chase)
 src/input/     transmitter (Gamepad API) + keyboard, expo & rates
 src/ui/        OSD/HUD, settings panel
+src/game/      challenges: hoops, balloons, limbo, pylon race, streamer cutting, spot landing
 src/audio/     synthesised motor and prop sound
 tests/         vitest flight-model tests
 ```
@@ -418,4 +509,4 @@ Players who join the same room code see each other's aeroplanes (menu → Multip
 
 - Hosting: Cloudflare Workers Builds deploys the relay from this repository on every push to main, using `wrangler.toml` at the repo root (no build command; deploy command `npx wrangler deploy`).
 - Local relay: `cd server && npm install && npm start` (or `npx wrangler dev`), then set Server to `ws://127.0.0.1:8787` in the Multiplayer menu.
-- The game connects to `wss://rc-flight-sim.jon-sole.workers.dev` (`src/net/config.js`, or build with `VITE_MP_SERVER`).
+- No server is built into the game: enter the relay's address under *Menu → Multiplayer → Advanced → Server* (e.g. your Worker's `wss://….workers.dev` address). Invite links carry it (`&server=`), so the people you invite don't have to.

@@ -30,11 +30,17 @@ export function fromJson(o) {
 
 /** A builder's entry from a model's JSON file, built-in tuning applied (no 3D model). */
 export function buildEntry(json) {
-  const { builder, tuning, model: _model, ...opts } = json;
+  const { builder, tuning, model: _model, sound, ...opts } = json;
   const build = BUILDERS[builder];
   if (!build) throw new Error(`${json.id}: unknown builder "${builder}"`);
-  const entry = build(fromJson(opts));
+  let entry = build(fromJson(opts));
   // Built-in tuning: becomes the model's defaults (a changed prop is drawn too).
-  if (tuning && Object.keys(tuning).length) return { ...entry, def: tunedDef(entry.def, tuning) };
+  if (tuning && Object.keys(tuning).length) entry = { ...entry, def: tunedDef(entry.def, tuning) };
+  // Its sound (src/audio/engine.js), if it has its own.
+  // (Measured tones are for the prop it came with: forProp, to tell.)
+  if (sound) {
+    const P = entry.def.motor.prop || {};
+    entry = { ...entry, def: { ...entry.def, sound: { ...fromJson(sound), forProp: `${P.blades || entry.def.motor.blades || 2}${P.tip}` } } };
+  }
   return entry;
 }

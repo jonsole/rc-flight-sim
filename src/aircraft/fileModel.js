@@ -94,8 +94,11 @@ const isBroken = (o) => {
  * @param {object} [o]
  * @param {{ parts?: object, update?: Function }} [o.propFrom]  the propeller
  *   (src/aircraft/prop.js propModel, sized as tuned), drawn at the file's `prop` empty
- * @returns {{ root, parts, setPilotVisible(v), update(aircraft, dt) }}
+ * @returns {{ root, parts, setPilotVisible(v, eye), update(aircraft, dt) }}
  */
+const _eye = new Vector3();
+const GLASS_NEAR = 0.06; // m: glass this close to the cockpit camera isn't drawn
+
 export function createFileModel(scene, { propFrom = null } = {}) {
   const root = new Group();
   const model = scene.clone(true);
@@ -143,6 +146,16 @@ export function createFileModel(scene, { propFrom = null } = {}) {
     return { node, base: node.quaternion.clone(), sign: axis.y >= 0 ? 1 : -1 };
   });
   const pilots = findAll(model, 'pilot');
+  // Canopies, with their boxes in body axes (the model isn't placed yet), so
+  // a cockpit camera inside one can see out (setPilotVisible).
+  const canopies = findAll(model, 'canopy').map((node) => ({ node, box: new Box3().setFromObject(node) }));
+  // See-through glass (windscreens, windows): pressed up against a cockpit
+  // camera it shows as a smear across the view (setPilotVisible).
+  const glass = [];
+  model.traverse((o) => {
+    const m = [o.material].flat()[0];
+    if (o.isMesh && m?.transparent && m.opacity < 0.5) glass.push({ node: o, box: new Box3().setFromObject(o) });
+  });
 
   // Breakable parts.
   const parts = {};
@@ -164,13 +177,33 @@ export function createFileModel(scene, { propFrom = null } = {}) {
     propNode.add(borrowed);
   }
 
+  const discs = [];
+  root.traverse((o) => o.userData.propDisc && discs.push(o));
+
   const fwd = new Vector3();
   const inv = new Quaternion();
   return {
     root,
     parts,
-    setPilotVisible(v) {
+    /**
+     * Show or hide the pilot (hidden for the cockpit camera). With `eye`
+     * (the cockpit camera, body axes [x, y, z]), a canopy it sits inside is
+     * hidden too, or the camera would see only its inside (not one that's
+     * broken off in a crash: that's flying away as debris), and so is
+     * see-through glass within a few centimetres of it; the spinning prop's
+     * blur is fainter (a camera right behind a prop barely shows it).
+     */
+    setPilotVisible(v, eye = null) {
       for (const p of pilots) p.visible = v;
+      const cam = eye && !v ? _eye.fromArray(eye) : null;
+      for (const g of glass) g.node.visible = !cam || g.box.distanceToPoint(cam) > GLASS_NEAR;
+      for (const d of discs) d.material.opacity = cam ? 0.4 : 1;
+      for (const c of canopies) {
+        let on = true;
+        for (let q = c.node; q; q = q.parent) if (q === root) on = false; // (still attached)
+        if (on) continue;
+        c.node.visible = v || !eye || !c.box.containsPoint(_eye.fromArray(eye));
+      }
     },
     update(aircraft, dt) {
       const surfaces = aircraft.surfaces || [];

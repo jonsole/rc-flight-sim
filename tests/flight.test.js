@@ -691,6 +691,33 @@ describe('input shaping', () => {
   });
 });
 
+describe('impact sounds', () => {
+  const def = getAircraft('buschtrottel-shockcub').def;
+  const drop = (pitch, vy) => {
+    const ac = new Aircraft(def, { ground });
+    ac.assistMode = 'off';
+    ac.resetInAir(new Vector3(0, ground.heightAt(0, 0) + 1.2, 0), 0, 6);
+    ac.orientation.setFromAxisAngle(new Vector3(0, 0, 1), pitch);
+    ac.velocity.set(6, vy, 0);
+    ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 0 };
+    ac.update(1.5);
+    return ac;
+  };
+  it('a gentle landing: a tyre bump, nothing breaks', () => {
+    const ac = drop(0.08, -1.2);
+    const k = ac.impacts.map((h) => h.kind);
+    expect(k).toContain('wheel');
+    expect(k).not.toContain('crunch');
+  });
+  it('nosing in hard: a thud and parts breaking', () => {
+    const ac = drop(-0.7, -8);
+    const k = ac.impacts.map((h) => h.kind);
+    expect(ac.crashed).toBe(true);
+    expect(k.some((x) => x === 'ground' || x === 'prop')).toBe(true);
+    expect(k).toContain('crunch');
+  });
+});
+
 describe('collisions with obstacles', () => {
   const obstacles = new Obstacles();
   const def = getAircraft('buschtrottel-shockcub').def;
@@ -717,18 +744,20 @@ describe('collisions with obstacles', () => {
     expect(ac.crashed).toBe(true);
     expect(ac.crashReason).toMatch(/tree trunk/);
     expect(ac.position.x).toBeLessThan(t.x + 1); // stopped, not passed through
+    expect(ac.impacts.map((h) => h.kind)).toContain('wood'); // (its sound)
   });
 
   it('crashes into the club hut', () => {
     const ac = flyAt({ x: -29, y: 1.5, z: 26 }, 10);
     expect(ac.crashed).toBe(true);
     expect(ac.crashReason).toMatch(/clubhouse/);
+    expect(ac.impacts.map((h) => h.kind)).toContain('hard');
   });
 
   it('crashes into foliage at speed', () => {
     const ac = flyAt({ x: tree.x - tree.crownW, y: tree.y + tree.h * 0.62, z: tree.z }, 10);
     expect(ac.crashed).toBe(true);
-    expect(ac.crashReason).toMatch(/tree/);
+    expect(ac.crashReason).toMatch(/tree/);    expect(ac.impacts.map((h) => h.kind)).toContain('twigs');
   });
 
   it('is caught by the branches when it drifts in slowly', () => {
@@ -910,7 +939,8 @@ describe('rudder and aileron coupling', () => {
       ac.update(1);
       // Was 41° (ShockCub), 46° (Agro), 72° (S.E.5a: a biplane rolls more).
       // The AeroScout's rudder throw is bigger: it yaws more than it rolls.
-      const limit = id.includes('se5a') ? 40 : id.includes('aeroscout') ? 35 : 30;
+      // ShockCub and Highlander ~32-34° with their tuned 2° down-thrust.
+      const limit = id.includes('se5a') ? 40 : id.includes('aeroscout') ? 35 : 36;
       expect(Math.abs(ac.attitude().roll - r0)).toBeLessThan(limit * deg);
     });
 
