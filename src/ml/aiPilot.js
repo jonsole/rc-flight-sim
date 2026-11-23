@@ -196,7 +196,10 @@ export class AiPilot {
     t.z = p.z + (dz / d) * CARROT;
     // Never too low over the ground here or just ahead.
     const floor = Math.max(this.groundY(p.x, p.z), this.groundY(p.x + (dx / d) * 60, p.z + (dz / d) * 60)) + MIN_AGL * (this.phase === 'wander' ? 1 : 0.5);
-    t.y = Math.max(y, floor);
+    // Climbs and descents as a ramp: never more than 12 m above or 25 m
+    // below where it is. (A target 60-90 m up at once made it pull up hard
+    // at low speed, stall and spin in: it trained with smaller steps.)
+    t.y = Math.min(p.y + 12, Math.max(p.y - 25, Math.max(y, floor)));
     t.speed = speed;
     t.line = null;
     t.rates = null;
@@ -407,11 +410,11 @@ export class AiPilot {
       }
       case 'downwind': {
         const planned = this.aeroPlanned;
-        const end = this.#pt(strip.aimS - 110, planned ? SIDE + 35 : SIDE, planned ? 70 : CIRCUIT - 5);
+        const end = this.#pt(strip.aimS - 110, planned ? SIDE + 35 : SIDE, planned ? 90 : CIRCUIT - 5);
         this.#flyTo(end.x, end.z, end.y, planned ? 1.6 * this.vCruise : speed);
         // Halfway along, high and fast enough, heading down the leg: go.
         const along = -(ac.velocity.x * strip.dir.x + ac.velocity.z * strip.dir.z) / Math.max(1, Math.hypot(ac.velocity.x, ac.velocity.z));
-        const minH = MANEUVERS[planned]?.minHeight ?? 50;
+        const minH = MANEUVERS[planned]?.minHeight ?? 70;
         if (planned && sNow < L / 2 && agl > minH && ac.airspeed > 1.25 * this.vCruise && along > 0.9) {
           this.aeroPlanned = null;
           this.runner = new ManeuverRunner(planned, rateLimits(this.def, this.vCruise));
@@ -426,10 +429,11 @@ export class AiPilot {
       }
       case 'aerobatics': {
         const r = this.runner;
-        if (!r.update(ac, dt) || this.legT > 20 || agl < 25) {
+        // Done, or taking too long, or getting low: recover.
+        if (!r.update(ac, dt) || this.legT > 20 || agl < 45) {
           this.done.push(r.key);
           this.runner = null;
-          this.#goto('downwind', { aeroPlanned: null });
+          this.#goto('recover', { steady: 0 });
           return this.#plan(0);
         }
         // Rates are what matter; the point ahead and speed are for the other inputs.
@@ -442,6 +446,18 @@ export class AiPilot {
         t.line = null;
         t.rates = r.rates;
         return 'aero';
+      }
+      case 'recover': {
+        // After a manoeuvre: wings level and climbing, straight ahead, then
+        // back into the circuit once it's been steady for a couple of seconds.
+        const v = ac.velocity;
+        const h = Math.hypot(v.x, v.z) || 1;
+        this.#flyTo(ac.position.x + (v.x / h) * CARROT, ac.position.z + (v.z / h) * CARROT, this.groundY(ac.position.x, ac.position.z) + Math.max(agl + 15, 60), 1.4 * this.vCruise);
+        const at = ac.attitude();
+        const steady = Math.abs(at.roll) < 0.35 && v.y > -1 && agl > 40;
+        this.steady = steady ? this.steady + dt : 0;
+        if (this.steady > 2 || this.legT > 25) this.#goto('downwind', { aeroPlanned: null });
+        return 'fly';
       }
       case 'base': {
         // To a point nearly on the centreline well out, so final starts lined up.
@@ -478,7 +494,8 @@ export class AiPilot {
         if (ac.onGround) this.down = true;
         // Going wrong: off the side, low on the approach (trees!), long, or
         // still up over the far end, or someone on the strip.
-        const low = sNow < strip.aimS - 30 && agl < glideHeight(strip, sNow) - 3;
+        // (The strip is checked clear to 4 m below the glide path.)
+        const low = sNow < strip.aimS - 50 && agl < glideHeight(strip, sNow) - 4;
         if (!this.down && (Math.abs(lat) > strip.width / 2 + 12 || low || sNow > L / 2 - 10 || (agl > 4 && this.field.blocked?.()))) {
           this.#goAround();
           return this.#plan(0);

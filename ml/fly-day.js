@@ -12,7 +12,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { setLocation } from '../src/sim/location.js';
 
-const o = { aircraft: 'hobbyzone-aeroscout', flyers: 1, minutes: 10, seed: 1, wind: 3, windDir: 270, field: 'home', airborne: false, stripOnly: false, quiet: false };
+const o = { aircraft: 'hobbyzone-aeroscout', flyers: 1, minutes: 10, seed: 1, wind: 3, windDir: 270, field: 'home', airborne: false, stripOnly: false, trace: '', from: 0, quiet: false };
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
   const k = argv[i].slice(2);
@@ -82,6 +82,13 @@ for (let t = 0; t < o.minutes * 60; t += dt) {
       p._logged = true;
       log(`${fmt(t)}  ai${i + 1}  crash: ${ac.crashReason} in ${p.status} at ${(ac.position.y - ground.heightAt(ac.position.x, ac.position.z)).toFixed(1)} m up, s ${(strip?.along(ac.position) ?? 0).toFixed(0)} side ${(strip?.lateral(ac.position) ?? 0).toFixed(0)} (aim ${(strip?.aimS ?? 0).toFixed(0)}), ${ac.airspeed.toFixed(1)} m/s`);
     } else if (!ac.crashed) p._logged = false;
+    // --trace ai3 --from 360: that flyer once a second from then.
+    if (o.trace === `ai${i + 1}` && t >= o.from && Math.floor(t) !== Math.floor(t - dt)) {
+      const at = ac.attitude();
+      const agl = ac.position.y - ground.heightAt(ac.position.x, ac.position.z);
+      const d = (r) => ((r * 180) / Math.PI).toFixed(0).padStart(4);
+      console.log(`${fmt(t)}  ${p.status.padEnd(22)} agl ${agl.toFixed(1).padStart(5)}  vy ${ac.velocity.y.toFixed(1).padStart(5)}  air ${ac.airspeed.toFixed(1).padStart(4)}  pitch ${d(at.pitch)} roll ${d(at.roll)}  thr ${ac.controls.throttle.toFixed(2)}  stall ${ac.wingStall.toFixed(2)}  target dy ${(p.target.y - ac.position.y).toFixed(0)} spd ${p.target.speed.toFixed(1)}`);
+    }
     if (p.status !== last[i]) {
       last[i] = p.status;
       const agl = ac.position.y - ground.heightAt(ac.position.x, ac.position.z);
