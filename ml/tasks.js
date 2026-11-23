@@ -96,6 +96,20 @@ const takeoff = {
   },
 };
 
+/**
+ * The nose-up attitude (rad) to touch down in: a tail-dragger's three-point
+ * attitude (main wheels and tail on the ground together), a tricycle a few
+ * degrees nose-up on its mains, a belly-lander nearly level.
+ */
+export function touchdownPitch(def) {
+  const gear = def.contacts.filter((c) => c.type === 'wheel' || c.type === 'skid');
+  if (gear.length < 2) return 3 * deg;
+  const front = gear.reduce((a, b) => (b.pos[0] > a.pos[0] ? b : a));
+  const back = gear.reduce((a, b) => (b.pos[0] < a.pos[0] ? b : a));
+  const sitting = Math.atan2(back.pos[1] - front.pos[1], front.pos[0] - back.pos[0]);
+  return Math.max(4 * deg, sitting);
+}
+
 // --- Landing ----------------------------------------------------------------------
 // From 90-160 m out on the approach, a little off the centreline and heading,
 // down the 7° glide path, flare, touch down gently near the aim point, and
@@ -112,7 +126,7 @@ const land = {
     env.vApproach = 1.15 * env.vCruise;
     ac.resetInAir(new Vector3(p.x, env.groundY(p.x, p.z) + Math.max(6, h), p.z), heading, env.vApproach * (0.95 + 0.25 * rng()));
     ac.throttleActual = 0.2 + 0.2 * rng();
-    env.st = { down: false, bounces: 0, sink: null, touchS: null, touchLat: null, touchAlign: null, wasDown: false };
+    env.st = { down: false, bounces: 0, sink: null, touchS: null, touchLat: null, touchAlign: null, wasDown: false, flarePitch: touchdownPitch(env.def) };
   },
   target(env) {
     landingTarget(env.ac, env.strip, env.groundY, env.vApproach, env.st.down, env.target);
@@ -143,6 +157,12 @@ const land = {
       } else {
         // Near and past the aim point: being up at all costs (get it down).
         r -= dtc * clamp01(agl / 4);
+      }
+      // The last few metres: in the touchdown attitude (tail-draggers tail
+      // down, or the prop hits the ground), motor at idle.
+      if (agl < 3 && s > strip.aimS - 40) {
+        const pitch = ac.attitude().pitch;
+        r -= dtc * (clamp01(Math.abs(pitch - st.flarePitch) / (8 * deg)) + ac.throttleActual);
       }
       // Over the far end still flying: overshot.
       if (s > strip.length / 2) return { reward: r - 10, done: true, reason: 'overshot' };
