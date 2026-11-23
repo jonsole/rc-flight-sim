@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { ES } from './es.js';
 import { Evaluator, Pool } from './evaluate.js';
 import { makeRng, TASKS } from './env.js';
+import { TASK_SECONDS } from './tasks.js';
 import { aircraftIds } from './aircraft.js';
 import { Policy } from '../src/ml/policy.js';
 import { resolveInputs } from '../src/ml/observe.js';
@@ -24,7 +25,7 @@ export const DEFAULTS = {
   gens: 150,
   pairs: 24, // population = 2 × pairs
   episodes: 4, // flights per candidate per generation
-  seconds: 20,
+  seconds: 0, // flight length; 0: the task's own (20 s for hold, see ml/tasks.js TASK_SECONDS)
   hidden: '32,32',
   sigma: 0.05,
   lr: 0.03,
@@ -61,27 +62,53 @@ export function parseArgs(argv) {
   return o;
 }
 
+/**
+ * Start `policy` (inputs `inputs`) from a trained one (`old`, inputs
+ * `oldInputs`): the same hidden layers, with first-layer weights matched up
+ * by input name. Inputs the old one didn't have start at zero, so the new
+ * policy flies exactly like the old one until training finds a use for them.
+ */
+export function warmStart(policy, inputs, old, oldInputs) {
+  if (String(policy.hidden) !== String(old.hidden)) throw new Error(`--init policy has different hidden layers (${old.hidden})`);
+  const nIn = inputs.length;
+  const oIn = oldInputs.length;
+  const h0 = policy.hidden[0];
+  const p = policy.params;
+  const q = old.params;
+  p.fill(0);
+  for (let o = 0; o < h0; o++) {
+    for (let i = 0; i < nIn; i++) {
+      const k = oldInputs.indexOf(inputs[i]);
+      if (k >= 0) p[o * nIn + i] = q[o * oIn + k];
+    }
+  }
+  // Biases of the first layer, then every later layer, are laid out the same.
+  const rest = q.length - h0 * oIn;
+  for (let k = 0; k < rest; k++) p[h0 * nIn + k] = q[h0 * oIn + k];
+  return policy;
+}
+
 /** Train; returns { best, bestScore, dir }. */
 export async function train(opts) {
   const o = { ...DEFAULTS, ...opts };
   const aircraft = String(o.aircraft).split(',').filter(Boolean);
   const hidden = String(o.hidden).split(',').map(Number);
   const inputs = resolveInputs(o.inputs);
+  const seconds = o.seconds || TASK_SECONDS[o.task] || 20;
   const name = o.name || `${o.task}-${aircraft.length > 1 ? 'multi' : aircraft[0]}${o.inputs === 'sim' ? '' : `-${o.inputs.includes(',') ? 'custom' : o.inputs}`}`;
   const dir = `${o.out.replace(/\/$/, '')}/${name}`;
   mkdirSync(dir, { recursive: true });
   const config = {
     aircraft,
     hidden,
-    env: { task: o.task, inputs, seconds: o.seconds, windMax: o.wind, controlHz: o.controlHz, substep: o.substep },
+    env: { task: o.task, inputs, seconds, windMax: o.wind, controlHz: o.controlHz, substep: o.substep },
   };
   const log = (...a) => o.quiet || console.log(...a);
 
   const policy = new Policy(inputs.length, hidden).init(makeRng(o.seed));
   if (o.init) {
-    const p = Policy.fromJSON(JSON.parse(readFileSync(o.init, 'utf8')));
-    if (p.size !== policy.size) throw new Error(`--init policy has a different shape (${p.hidden})`);
-    policy.params.set(p.params);
+    const j = JSON.parse(readFileSync(o.init, 'utf8'));
+    warmStart(policy, inputs, Policy.fromJSON(j), resolveInputs(j.meta?.inputs ?? 'v1'));
   }
   const es = new ES(policy.params, { pairs: o.pairs, sigma: o.sigma, lr: o.lr, l2: o.l2, seed: o.seed });
   let gen0 = 0;
@@ -103,7 +130,7 @@ export async function train(opts) {
   const evaluator = new Evaluator(config);
   const pool = o.workers > 1 ? new Pool(config, o.workers) : null;
   const scoreAll = (list, eps) => (pool ? pool.scoreAll(list, eps) : Promise.resolve(list.map((p) => evaluator.score(p, eps).fitness)));
-  const meta = (gen, score) => ({ aircraft, task: o.task, inputs, generation: gen, valScore: score, bestScore, hidden, trainedFor: o.seconds });
+  const meta = (gen, score) => ({ aircraft, task: o.task, inputs, generation: gen, valScore: score, bestScore, hidden, trainedFor: seconds });
 
   log(`training ${name}: ${aircraft.join(', ')} | task ${o.task} | ${inputs.length} inputs | ${policy.size} weights | population ${2 * o.pairs} × ${o.episodes} flights | ${o.workers} workers`);
   const t0 = Date.now();

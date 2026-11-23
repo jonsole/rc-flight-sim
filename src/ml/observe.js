@@ -8,9 +8,14 @@
 // The target is a point to fly towards plus an airspeed to fly at:
 // { x, y, z, speed }. Holding a heading and height is "fly at a point a long
 // way ahead at that height"; following waypoints is "fly at the next one".
+// Optional extras: `line` { x, z }, a horizontal unit vector along a line to
+// follow (the runway, for take-off, landing and taxiing), and `rates`
+// { roll, pitch, yaw } in rad/s, body rates to fly (aerobatics).
+//
+// New features are only ever added at the end, and every policy file lists
+// the inputs it was trained on (meta.inputs), so older policies keep working.
 import { Quaternion, Vector3 } from 'three';
 
-export const OBS_SIZE = 23;
 
 /** Names of the features, in order (for logs and debugging). */
 export const OBS_NAMES = [
@@ -22,7 +27,12 @@ export const OBS_NAMES = [
   'heightError', 'speedError',
   'throttle', 'wingStall',
   'prevRoll', 'prevPitch', 'prevYaw', 'prevThrottle',
+  // Added for take-off, landing, taxiing and aerobatics:
+  'onGround', 'groundSpeed', 'aglFine',
+  'lineFwd', 'lineRight',
+  'cmdRollRate', 'cmdPitchRate', 'cmdYawRate',
 ];
+export const OBS_SIZE = OBS_NAMES.length;
 
 /**
  * Named choices of inputs (a policy can be trained on a subset of OBS_NAMES).
@@ -35,6 +45,8 @@ export const OBS_NAMES = [
  */
 export const INPUT_SETS = {
   sim: OBS_NAMES,
+  // The first 23: what the first policies (fly to a point) were trained on.
+  v1: OBS_NAMES.slice(0, 23),
   hardware: OBS_NAMES.filter((n) => !['alpha', 'beta', 'wingStall'].includes(n)),
 };
 
@@ -90,5 +102,22 @@ export function observe(ac, target, prev, groundY, out = new Float64Array(OBS_SI
   out[i++] = ac.throttleActual * 2 - 1;
   out[i++] = ac.wingStall;
   for (let k = 0; k < 4; k++) out[i++] = prev[k];
+  out[i++] = ac.onGround ? 1 : 0;
+  _v.set(1, 0, 0).applyQuaternion(ac.orientation);
+  out[i++] = clip((ac.velocity.x * _v.x + ac.velocity.z * _v.z) / 5, 3); // forward over the ground
+  out[i++] = clip((ac.position.y - groundY) / 3 - 1, 2); // fine near the ground (flare)
+  const line = target.line;
+  if (line) {
+    _v.set(line.x, 0, line.z).applyQuaternion(_qi);
+    out[i++] = _v.x;
+    out[i++] = _v.z;
+  } else {
+    out[i++] = 0;
+    out[i++] = 0;
+  }
+  const r = target.rates;
+  out[i++] = r ? clip(r.roll / 3, 2) : 0;
+  out[i++] = r ? clip(r.pitch / 3, 2) : 0;
+  out[i++] = r ? clip(r.yaw / 3, 2) : 0;
   return out;
 }

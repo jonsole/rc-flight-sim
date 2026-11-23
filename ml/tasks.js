@@ -1,0 +1,274 @@
+// Training tasks for the phases of a flight other than flying from point to
+// point (those are in ml/env.js): take-off, landing, taxiing and aerobatics.
+// Each sets the aeroplane up (reset), says where it should go (target, using
+// src/ml/guidance.js just as the game's AI flyers do) and scores every
+// control step (step). Rewards are roughly "1 per second of doing it well",
+// plus bonuses for the moments that matter (a gentle touchdown, stopping
+// where it should) and penalties for crashing.
+import { Vector3, Quaternion } from 'three';
+import {
+  Strip, climbProfile, takeoffTarget, glideHeight, landingTarget, taxiTarget, TAXI_SPEED, GLIDE,
+} from '../src/ml/guidance.js';
+
+const deg = Math.PI / 180;
+const clamp01 = (x) => Math.min(1, Math.max(0, x));
+
+/** A strip and ground surface for this episode: anything from a mown runway to rough grass. */
+function randomStrip(env, rng) {
+  const a = rng() * 2 * Math.PI;
+  env.surface = { roll: 0.04 + rng() * 0.14, stiction: 2, drag: 0.9 + rng() * 0.5, bump: 0.002 + rng() * 0.018 };
+  return new Strip({ x: 0, z: 0, dir: { x: Math.cos(a), z: Math.sin(a) }, length: 60 + rng() * 120, width: 10 + rng() * 10 });
+}
+
+/** Angle (rad) between the aeroplane's nose (horizontally) and the strip direction. */
+function alignError(ac, strip) {
+  const f = new Vector3(1, 0, 0).applyQuaternion(ac.orientation);
+  return Math.atan2(f.x * strip.dir.z - f.z * strip.dir.x, f.x * strip.dir.x + f.z * strip.dir.z);
+}
+
+function groundSpeed(ac) {
+  return Math.hypot(ac.velocity.x, ac.velocity.z);
+}
+
+/** Any airframe point (not a wheel or skid) on the ground: a wing tip, the nose... */
+function scraping(ac) {
+  return ac.contacts.some((c) => c.onGround && c.type !== 'wheel' && c.type !== 'skid' && !ac.def.handLaunch);
+}
+
+// --- Take-off ---------------------------------------------------------------------
+// From standing at the start of the strip (or in the pilot's hand, for a
+// hand-launched model) to 35 m up the climb-out, straight along the strip.
+const takeoff = {
+  reset(env, rng) {
+    const ac = env.ac;
+    const strip = (env.strip = randomStrip(env, rng));
+    const p = strip.point(strip.startS, (rng() - 0.5) * 2);
+    const heading = strip.heading + (rng() - 0.5) * 10 * deg;
+    if (env.def.handLaunch) ac.resetHandLaunch(p.x, p.z, heading);
+    else ac.resetOnGround(p.x, p.z, heading);
+    env.st = { s: strip.along(ac.position), airborne: false, lateralSum: 0, n: 0 };
+  },
+  target(env) {
+    takeoffTarget(env.ac, env.strip, env.groundY, env.vCruise, env.target);
+  },
+  step(env, dtc) {
+    const ac = env.ac;
+    const strip = env.strip;
+    const st = env.st;
+    const s = strip.along(ac.position);
+    const lat = strip.lateral(ac.position);
+    const agl = ac.position.y - env.groundY(ac.position.x, ac.position.z);
+    let r = Math.max(-0.5, (s - st.s) / env.vCruise); // ~1 per second at cruise
+    st.s = s;
+    if (agl > 1) st.airborne = true;
+    st.lateralSum += Math.abs(lat);
+    st.n++;
+    if (agl < 5) r -= dtc * clamp01(Math.abs(lat) / (strip.width / 2));
+    if (!ac.onGround && !ac.held) {
+      r -= dtc * 0.5 * clamp01(Math.abs(agl - climbProfile(strip, s)) / 10);
+      if (ac.airspeed < 0.85 * env.vCruise && agl > 2) r -= dtc;
+    }
+    if (scraping(ac)) r -= dtc * 2;
+    if (ac.crashed) return { reward: r - 10, done: true, reason: ac.crashReason };
+    if (agl < 5 && Math.abs(lat) > strip.width / 2 + 5) return { reward: r - 5, done: true, reason: 'ran off the strip' };
+    if (agl > 35) return { reward: r + 5, done: true, reason: 'climbed out', success: true };
+    if (env.t >= env.seconds) return { reward: r, done: true, reason: 'time' };
+    return { reward: r, done: false };
+  },
+  summary(env) {
+    return { meanLateral: env.st.lateralSum / Math.max(1, env.st.n) };
+  },
+};
+
+// --- Landing ----------------------------------------------------------------------
+// From 90-160 m out on the approach, a little off the centreline and heading,
+// down the 7° glide path, flare, touch down gently near the aim point, and
+// roll to a stop on the strip with the motor off.
+const land = {
+  reset(env, rng) {
+    const ac = env.ac;
+    const strip = (env.strip = randomStrip(env, rng));
+    const s0 = strip.aimS - (90 + rng() * 70);
+    const lat = (rng() - 0.5) * 24;
+    const p = strip.point(s0, lat);
+    const h = glideHeight(strip, s0) + (rng() - 0.5) * 8;
+    const heading = strip.heading + (rng() - 0.5) * 40 * deg;
+    env.vApproach = 1.15 * env.vCruise;
+    ac.resetInAir(new Vector3(p.x, env.groundY(p.x, p.z) + Math.max(6, h), p.z), heading, env.vApproach * (0.95 + 0.25 * rng()));
+    ac.throttleActual = 0.2 + 0.2 * rng();
+    env.st = { down: false, bounces: 0, sink: null, touchS: null, touchLat: null, touchAlign: null, wasDown: false };
+  },
+  target(env) {
+    landingTarget(env.ac, env.strip, env.groundY, env.vApproach, env.st.down, env.target);
+  },
+  step(env, dtc) {
+    const ac = env.ac;
+    const strip = env.strip;
+    const st = env.st;
+    const s = strip.along(ac.position);
+    const lat = strip.lateral(ac.position);
+    const agl = ac.position.y - env.groundY(ac.position.x, ac.position.z);
+    let r = 0;
+    const touching = ac.onGround;
+    if (!st.down) {
+      // On the approach: along the centreline and down the glide path, until
+      // the flare (the last 15 m before the aim point), then it's up to it.
+      r += dtc * (0.5 - 0.5 * clamp01(Math.abs(lat) / 15));
+      if (s < strip.aimS - 15) r -= dtc * 0.5 * clamp01(Math.abs(agl - glideHeight(strip, s)) / 8);
+      if (agl > 3) r -= dtc * 0.3 * ac.wingStall;
+      if (touching) {
+        st.down = true;
+        st.wasDown = true;
+        st.sink = Math.max(0, -ac.velocity.y);
+        st.touchS = s;
+        st.touchLat = lat;
+        st.touchAlign = alignError(ac, strip);
+        r += 10 * Math.exp(-st.sink / 1.2); // gentle
+        const onStrip = Math.abs(lat) < strip.width / 2 && s > -strip.length / 2 && s < strip.length / 2;
+        r += onStrip ? 5 * (1 - clamp01(Math.abs(s - strip.aimS) / (strip.length / 2))) : -5;
+        r -= 3 * clamp01(Math.abs(st.touchAlign) / (30 * deg));
+      }
+    } else {
+      // Rolling out: on the strip, motor off, slowing down. Bounces cost.
+      r -= dtc * clamp01(Math.abs(lat) / (strip.width / 2));
+      r -= dtc * 2 * ac.throttleActual;
+      if (st.wasDown && agl > 0.6 && !touching) {
+        st.bounces++;
+        r -= 2;
+        st.wasDown = false;
+      }
+      if (touching) st.wasDown = true;
+      if (scraping(ac)) r -= dtc * 2;
+      if (groundSpeed(ac) < 0.5) return { reward: r + 5, done: true, reason: 'stopped', success: true };
+    }
+    if (ac.crashed) return { reward: r - 15, done: true, reason: ac.crashReason };
+    if (env.t >= env.seconds) return { reward: r - (st.down ? 0 : 5), done: true, reason: st.down ? 'still rolling' : 'never landed' };
+    return { reward: r, done: false };
+  },
+  summary(env) {
+    const st = env.st;
+    return { sink: st.sink, touchFromAim: st.touchS == null ? null : st.touchS - env.strip.aimS, touchLat: st.touchLat, bounces: st.bounces };
+  },
+};
+
+// --- Taxiing ----------------------------------------------------------------------
+// On the ground: to one point, then on to a second and stop there, at a
+// walking pace, without taking off, tipping or scraping a wing.
+const taxi = {
+  reset(env, rng) {
+    if (env.def.handLaunch) throw new Error(`${env.def.name ?? 'this model'} has no wheels to taxi on`);
+    const ac = env.ac;
+    randomStrip(env, rng);
+    const heading = rng() * 2 * Math.PI;
+    ac.resetOnGround(0, 0, heading);
+    const fwd = { x: Math.cos(heading), z: -Math.sin(heading) };
+    const b1 = Math.atan2(fwd.z, fwd.x) + (rng() - 0.5) * 300 * deg;
+    const d1 = 15 + rng() * 25;
+    const p1 = { x: Math.cos(b1) * d1, z: Math.sin(b1) * d1 };
+    const b2 = b1 + (rng() - 0.5) * 200 * deg;
+    const d2 = 10 + rng() * 20;
+    const p2 = { x: p1.x + Math.cos(b2) * d2, z: p1.z + Math.sin(b2) * d2 };
+    env.st = { points: [p1, p2], i: 0, d: d1, reached: 0, maxSpeed: 0 };
+  },
+  target(env) {
+    const st = env.st;
+    taxiTarget(env.ac, st.points[st.i], env.groundY, st.i === st.points.length - 1, null, env.target);
+  },
+  step(env, dtc) {
+    const ac = env.ac;
+    const st = env.st;
+    const pt = st.points[st.i];
+    const d = Math.hypot(pt.x - ac.position.x, pt.z - ac.position.z);
+    const gs = groundSpeed(ac);
+    st.maxSpeed = Math.max(st.maxSpeed, gs);
+    let r = (st.d - d) / TAXI_SPEED; // ~1 per second at taxi speed
+    st.d = d;
+    r -= dtc * 2 * Math.max(0, gs - 4) / 2;
+    if (!ac.onGround) r -= dtc * 3;
+    if (scraping(ac)) r -= dtc * 3;
+    const last = st.i === st.points.length - 1;
+    if (ac.crashed) return { reward: r - 10, done: true, reason: ac.crashReason };
+    if (!last && d < 3) {
+      st.i++;
+      st.reached++;
+      const n = st.points[st.i];
+      st.d = Math.hypot(n.x - ac.position.x, n.z - ac.position.z);
+      r += 3;
+    } else if (last && d < 3 && gs < 0.5) {
+      st.reached++;
+      return { reward: r + 5, done: true, reason: 'stopped', success: true };
+    }
+    if (env.t >= env.seconds) return { reward: r, done: true, reason: 'time' };
+    return { reward: r, done: false };
+  },
+  summary(env) {
+    return { reached: env.st.reached, maxSpeed: env.st.maxSpeed };
+  },
+};
+
+// --- Aerobatics -------------------------------------------------------------------
+// Fly commanded body rates (the way manoeuvres are flown, src/ml/guidance.js):
+// a random sequence of loop-like pulls, rolls either way, barrel rolls,
+// pushes and holds, high up and fast.
+const aero = {
+  reset(env, rng) {
+    const ac = env.ac;
+    const heading = rng() * 2 * Math.PI;
+    ac.resetInAir(new Vector3(0, 70 + rng() * 30, 0), heading, env.vCruise * (1.3 + 0.5 * rng()));
+    ac.throttleActual = 0.6 + 0.4 * rng();
+    const canRoll = env.def.surfaces.some((s) => s.controls.some((c) => c.input === 'roll') && !s.controls.some((c) => c.input === 'yaw'));
+    env.st = { rng, canRoll, until: 0, rates: { roll: 0, pitch: 0, yaw: 0 }, err: 0, n: 0, minAgl: Infinity };
+  },
+  target(env) {
+    const ac = env.ac;
+    const st = env.st;
+    if (env.t >= st.until) {
+      const rng = st.rng;
+      const kinds = st.canRoll ? ['loop', 'loop', 'roll', 'roll', 'barrel', 'push', 'hold'] : ['loop', 'loop', 'push', 'hold'];
+      const k = kinds[Math.floor(rng() * kinds.length)];
+      const sign = rng() < 0.5 ? -1 : 1;
+      const R = st.rates;
+      R.roll = k === 'roll' ? sign * (2 + 3 * rng()) : k === 'barrel' ? sign * (1 + rng()) : 0;
+      R.pitch = k === 'loop' ? 1 + 1.5 * rng() : k === 'barrel' ? 0.5 + 0.7 * rng() : k === 'push' ? -(0.3 + 0.7 * rng()) : 0;
+      R.yaw = 0;
+      st.until = env.t + 0.6 + 1.9 * rng();
+    }
+    // A point well ahead at the same height and a brisk speed, for the
+    // other inputs: aerobatics are about the rates.
+    const v = ac.velocity;
+    const h = Math.hypot(v.x, v.z) || 1;
+    env.target.x = ac.position.x + (v.x / h) * 150;
+    env.target.z = ac.position.z + (v.z / h) * 150;
+    env.target.y = ac.position.y;
+    env.target.speed = 1.5 * env.vCruise;
+    env.target.line = null;
+    env.target.rates = st.rates;
+  },
+  step(env, dtc) {
+    const ac = env.ac;
+    const st = env.st;
+    const R = st.rates;
+    const w = ac.omega;
+    const ep = Math.abs(w.x - R.roll);
+    const eq = Math.abs(w.z - R.pitch);
+    const er = Math.abs(w.y - R.yaw);
+    st.err += ep + eq + er;
+    st.n++;
+    let r = dtc * (1 - 0.6 * clamp01(ep / 2) - 0.6 * clamp01(eq / 1.5) - 0.3 * clamp01(er / 1));
+    if (ac.airspeed < 0.9 * env.vCruise) r -= dtc * 0.5;
+    const agl = ac.position.y - env.groundY(ac.position.x, ac.position.z);
+    st.minAgl = Math.min(st.minAgl, agl);
+    if (agl < 25) r -= (dtc * (25 - agl)) / 25;
+    if (ac.crashed || agl < 3) return { reward: r - 10, done: true, reason: ac.crashed ? ac.crashReason : 'hit the ground' };
+    if (env.t >= env.seconds) return { reward: r, done: true, reason: 'time', success: true };
+    return { reward: r, done: false };
+  },
+  summary(env) {
+    return { meanRateErr: env.st.err / Math.max(1, env.st.n), minAgl: env.st.minAgl };
+  },
+};
+
+export const PHASE_TASKS = { takeoff, land, taxi, aero };
+/** Episode lengths (s) that suit each task, used unless --seconds is given. */
+export const TASK_SECONDS = { takeoff: 25, land: 35, taxi: 40, aero: 12 };
+export { GLIDE };

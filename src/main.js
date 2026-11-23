@@ -33,6 +33,7 @@ import { weatherFor } from './world/mist.js';
 import { loadEdits } from './sim/edits.js';
 import { Editor } from './editor/editor.js';
 import { AiFlyers } from './ml/aiFlyers.js';
+import { Strip } from './ml/guidance.js';
 
 // The version running: the GitHub commit it was built from, and its date.
 {
@@ -439,12 +440,35 @@ peers.addShadow = (model, span) => {
   return s;
 };
 // AI flyers (Menu → Flying): aeroplanes flown by trained neural networks
-// (src/ml/), round the middle of the field. Drawn like other players.
-const aiArea = (() => {
+// (src/ml/), flying circuits from the runway (taking off and landing into
+// wind, as you do) or round the middle of the field. Drawn like other players.
+/** The strip they use: the runway (at least 90 m of it), rolling into wind. */
+function aiStrip() {
+  const A = clubAngle();
+  const windRad = (settings.windDir * Math.PI) / 180;
+  const heading = (Math.sin(windRad - A) > 0 ? 0 : Math.PI) - A; // as resetAircraft
   const [x, z] = clubToWorld(RUNWAY.x, RUNWAY.z);
-  return { x, z, radius: 150 };
+  return new Strip({ x, z, dir: { x: Math.cos(heading), z: -Math.sin(heading) }, length: Math.max(RUNWAY.length, 90), width: Math.max(RUNWAY.width, 14) });
+}
+let aiStripNow = aiStrip();
+const ai = (() => {
+  const [x, z] = clubToWorld(RUNWAY.x, RUNWAY.z);
+  const [px, pz] = pilotSpot();
+  return new AiFlyers({ ground, wind, obstacles }, { x, z, radius: 150, strip: aiStripNow, pilot: { x: px, z: pz } }, getAircraft);
 })();
-const ai = new AiFlyers({ ground, wind, obstacles }, aiArea, getAircraft);
+// You on the runway (rolling, or sat on it): they hold short, or go around.
+ai.field.blocked = () => {
+  const p = aircraft.position;
+  const s = ai.field.strip;
+  return p.y - ground.heightAt(p.x, p.z) < 5 && Math.abs(s.lateral(p)) < s.width / 2 + 4 && Math.abs(s.along(p)) < s.length / 2 + 15;
+};
+/** The wind swung round to the other end of the runway: they start again from the pits. */
+function updateAiStrip() {
+  const s = aiStrip();
+  if (s.dir.x * aiStripNow.dir.x + s.dir.z * aiStripNow.dir.z > 0) return;
+  aiStripNow = s;
+  ai.setStrip(s);
+}
 function applyAi() {
   ai.set(Number(settings.aiFlyers) || 0, settings.aiAircraft, entry.id).catch((e) => console.warn('AI flyers:', e));
 }
@@ -553,6 +577,7 @@ const panel = new Panel(document.getElementById('panel'), {
     if (key === 'aircraft') selectAircraft(value);
     if (key === 'aircraft' || key === 'aiFlyers' || key === 'aiAircraft') applyAi();
     if (key === 'aiFlyers') panel.render(); // shows or hides the AI aircraft choice
+    if (key === 'windDir') updateAiStrip();
     if (key === 'location') changeField(value);
     // The scenery is built for these once, so they take effect on a reload.
     if (key === 'graphics' || key === 'viewDistance' || key === 'treeStyle') reloadKeepingRoom();

@@ -13,13 +13,15 @@
 //   waypoints  fly through a chain of points in the sky, one after another.
 //   recover    start in an upset (steep bank, inverted, nose high or low,
 //              slow), then hold heading and height as in "hold".
+//   takeoff, land, taxi, aero   the other phases of a flight: ml/tasks.js.
 import { Vector3, Quaternion } from 'three';
 import { Aircraft } from '../src/sim/aircraft.js';
 import { observe, OBS_SIZE, OBS_NAMES, resolveInputs, selectInputs } from '../src/ml/observe.js';
 import { toControls } from '../src/ml/policy.js';
 import { cruiseSpeed } from './aircraft.js';
+import { PHASE_TASKS, TASK_SECONDS } from './tasks.js';
 
-export const TASKS = ['hold', 'waypoints', 'recover'];
+export const TASKS = ['hold', 'waypoints', 'recover', ...Object.keys(PHASE_TASKS)];
 
 /** Small fast seeded random number generator (mulberry32): rng() is 0..1. */
 export function makeRng(seed) {
@@ -32,11 +34,16 @@ export function makeRng(seed) {
   };
 }
 
-const flatGround = {
-  heightAt: () => 0,
-  normalAt: (x, z, out) => out.set(0, 1, 0),
-  surfaceAt: () => ({ roll: 0.05, stiction: 0.5, drag: 1 }),
-};
+/** Flat ground with this episode's surface (rolling resistance, bumps) on it. */
+function flatGround(env) {
+  return {
+    heightAt: () => 0,
+    baseHeightAt: () => 0,
+    bumpAt: (x, z, scale = 1) => env.surface.bump * scale * Math.sin(x * 9.1 + 1.3 * z) * Math.sin(z * 8.3 - 0.7 * x),
+    normalAt: (x, z, out) => out.set(0, 1, 0),
+    surfaceAt: () => env.surface,
+  };
+}
 
 /**
  * Wind: a steady breeze that drops off towards the ground (log profile),
@@ -87,13 +94,16 @@ export class FlightEnv {
     if (!TASKS.includes(o.task ?? 'hold')) throw new Error(`unknown task "${o.task}"; have: ${TASKS.join(', ')}`);
     this.def = def;
     this.task = o.task ?? 'hold';
-    this.seconds = o.seconds ?? 30;
+    this.impl = PHASE_TASKS[this.task] ?? null;
+    this.seconds = o.seconds || TASK_SECONDS[this.task] || 30;
     this.controlHz = o.controlHz ?? 50;
     this.substep = o.substep ?? 1 / 600;
     this.windMax = o.windMax ?? 4;
     this.randomizeMass = o.randomizeMass ?? true;
     this.vCruise = cruiseSpeed(def);
-    this.ac = new Aircraft(def, { ground: flatGround, wind: null });
+    this.surface = { roll: 0.05, stiction: 0.5, drag: 1, bump: 0 };
+    this.groundY = () => 0;
+    this.ac = new Aircraft(def, { ground: flatGround(this), wind: null });
     this.ac.assistMode = 'off';
     this.target = { x: 0, y: 0, z: 0, speed: 0 };
     this.prev = new Float64Array(4);
@@ -124,17 +134,32 @@ export class FlightEnv {
       ac.mass = this.def.mass * m;
       ac.inertia.set(...this.def.inertia).multiplyScalar(0.9 + 0.2 * rng());
     }
+    // Left over from the last flight and read on the first step (downwash,
+    // wake, battery voltage): cleared so a seed always flies the same.
+    const fresh = () => {
+      ac.wingCL = 0;
+      ac.wingStall = 0;
+      ac.battery.restFrac = 1;
+      Object.assign(ac.controls, { roll: 0, pitch: 0, yaw: 0, throttle: ac.throttleActual });
+    };
+    if (this.impl) {
+      this.surface = { roll: 0.05, stiction: 0.5, drag: 1, bump: 0 };
+      this.impl.reset(this, rng);
+      fresh();
+      this.t = 0;
+      this.steps = 0;
+      this.prev.fill(0);
+      this.minAgl = ac.position.y;
+      this.impl.target(this);
+      ac.step(1e-6);
+      return this.#observe();
+    }
     const heading = rng() * 2 * Math.PI;
     const alt = 30 + rng() * 30;
     const speed = v * (1.1 + 0.5 * rng());
     ac.resetInAir(new Vector3(0, alt, 0), heading, speed);
     ac.throttleActual = 0.3 + 0.4 * rng();
-    // Left over from the last flight and read on the first step (downwash,
-    // wake, battery voltage): clear them so a seed always flies the same.
-    ac.wingCL = 0;
-    ac.wingStall = 0;
-    ac.battery.restFrac = 1;
-    Object.assign(ac.controls, { roll: 0, pitch: 0, yaw: 0, throttle: ac.throttleActual });
+    fresh();
     if (this.task === 'recover') this.#upset(rng, speed);
     else {
       // A little disturbance so it can't just learn one perfect start.
@@ -245,6 +270,13 @@ export class FlightEnv {
 
     const agl = ac.position.y;
     this.minAgl = Math.min(this.minAgl, agl);
+    if (this.impl) {
+      this.impl.target(this);
+      const r = this.impl.step(this, dtc);
+      const reward = r.reward - dtc * 0.05 * change * this.controlHz / 10;
+      const info = r.done ? { reason: r.reason, seconds: this.t, success: !!r.success, crashed: ac.crashed, minAgl: this.minAgl, ...this.impl.summary(this) } : null;
+      return { obs: this.#observe(), reward, done: r.done, info };
+    }
     let reward = 0;
     let done = false;
     let reason = '';

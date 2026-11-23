@@ -112,3 +112,15 @@ describe('Evolution Strategies', () => {
     }
   });
 });
+
+describe('warm start', () => {
+  it('flies exactly like the old policy until the new inputs are used', async () => {
+    const { warmStart } = await import('../ml/train.js');
+    const { INPUT_SETS: S } = await import('../src/ml/observe.js');
+    const old = new Policy(S.v1.length, [8]).init(makeRng(5));
+    const neu = warmStart(new Policy(S.sim.length, [8]), S.sim, old, S.v1);
+    const full = Float64Array.from({ length: S.sim.length }, (_, i) => Math.cos(i * 1.7));
+    const legacy = Float64Array.from(S.v1, (n) => full[S.sim.indexOf(n)]);
+    expect(Array.from(neu.forward(full))).toEqual(Array.from(old.forward(legacy)));
+  });
+});

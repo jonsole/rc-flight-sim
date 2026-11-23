@@ -8,6 +8,7 @@
 // Aircraft and task default to the ones the policy was trained for.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { FlightEnv, runEpisode } from './env.js';
+import { PHASE_TASKS } from './tasks.js';
 import { getEntry } from './aircraft.js';
 import { Policy, toControls } from '../src/ml/policy.js';
 import { OBS_NAMES } from '../src/ml/observe.js';
@@ -35,12 +36,12 @@ if (o.policy === 'none') {
 }
 const aircraft = (o.aircraft || (meta.aircraft || ['hobbyzone-aeroscout']).join(',')).split(',');
 const task = o.task || meta.task || 'hold';
-const seconds = o.seconds || meta.trainedFor || 20;
+const seconds = o.seconds || (PHASE_TASKS[task] ? 0 : meta.trainedFor) || 20;
 
 const rows = [];
 let trace = null;
 for (const id of aircraft) {
-  const env = new FlightEnv(getEntry(id).def, { task, seconds, windMax: o.wind, inputs: meta.inputs ?? 'sim' });
+  const env = new FlightEnv(getEntry(id).def, { task, seconds, windMax: o.wind, inputs: meta.inputs ?? (o.policy === 'none' ? 'sim' : 'v1') });
   for (let i = 0; i < o.episodes; i++) {
     const seed = o.seed + i;
     let onStep;
@@ -67,8 +68,19 @@ for (const id of aircraft) {
 
 const f = (x, d = 1) => (x == null ? '   -' : x.toFixed(d).padStart(6));
 console.log(`policy ${o.policy} | inputs ${meta.inputs ? meta.inputs.length : 'all'} | task ${task} | ${seconds} s flights | wind up to ${o.wind} m/s\n`);
-console.log('aircraft                  seed     return  end            alt err  hdg err  spd err  min AGL  wpts');
-for (const r of rows) {
+const phase = !!PHASE_TASKS[task];
+const short = (v) => (typeof v === 'number' ? (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2)) : String(v));
+if (phase) {
+  // Take-off, landing, taxi, aerobatics: their own figures (ml/tasks.js summary()).
+  for (const r of rows) {
+    const extra = Object.entries(r).filter(([k]) => !['aircraft', 'seed', 'ret', 'reason', 'crashed', 'success', 'waypoints', 'meanAltErr', 'meanHdgErrDeg', 'meanSpdErr'].includes(k));
+    console.log(`${r.aircraft.padEnd(24)} ${String(r.seed).padStart(8)} ${f(r.ret, 2)}  ${r.reason.slice(0, 22).padEnd(22)} ${extra.map(([k, v]) => `${k} ${v == null ? '-' : short(v)}`).join('  ')}`);
+  }
+  const ok = rows.filter((r) => r.success).length;
+  console.log(`\nmean return ${(rows.reduce((a, r) => a + r.ret, 0) / rows.length).toFixed(2)} | succeeded ${ok}/${rows.length} | crashes ${rows.filter((r) => r.crashed).length}/${rows.length}`);
+}
+if (!phase) console.log('aircraft                  seed     return  end            alt err  hdg err  spd err  min AGL  wpts');
+for (const r of phase ? [] : rows) {
   console.log(
     `${r.aircraft.padEnd(24)} ${String(r.seed).padStart(8)} ${f(r.ret, 2)}  ${r.reason.slice(0, 14).padEnd(14)} ${f(r.meanAltErr)} m ${f(r.meanHdgErrDeg)}°  ${f(r.meanSpdErr)}  ${f(r.minAgl)}   ${r.waypoints}`,
   );
@@ -77,7 +89,7 @@ const mean = (k) => {
   const v = rows.map((r) => r[k]).filter((x) => x != null);
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
 };
-console.log(
+if (!phase) console.log(
   `\nmean return ${mean('ret').toFixed(2)} | crashes ${rows.filter((r) => r.crashed).length}/${rows.length}` +
     (mean('meanAltErr') != null ? ` | alt err ${mean('meanAltErr').toFixed(1)} m | heading err ${mean('meanHdgErrDeg').toFixed(1)}° | speed err ${mean('meanSpdErr').toFixed(2)} m/s` : '') +
     (task === 'waypoints' ? ` | waypoints ${mean('waypoints').toFixed(1)} per flight` : ''),
