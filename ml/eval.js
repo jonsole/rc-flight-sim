@@ -8,7 +8,7 @@
 // Aircraft and task default to the ones the policy was trained for.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { FlightEnv, runEpisode } from './env.js';
-import { PHASE_TASKS } from './tasks.js';
+import { PHASE_TASKS, TASK_SECONDS } from './tasks.js';
 import { getEntry } from './aircraft.js';
 import { Policy, toControls } from '../src/ml/policy.js';
 import { OBS_NAMES } from '../src/ml/observe.js';
@@ -36,7 +36,7 @@ if (o.policy === 'none') {
 }
 const aircraft = (o.aircraft || (meta.aircraft || ['hobbyzone-aeroscout']).join(',')).split(',');
 const task = o.task || meta.task || 'hold';
-const seconds = o.seconds || (PHASE_TASKS[task] ? 0 : meta.trainedFor) || 20;
+const seconds = o.seconds || (PHASE_TASKS[task] ? TASK_SECONDS[task] : meta.trainedFor) || 20;
 
 const rows = [];
 let trace = null;
