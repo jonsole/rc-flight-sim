@@ -190,6 +190,28 @@ In the game `src/ml/aiPilot.js` plans the flight and picks the skill:
 - **With only `hold`**: wandering between random points over the field at
   40–70 m.
 
+In wind over 70% of a model's cruise speed it doesn't fly circuits (a light
+model hardly moves into wind on final, sinks below the glide path and can't
+climb away), it just flies round.
+
+Which models have which skills (`src/ml/policies/`):
+
+| Model | Fly | Take-off | Landing | Taxi | |
+| --- | --- | --- | --- | --- | --- |
+| HobbyZone AeroScout | ✓ | ✓ | ✓ | ✓ | full day |
+| Buschtrottel ShockCub | ✓ | ✓ | ✓ | (training) | circuits, carried out and back |
+| Buschtrottel Highlander | ✓ | ✓ | ✓ (from the ShockCub's) | (training) | circuits, carried |
+| Buschtrottel Agro | ✓ | ✓ | ✓ | (training) | circuits, carried |
+| Multiplex EasyStar | ✓ | ✓ hand launch | ✓ belly | n/a | circuits, picked up |
+| E-flite S.E.5a | ✓ | ✓ | ✗ | | wanders: at idle the draggy biplane bleeds to its stall in ~2 s; every landing network so far dived in or struck its prop |
+| FT Mighty Mini F-22 | ✓ | ✓ hand launch | ✗ | n/a | wanders: glides flat at 13 m/s and its landing network learnt only to overshoot |
+
+Training these taught a lot about rewards: every landing reward had a
+loophole somewhere (hover at 8 m, land gently 100 m short, crash at once
+rather than collect small costs, overshoot rather than risk the flare). The
+rule that held: crashing < touching down off the strip < not landing <
+landing, with the steering costs small enough never to change that order.
+
 Where they take off and land is chosen by `src/ml/fieldStrip.js` for the
 wind: the runway from its upwind end in a light wind (≤ 3 m/s) or one along
 it, else a 90 m (down to 60 m at a small field) strip straight into the wind
