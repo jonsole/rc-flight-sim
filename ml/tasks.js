@@ -197,10 +197,12 @@ const land = {
         st.touchAlign = alignError(ac, strip);
         const onStrip = Math.abs(lat) < strip.width / 2 && s > -strip.length / 2 && s < strip.length / 2;
         // Down anywhere but the strip: at a real field that's the hedge.
-        // (At -5 the Agro learnt to land gently 100 m short every time.)
+        // (At -5 the Agro learnt to land gently 100 m short every time; at
+        // -15 the S.E.5a dived in short at once rather than risk the flare.
+        // Now between not landing, -20, and crashing, -50.)
         if (!onStrip) {
           const why = s < -strip.length / 2 ? 'landed short' : s > strip.length / 2 ? 'landed long' : 'landed beside the strip';
-          return { reward: r - 15, done: true, reason: why };
+          return { reward: r - 30, done: true, reason: why };
         }
         r += 10 * Math.exp(-st.sink / 1.2); // gentle
         r += 5 * (1 - clamp01(Math.abs(s - strip.aimS) / (strip.length / 2)));
