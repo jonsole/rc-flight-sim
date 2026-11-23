@@ -180,9 +180,12 @@ const land = {
         st.touchS = s;
         st.touchLat = lat;
         st.touchAlign = alignError(ac, strip);
-        r += 10 * Math.exp(-st.sink / 1.2); // gentle
         const onStrip = Math.abs(lat) < strip.width / 2 && s > -strip.length / 2 && s < strip.length / 2;
-        r += onStrip ? 5 * (1 - clamp01(Math.abs(s - strip.aimS) / (strip.length / 2))) : -5;
+        // Down anywhere but the strip: at a real field that's the hedge.
+        // (At -5 the Agro learnt to land gently 100 m short every time.)
+        if (!onStrip) return { reward: r - 15, done: true, reason: s < 0 ? 'landed short' : 'landed off the strip' };
+        r += 10 * Math.exp(-st.sink / 1.2); // gentle
+        r += 5 * (1 - clamp01(Math.abs(s - strip.aimS) / (strip.length / 2)));
         r -= 3 * clamp01(Math.abs(st.touchAlign) / (30 * deg));
       }
     } else {

@@ -37,13 +37,43 @@ const CIRCUIT = 40; // m: circuit height
 const SIDE = 65; // m: downwind leg out from the centreline
 const deg = Math.PI / 180;
 
+const cruiseCache = new WeakMap();
+const flatGround = { heightAt: () => 0, normalAt: (x, z, o) => o.set(0, 1, 0), surfaceAt: () => ({ roll: 0.05, stiction: 1, drag: 1 }) };
+
+/** The airspeed it settles at gliding hands-off, motor off (m/s). */
+function glideTrim(def, start) {
+  const ac = new Aircraft(def, { ground: flatGround });
+  ac.assistMode = 'off';
+  ac.resetInAir(new Vector3(0, 400, 0), 0, start);
+  ac.throttleActual = 0;
+  ac.controls = { roll: 0, pitch: 0, yaw: 0, throttle: 0 };
+  let s = 0;
+  let n = 0;
+  for (let i = 0; i < 300 * 20; i++) {
+    ac.step(1 / 300);
+    if (i > 300 * 10) {
+      s += ac.airspeed;
+      n++;
+    }
+  }
+  return s / n;
+}
+
 /**
  * A comfortable cruising airspeed (m/s): the speed at which the wing carries
- * the model's weight at a lift coefficient of 0.7.
+ * the model's weight at a lift coefficient of 0.7 (within 0.4 m/s of the
+ * hands-off glide speed for every model but one), or the glide speed if that
+ * is much faster: the Mini F-22's flat wing never reaches 0.7, and 6.7 m/s
+ * (against a real 13) had its landings stall in.
  */
 export function cruiseSpeed(def) {
+  if (cruiseCache.has(def)) return cruiseCache.get(def);
   const S = def.surfaces.filter((s) => s.wing).reduce((a, s) => a + s.area, 0);
-  return Math.sqrt((2 * def.mass * 9.81) / (1.225 * S * 0.7));
+  const est = Math.sqrt((2 * def.mass * 9.81) / (1.225 * S * 0.7));
+  const trim = glideTrim(def, est * 1.3);
+  const v = trim > 1.3 * est ? trim : est;
+  cruiseCache.set(def, v);
+  return v;
 }
 
 /** One trained network and the inputs it takes. */
