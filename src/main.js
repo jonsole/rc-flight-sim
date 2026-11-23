@@ -584,12 +584,14 @@ const ai = (() => {
   const [px, pz] = pilotSpot();
   return new AiFlyers({ ground, wind, obstacles }, { x, z, radius: 90, strip: aiStripNow, pilot: { x: px, z: pz }, windSpeed: settings.windSpeed }, getAircraft);
 })();
-// You on the runway (rolling, or sat on it): they hold short, or go around.
+// You in their way (rolling or sat on their lane, or low over it): they
+// hold short, or go around. Their lane is 5 m beside the runway, so you on
+// the runway itself don't count: only within 3 m of their line.
 ai.field.blocked = () => {
   const p = aircraft.position;
   const s = ai.field.strip;
   if (!s) return false;
-  return p.y - ground.heightAt(p.x, p.z) < 5 && Math.abs(s.lateral(p)) < s.width / 2 + 4 && Math.abs(s.along(p)) < s.length / 2 + 15;
+  return p.y - ground.heightAt(p.x, p.z) < 5 && Math.abs(s.lateral(p)) < 3 && Math.abs(s.along(p)) < s.length / 2 + 15;
 };
 /** The wind changed enough to move their strip: they start again from the pits. */
 function updateAiStrip() {

@@ -30,7 +30,7 @@ export function windVector(fromDeg) {
 }
 
 const RUNWAY_USE = 100; // m: the most of the runway they use (the part in front of the pilots)
-const LANE = 12; // m: their lane is this far beside the runway's centreline, away from the pilots
+const LANE = 5; // m: their lane is this far beside the runway's centreline, away from the pilots
 
 /**
  * The runway as a strip, rolling from the end that faces into the wind (or
