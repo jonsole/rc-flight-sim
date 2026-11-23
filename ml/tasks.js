@@ -161,6 +161,11 @@ const land = {
       // (Steering costs, kept small: summed over a whole flight they must
       // stay well short of the cost of crashing.)
       r -= dtc * 0.15 * clamp01(Math.abs(lat) / 15);
+      // Getting nearer the centreline pays, moving away costs (progress,
+      // so it can't pile up over a long flight; with only the small cost
+      // above, the ShockCub drifted off and touched down beside the strip).
+      r += (Math.abs(st.latPrev ?? lat) - Math.abs(lat)) / 3;
+      st.latPrev = lat;
       // Below the glide path costs more than above (at a real field there
       // are trees under it), but not so much that staying up is safer.
       if (s < strip.aimS - 15) {
@@ -193,7 +198,10 @@ const land = {
         const onStrip = Math.abs(lat) < strip.width / 2 && s > -strip.length / 2 && s < strip.length / 2;
         // Down anywhere but the strip: at a real field that's the hedge.
         // (At -5 the Agro learnt to land gently 100 m short every time.)
-        if (!onStrip) return { reward: r - 15, done: true, reason: s < 0 ? 'landed short' : 'landed off the strip' };
+        if (!onStrip) {
+          const why = s < -strip.length / 2 ? 'landed short' : s > strip.length / 2 ? 'landed long' : 'landed beside the strip';
+          return { reward: r - 15, done: true, reason: why };
+        }
         r += 10 * Math.exp(-st.sink / 1.2); // gentle
         r += 5 * (1 - clamp01(Math.abs(s - strip.aimS) / (strip.length / 2)));
         r -= 3 * clamp01(Math.abs(st.touchAlign) / (30 * deg));
