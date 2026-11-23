@@ -16,21 +16,35 @@ npm run train:eval -- --policy none --task hold      # hands-off baseline to com
 
 | File | What it does |
 | --- | --- |
-| `src/ml/policy.js` | The network: a small multi-layer perceptron (default 23 → 32 → 32 → 4, tanh, ~2000 weights) in plain JS. Saved as JSON. Browser-safe. |
-| `src/ml/observe.js` | What the network sees (23 numbers, below). Browser-safe, so the game can feed a policy the same inputs. |
+| `src/ml/policy.js` | The network: a small multi-layer perceptron (default 31 → 32 → 32 → 4, tanh, ~2200 weights) in plain JS. Saved as JSON. Browser-safe. |
+| `src/ml/observe.js` | What the network sees (31 numbers, below). Browser-safe, so the game can feed a policy the same inputs. |
+| `src/ml/guidance.js` | Where each skill is told to go: strip geometry, the take-off, landing and taxi target rules, aerobatic manoeuvres. Shared by training and the game. |
+| `src/ml/rates.js` | Each model's roll, pitch and yaw rates at full stick (aerobatic commands are fractions of them). |
 | `src/aircraft/defs.js` | Builds a model's flight definition from its JSON file without Vite (the registry in `index.js` uses it too). |
-| `ml/env.js` | The environment: reset from a seed, step with stick positions, get observation + reward + done. Flat grass, gusty wind, three tasks. |
+| `ml/env.js` | The environment: reset from a seed, step with stick positions, get observation + reward + done. Flat grass, gusty wind; the flying tasks. |
+| `ml/tasks.js` | The take-off, landing, taxi and aerobatics tasks. |
 | `ml/es.js` | Evolution Strategies optimiser. |
 | `ml/evaluate.js`, `ml/worker.js` | Score candidates, in parallel over worker threads (one per CPU core). |
 | `ml/train.js` | The training loop and command line. |
 | `ml/eval.js` | Fly a saved policy on unseen flights, print a table, optionally write a per-step CSV trace. |
+| `ml/export-policy.js` | Copy a trained policy into the game (`src/ml/policies/`). |
+| `ml/fly-day.js` | Fly the game's AI flyers through a day at a real field (terrain, trees, wind) in Node, logging every phase change, landing and crash. |
 
 ### Observations (all in the aircraft's frame: x forward, y up, z right)
 
 airspeed, angle of attack, sideslip · roll / yaw / pitch rates · which way is
 up · height above ground, climb rate · unit vector to the target point and
 its distance · height error, airspeed error · motor throttle, wing stall
-fraction · the network's previous four outputs.
+fraction · the network's previous four outputs · on the ground or not,
+ground speed, height in fine steps near the ground (for the flare) · the
+runway's direction (take-off, landing, taxi) · commanded roll, pitch and yaw
+rates (aerobatics).
+
+New inputs are only ever added at the end. A policy file lists the inputs
+it was trained on, so the first fly-to-point policies keep their 23
+(`--inputs v1`). `--init` warm-starts from a policy with different inputs:
+first-layer weights are matched up by name and new inputs start at zero, so
+the new policy flies exactly like the old one until training uses them.
 
 `--inputs hardware` trains on only what a real flight controller can
 measure (20 inputs): it leaves out angle of attack and sideslip (they need
@@ -59,10 +73,27 @@ EasyStar the roll stick works the rudder, as in the game.
 | `hold` | Start in level-ish flight at 30–60 m; fly a commanded heading, height (25–70 m) and airspeed. A new command every 6–14 s (turns of up to ±120°). | Per second: 1, less up to 0.4 for height error (full at 15 m), 0.4 for heading error (full at 90°), 0.2 for speed error (full at 4 m/s). Max ≈ episode length. |
 | `waypoints` | Fly through a chain of points 60–140 m apart at 20–70 m, turning up to ±150° between them; reached within 10 m. | Distance closed on the current waypoint (≈1 per second at cruise), +5 per waypoint. |
 | `recover` | Start upset: any bank (inverted too), ±45° pitch, 50–130% of cruise speed, spinning; then hold heading and height. | As `hold`. |
+| `takeoff` | Standing at the start of a 60–180 m strip of anything from mown runway to rough grass (hand-launched models: in the hand), up the climb-out to 35 m. 25 s. | Distance along the strip (on the ground only to its end), height gained, +20 for climbing out; off the centreline, below the climb profile, slow or scraping a wing cost. Running out of strip ends it (−8). |
+| `land` | 90–160 m out on a 7° approach, up to 12 m off the centreline and 20° off its heading; touch down near the aim point and stop. 35 s. | Progress towards the aim point (not time: staying up doesn't pay), less for being off the centreline or below the glide path (most) or above it; at touchdown up to +10 for a gentle one, +5 near the aim point on the strip, −3 crabbed; bounces −2; +5 for stopping, motor off, on the centreline. |
+| `taxi` | On the ground: to one point and on to a second 10–60 m away, at 2.5 m/s, and stop. 40 s. | Distance closed (potential, so circling doesn't pay), +3 / +5 for reaching / stopping; over 4 m/s, leaving the ground or scraping cost; over 7 m/s ends it (−5). |
+| `aero` | High and fast: a random string of pulls, rolls (either way), barrel rolls, pushes and holds, as fractions of what the model can do (`src/ml/rates.js`). 12 s. | 1 per second, less smoothly (tanh) for each axis's rate error relative to the model's best; below 25 m and slow cost. |
 
-All tasks: −(10 − height)/10 per second below 10 m, −0.5 per second fully
-stalled, a small cost for moving the sticks about (smoothness), and −10 and
-the end of the flight for touching the ground, crashing or flying 2 km away.
+The flying tasks: −(10 − height)/10 per second below 10 m, −0.5 per second
+fully stalled, a small cost for moving the sticks about (smoothness), and −10
+and the end of the flight for touching the ground, crashing or flying 2 km
+away. All tasks: −10 or more for crashing.
+
+**Watch for reward hacking.** The first take-off network learnt to race
+along the grass for ever (paid per metre, nothing stopped it), and the first
+landing reward would have paid for never landing. Training logs how many
+validation flights really succeed (`valSuccessRate`) as well as the score:
+a rising score with no successes means the reward is being gamed.
+
+Take-off and landing strips point into any wind over 3 m/s (within 30°) and
+any way in lighter wind, as the AI flyers' strips do in the game; take-off
+and landing train in wind up to 8 m/s, taxi and aerobatics 6. Fresh take-off
+networks start with the throttle open: at half throttle a model can't start
+rolling on grass, every variation sits still and training gets no signal.
 
 Every flight is randomised from its seed: wind 0–4 m/s from any direction
 with gusts that differ across the span, weight and inertia ±10%, start
@@ -96,17 +127,17 @@ wrapped for Python over a pipe.
 | Option | Default | |
 | --- | --- | --- |
 | `--aircraft` | `hobbyzone-aeroscout` | Model id, comma-separated list, or `all` (one policy for several models; flights rotate between them). |
-| `--task` | `hold` | `hold`, `waypoints` or `recover`. |
+| `--task` | `hold` | `hold`, `waypoints`, `recover`, `takeoff`, `land`, `taxi` or `aero`. |
 | `--inputs` | `sim` | `sim` (all 23), `hardware` (20: no angle of attack, sideslip or stall), or a list of input names. |
 | `--gens` | 150 | Generations. |
 | `--pairs` | 24 | Mirrored pairs per generation (population = 2 × pairs). |
 | `--episodes` | 4 | Flights per candidate per generation. |
-| `--seconds` | 20 | Flight length. |
+| `--seconds` | task's own | Flight length (20 s for the flying tasks; take-off 25, landing 35, taxi 40, aerobatics 12). |
 | `--hidden` | `32,32` | Hidden layer widths. |
 | `--sigma` | 0.05 | Size of the random changes. |
 | `--lr` | 0.03 | Adam step size. |
 | `--l2` | 0.005 | Weight decay. |
-| `--wind` | 4 | Strongest mean wind (m/s); 0 for calm air. |
+| `--wind` | task's own | Strongest mean wind (m/s): 4 for the flying tasks, 8 take-off and landing, 6 taxi and aerobatics. |
 | `--control-hz` | 50 | Stick updates per second. |
 | `--substep` | 1/600 | Physics step (the game's). Bigger is faster and less exact. |
 | `--eval-every` | 5 | Generations between validation runs. |
@@ -127,16 +158,39 @@ candidates × 4 flights) a generation takes about 6 s on 4 cores.
 
 ## Using a policy in the game
 
-`node ml/export-policy.js ml/runs/<run>/best.json` copies a trained `hold`
-policy to `src/ml/policies/<aircraft id>.json` (weights rounded to 5
-significant figures, ~17 KB), which makes that model available as an AI
-flyer (*Menu → Flying → AI flyers*). In the game `src/ml/aiPilot.js` gives
-the policy a point 150 m along the way to its next waypoint, at the
-waypoint's height above the ground (never below 30 m over the ground under
-or just ahead of it): the same kind of target it trained on, now over the
-real field with its hills, trees and wind. `tests/ai-flyers.test.js` flies
-every exported policy round the club field for two minutes and fails if it
-crashes.
+`node ml/export-policy.js ml/runs/<run>/best.json` copies a trained policy
+to `src/ml/policies/`: a `hold` policy as `<aircraft id>.json` (needed for a
+model to be an AI flyer at all), the others as `<aircraft id>.<task>.json`
+(weights rounded to 5 significant figures, ~18 KB each).
+
+In the game `src/ml/aiPilot.js` plans the flight and picks the skill:
+
+- **With `takeoff` and `land`**: a day at the field. Parked in the pits on
+  the far side of the strip from the pilots; taxi out (or, without `taxi`
+  or hand-launched, carried out) once the runway is free; take off; a
+  circuit on the far side (crosswind, downwind, base); final, following the
+  centreline 2 m above the glide path, hands over to the landing skill about
+  110 m out; land (or a low pass and round again); taxi back to the pits (or
+  be carried back); and again. On the downwind leg, now and then, an
+  aerobatic manoeuvre (`aero`) higher and further out: loop, rolls,
+  Immelmann, split S, Cuban eight, barrel roll, inverted pass (no rolls for
+  rudder-only models). Going around: off the centreline, low on the
+  approach, long, or you on the strip. One AI on the runway at a time.
+- **With only `hold`**: wandering between random points over the field at
+  40–70 m.
+
+Where they take off and land is chosen by `src/ml/fieldStrip.js` for the
+wind: the runway from its upwind end in a light wind (≤ 3 m/s) or one along
+it, else a 90 m (down to 60 m at a small field) strip straight into the wind
+(or up to 30° off it) across the field. Every strip's whole flight path is
+checked clear of trees, buildings, fences and the pilots; if nowhere is
+clear, they just fly round.
+
+`node ml/fly-day.js --aircraft <id> --field <home|waterbeach|impington>
+--wind 6 --windDir 225 --minutes 10` flies it all in Node and logs every
+phase. `tests/ai-flyers.test.js` flies every exported policy round the club
+field, and every model with take-off and landing through a 10-minute day,
+and fails on a crash.
 
 ## Evaluating
 

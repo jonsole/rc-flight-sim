@@ -280,17 +280,25 @@ npm run train:eval -- --policy ml/runs/hold-hobbyzone-aeroscout/best.json
 See [ml/README.md](ml/README.md) for the tasks, rewards, observations and options.
 
 **AI flyers.** *Menu → Flying → AI flyers* puts up to six aeroplanes in the
-sky with you, each flown by a trained policy, wandering between random
-points round the field at 40–70 m (`src/ml/aiFlyers.js`,
-`src/ml/aiPilot.js`). They are drawn like other players (label, off-screen
-marker, shadow) and you can collide with them; after a crash one is back in
-the air a few seconds later. Only you see them. Pick *A mix*, *Same as
-mine* or one model; only models with a policy in `src/ml/policies/` are
-offered. To add or update one, train it and copy it into the game:
+sky with you, each flown by small trained networks (`src/ml/aiFlyers.js`,
+`src/ml/aiPilot.js`). A model with its take-off and landing skills flies a
+club day: taxi out (or carried out), take off into wind, circuits on the far
+side of the strip from the pilots with the odd aerobatic manoeuvre, land,
+back to the pits, and again; one on the runway at a time, and they hold or
+go around if you're on it. In more than a light wind they take off and land
+straight into it, across the field if need be, on a strip checked clear of
+trees and fences. Others wander over the field at 40–70 m. They are drawn
+like other players (label, off-screen marker, shadow) and you can collide
+with them; after a crash one is back a few seconds later. Only you see
+them. Pick *A mix*, *Same as mine* or one model; only models with a policy
+in `src/ml/policies/` are offered. To add or update a skill, train it and
+copy it into the game:
 
 ```bash
 npm run train -- --aircraft buschtrottel-shockcub --task hold --gens 100
 node ml/export-policy.js ml/runs/hold-buschtrottel-shockcub/best.json
+npm run train -- --aircraft buschtrottel-shockcub --task land --gens 200 --init src/ml/policies/buschtrottel-shockcub.json
+node ml/export-policy.js ml/runs/land-buschtrottel-shockcub/best.json
 ```
 
 ## Project layout
