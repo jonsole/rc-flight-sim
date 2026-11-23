@@ -59,7 +59,7 @@ if (o.stripOnly) {
   else console.log(`${o.field}, wind ${o.wind} m/s from ${o.windDir}°: ${strip.kind}, ${strip.length} m, centre ${strip.x.toFixed(0)},${strip.z.toFixed(0)}, rolling toward ${Math.round((compass + 360) % 360)}°`);
   process.exit(0);
 }
-const field = { x: cx, z: cz, radius: 150, strip, pilot: { x: px, z: pz }, runway: { owner: null } };
+const field = { x: cx, z: cz, radius: 150, strip, pilot: { x: px, z: pz }, runway: { owner: null }, windSpeed: o.wind };
 const rng = makeRng(o.seed);
 const pilots = ids.map((id, i) => new AiPilot(getEntry(id).def, skillsFor(id), { ground, wind, obstacles }, field, rng, { id: `ai${i + 1}`, slot: i, airborne: o.airborne }));
 

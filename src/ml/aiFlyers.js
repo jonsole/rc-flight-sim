@@ -126,9 +126,10 @@ export class AiFlyers {
     for (const p of this.pilots) p.pilot.spawn();
   }
 
-  /** A new strip (the wind changed round): everyone starts again from the pits. */
-  setStrip(strip) {
+  /** A new strip or wind (it changed round or picked up): everyone starts again. */
+  setStrip(strip, windSpeed = this.field.windSpeed) {
     this.field.strip = strip;
+    this.field.windSpeed = windSpeed;
     this.respawnAll();
   }
 }

@@ -451,7 +451,7 @@ let aiStripNow = aiStrip();
 const ai = (() => {
   const [x, z] = clubToWorld(RUNWAY.x, RUNWAY.z);
   const [px, pz] = pilotSpot();
-  return new AiFlyers({ ground, wind, obstacles }, { x, z, radius: 150, strip: aiStripNow, pilot: { x: px, z: pz } }, getAircraft);
+  return new AiFlyers({ ground, wind, obstacles }, { x, z, radius: 150, strip: aiStripNow, pilot: { x: px, z: pz }, windSpeed: settings.windSpeed }, getAircraft);
 })();
 // You on the runway (rolling, or sat on it): they hold short, or go around.
 ai.field.blocked = () => {
@@ -463,9 +463,11 @@ ai.field.blocked = () => {
 /** The wind changed enough to move their strip: they start again from the pits. */
 function updateAiStrip() {
   const s = aiStrip();
-  if (sameStrip(s, aiStripNow)) return;
+  // (Wind speed alone: only if it crosses a model's circuit limit does
+  // anything change, but starting again then is simplest.)
+  if (sameStrip(s, aiStripNow) && Math.abs(settings.windSpeed - (ai.field.windSpeed ?? 0)) < 1) return;
   aiStripNow = s;
-  ai.setStrip(s);
+  ai.setStrip(s, settings.windSpeed);
 }
 function applyAi() {
   ai.set(Number(settings.aiFlyers) || 0, settings.aiAircraft, entry.id).catch((e) => console.warn('AI flyers:', e));

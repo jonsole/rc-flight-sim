@@ -100,7 +100,8 @@ export class AiPilot {
    *                         and `runway` ({ owner } shared by all AI flyers),
    *                         a full circuit day when the skills are there;
    *                         `blocked()` (optional) says someone else (you)
-   *                         is on the strip
+   *                         is on the strip; `windSpeed` (m/s), too windy
+   *                         for circuits over 70% of the model's cruise
    * @param {() => number} [rng] 0..1
    * @param {object} [o]     { id, slot (its parking spot), airborne (start
    *                         in the circuit rather than in the pits) }
@@ -166,9 +167,15 @@ export class AiPilot {
     this.downFor = 0;
   }
 
-  /** A full day needs a strip (none when nowhere at the field is clear for this wind). */
+  /**
+   * A full day needs a strip (none when nowhere at the field is clear for
+   * this wind), and wind under 70% of the model's cruise speed: in more, a
+   * light model hardly moves into wind on final, sinks below the glide path
+   * and can't climb away (the EasyStar flew into trees at 6 m/s), so it just
+   * flies round, as a pilot would leave it in the car.
+   */
   get circuits() {
-    return this.canCircuit && !!this.field.strip;
+    return this.canCircuit && !!this.field.strip && (this.field.windSpeed ?? 0) <= 0.7 * this.vCruise;
   }
 
   /** What it's doing, for labels and debugging. */
