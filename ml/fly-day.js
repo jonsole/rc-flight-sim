@@ -53,10 +53,11 @@ const [cx, cz] = clubToWorld(RUNWAY.x, RUNWAY.z);
 const [px, pz] = pilotSpot();
 const strip = chooseStrip({ windFromDeg: o.windDir, windSpeed: o.wind, ground, obstacles, pilot: { x: px, z: pz } });
 const heading = strip?.heading ?? 0;
+const glideDeg = (st) => Math.round(((st?.glide ?? (7 * Math.PI) / 180) * 180) / Math.PI);
 if (o.stripOnly) {
   const compass = strip ? (Math.atan2(strip.dir.x, -strip.dir.z) * 180) / Math.PI : 0;
   if (!strip) console.log(`${o.field}, wind ${o.wind} m/s from ${o.windDir}°: nowhere clear (they fly round)`);
-  else console.log(`${o.field}, wind ${o.wind} m/s from ${o.windDir}°: ${strip.kind}, ${strip.length} m, centre ${strip.x.toFixed(0)},${strip.z.toFixed(0)}, rolling toward ${Math.round((compass + 360) % 360)}°`);
+  else console.log(`${o.field}, wind ${o.wind} m/s from ${o.windDir}°: ${strip.kind}, ${strip.length} m, ${glideDeg(strip)}° approach, centre ${strip.x.toFixed(0)},${strip.z.toFixed(0)}, rolling toward ${Math.round((compass + 360) % 360)}°`);
   process.exit(0);
 }
 const field = { x: cx, z: cz, radius: 90, strip, pilot: { x: px, z: pz }, runway: { owner: null }, windSpeed: o.wind };
@@ -64,7 +65,7 @@ const rng = makeRng(o.seed);
 const pilots = ids.map((id, i) => new AiPilot(getEntry(id).def, skillsFor(id), { ground, wind, obstacles }, field, rng, { id: `ai${i + 1}`, slot: i, airborne: o.airborne }));
 
 const log = (...a) => o.quiet || console.log(...a);
-log(`${ids.join(', ')} | ${strip?.kind ?? 'no'} strip ${strip?.length ?? 0} m heading ${((heading * 180) / Math.PI).toFixed(0)}° | wind ${o.wind} m/s from ${o.windDir}° | circuits: ${pilots.map((p) => p.circuits).join(', ')}`);
+log(`${ids.join(', ')} | ${strip?.kind ?? 'no'} strip ${strip?.length ?? 0} m ${glideDeg(strip)}° approach, heading ${((heading * 180) / Math.PI).toFixed(0)}° | wind ${o.wind} m/s from ${o.windDir}° | circuits: ${pilots.map((p) => p.circuits).join(', ')}`);
 const dt = 1 / 60;
 const last = pilots.map(() => '');
 const crashes = pilots.map(() => 0);

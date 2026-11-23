@@ -30,6 +30,7 @@ export const DEFAULTS = {
   sigma: 0.05,
   lr: 0.03,
   l2: 0.005,
+  glide: '7', // landing glide path angle (degrees), or a range '7-12'
   wind: 0, // strongest mean wind (m/s); 0: the task's own (4 for hold, 6-8 for the others)
   controlHz: 50,
   substep: 1 / 600,
@@ -43,6 +44,12 @@ export const DEFAULTS = {
   resume: false,
   quiet: false,
 };
+
+/** '7' or '7-12' (degrees) to [min, max]. */
+export function parseGlide(g) {
+  const [a, b = a] = String(g).split('-').map(Number);
+  return [a, b];
+}
 
 export function parseArgs(argv) {
   const o = { ...DEFAULTS };
@@ -102,7 +109,7 @@ export async function train(opts) {
   const config = {
     aircraft,
     hidden,
-    env: { task: o.task, inputs, seconds, windMax, controlHz: o.controlHz, substep: o.substep },
+    env: { task: o.task, inputs, seconds, windMax, glide: parseGlide(o.glide), controlHz: o.controlHz, substep: o.substep },
   };
   const log = (...a) => o.quiet || console.log(...a);
 

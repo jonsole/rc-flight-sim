@@ -88,6 +88,7 @@ export class FlightEnv {
    * @param {number} [o.substep]         physics step (the game uses 1/600)
    * @param {number} [o.windMax]         strongest mean wind (m/s), 0 for calm
    * @param {boolean} [o.randomizeMass] vary weight and inertia ±10% per episode
+   * @param {number[]} [o.glide] landing glide path angles (degrees) [min, max]
    * @param {string|string[]} [o.inputs] which observations the policy gets: 'sim' (all), 'hardware', or names
    */
   constructor(def, o = {}) {
@@ -99,6 +100,9 @@ export class FlightEnv {
     this.controlHz = o.controlHz ?? 50;
     this.substep = o.substep ?? 1 / 600;
     this.windMax = o.windMax ?? 4;
+    // Landing glide path angle (degrees), [min, max]: a steeper approach is
+    // flown over trees short of a strip (src/ml/fieldStrip.js).
+    this.glide = o.glide ?? [7, 7];
     this.randomizeMass = o.randomizeMass ?? true;
     this.vCruise = cruiseSpeed(def);
     this.surface = { roll: 0.05, stiction: 0.5, drag: 1, bump: 0 };

@@ -126,6 +126,8 @@ const land = {
   reset(env, rng) {
     const ac = env.ac;
     const strip = (env.strip = randomStrip(env, rng));
+    const [g0, g1] = env.glide ?? [7, 7];
+    if (g1 > 7 || g0 !== 7) strip.glide = (g0 + rng() * (g1 - g0)) * deg;
     // Half from the full approach (90-160 m out, as the AI flyers hand over),
     // half from short final (40-90 m), for more practice at the touchdown.
     const s0 = strip.aimS - (rng() < 0.5 ? 90 + rng() * 70 : 40 + rng() * 50);

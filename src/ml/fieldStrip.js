@@ -8,8 +8,10 @@
 //   - a 90 m strip by the runway straight into the wind (across the field
 //     if need be, as you would), then up to 30° off it;
 //   - in a light wind, the runway the other way, or a strip any way at all.
-// If nothing is clear: null, and the AI flyers just fly round over the field
-// rather than fly approaches into the trees.
+// Each first with the usual 7° approach, then steeper ones (9°, 11°, 13°)
+// over trees short of the strip, as at Barrack Field in an east or west wind.
+// If nothing is clear: a strip to take off from (and, if there is one,
+// another to land on), or null.
 import { Obstacles } from '../sim/obstacles.js';
 import { RUNWAY } from '../sim/terrain.js';
 import { clubAngle, clubToWorld } from '../sim/location.js';
@@ -74,9 +76,12 @@ function fail(what, s, l, y) {
 
 export function stripClear(strip, ground, obstacles, landing = true) {
   const near = [];
+  // (The shapes near a point and the ground under it are looked up once per
+  // point, for every height tested there.)
+  let gp = 0;
   const hit = (x, y, z) => {
-    for (const s of obstacles.near(x, z, 2, near)) if (fatHit(s, x, y, z) || Obstacles.test(s, x, y, z)) return true;
-    return y < ground.heightAt(x, z);
+    for (const s of near) if (fatHit(s, x, y, z) || Obstacles.test(s, x, y, z)) return true;
+    return y < gp;
   };
   const L = strip.length / 2;
   const g0 = ground.heightAt(strip.x, strip.z);
@@ -96,7 +101,9 @@ export function stripClear(strip, ground, obstacles, landing = true) {
     if (s >= strip.startS) bands.push(climbProfile(strip, s)); // taking off
     for (const l of on ? [-6, -4, -3, -2, -1, 0, 1, 2, 3, 4, 6] : [-15, -10, -5, 0, 5, 10, 15]) {
       const p = strip.point(s, l);
-      const gy = on ? ground.heightAt(p.x, p.z) : g0;
+      gp = ground.heightAt(p.x, p.z);
+      obstacles.near(p.x, p.z, 2, near);
+      const gy = on ? gp : g0;
       if (on && Math.abs(gy - g0) > 3) return fail('slope', s, l, gy - g0); // too much slope on the strip
       if (on && Math.abs(l) <= 3 && (hit(p.x, gy + 0.3, p.z) || hit(p.x, gy + 1, p.z))) return fail('ground roll', s, l, 1); // the ground roll
       for (const h of bands) {
@@ -218,7 +225,7 @@ export function chooseStrip({ windFromDeg, windSpeed, ground, obstacles, pilot }
   const near = (st) => !pilot || Math.hypot(st.x - pilot.x, st.z - pilot.z) <= NEAR;
   const placeOk = (st) => near(st) && !beyondFence(st, pilot, obstacles) && !(pilot && Math.abs(st.lateral(pilot)) < PILOT_CLEAR && Math.abs(st.along(pilot)) < st.length / 2 + BEYOND);
   const ok = (st) => placeOk(st) && stripClear(st, ground, obstacles) && baseLegClear(st, circuitSide(st, pilot), ground, obstacles);
-  if ((light || headwind(runway) >= Math.cos(30 * deg)) && !beyondFence(runway, pilot, obstacles) && stripClear(runway, ground, obstacles) && baseLegClear(runway, circuitSide(runway, pilot), ground, obstacles)) return runway;
+  const runwayOk = (light || headwind(runway) >= Math.cos(30 * deg)) && !beyondFence(runway, pilot, obstacles);
   // Strips by the runway, away from the pilots so they don't run over their heads.
   // (From the runway itself, not the AI lane beside it.)
   const [cx0, cz0] = clubToWorld(RUNWAY.x, RUNWAY.z);
@@ -237,17 +244,30 @@ export function chooseStrip({ windFromDeg, windSpeed, ground, obstacles, pilot }
       places.push({ x, z, d: pilot ? Math.hypot(x - pilot.x, z - pilot.z) : Math.hypot(shift, slide) });
     }
   }
+  // And anywhere else near the pilots, but not behind them (at Barrack
+  // Field the only strips with clear approaches in an east or west wind are
+  // off to one side, not along the runway).
+  if (pilot) {
+    for (let dx = -NEAR; dx <= NEAR; dx += 15) {
+      for (let dz = -NEAR; dz <= NEAR; dz += 15) {
+        const d = Math.hypot(dx, dz);
+        if (d <= NEAR && dx * away.x + dz * away.z > 0) places.push({ x: pilot.x + dx, z: pilot.z + dz, d });
+      }
+    }
+    places.sort((a, b) => a.d - b.d);
+  }
   places.sort((a, b) => a.d - b.d);
   // Longest first: down to 60 m (the shortest the skills trained on) at a
   // small field. Near the pilots matters more than exactly into wind
   // (within 30° of it anyway).
-  const search = (turns, test = ok) => {
+  // (`glide`: the approach angle, degrees, for landing strips.)
+  const search = (turns, test = ok, glide = GLIDES[0]) => {
     for (const length of [STRIP_LENGTH, 70, 60]) {
       for (const p of places) {
         if (p.d > NEAR) break;
         for (const turn of turns) {
           const a = into + turn * deg;
-          const strip = new Strip({ x: p.x, z: p.z, dir: { x: Math.cos(a), z: Math.sin(a) }, length, width: STRIP_WIDTH });
+          const strip = withGlide(new Strip({ x: p.x, z: p.z, dir: { x: Math.cos(a), z: Math.sin(a) }, length, width: STRIP_WIDTH }), glide);
           if (test(strip)) {
             strip.kind = 'into wind';
             return strip;
@@ -257,24 +277,30 @@ export function chooseStrip({ windFromDeg, windSpeed, ground, obstacles, pilot }
     }
     return null;
   };
-  const found = search([0, 10, -10, 20, -20, 30, -30]);
-  if (found) return found;
-  if (light) {
-    // Hardly any wind: whichever way is clear.
-    const other = runwayStrip(windFromDeg, true, pilot);
-    other.kind = 'runway';
-    if (!beyondFence(other, pilot, obstacles) && stripClear(other, ground, obstacles) && baseLegClear(other, circuitSide(other, pilot), ground, obstacles)) return other;
-    const any = search(EVERY_WAY);
+  // The usual approach first, then steeper ones (over the trees short of
+  // the strip: the landing skills trained at 7° fly 13° as well). In a
+  // light wind, whichever way is clear at one angle before a steeper one.
+  const landable = (st) => stripClear(st, ground, obstacles) && baseLegClear(st, circuitSide(st, pilot), ground, obstacles);
+  const other = runwayStrip(windFromDeg, true, pilot);
+  other.kind = 'runway';
+  const otherOk = light && !beyondFence(other, pilot, obstacles);
+  for (const g of GLIDES) {
+    if (runwayOk && landable(withGlide(runway, g))) return runway;
+    const found = search([0, 10, -10, 20, -20, 30, -30], ok, g);
+    if (found) return found;
+    if (otherOk && landable(withGlide(other, g))) return other;
+    const any = light && search(EVERY_WAY, ok, g);
     if (any) {
       any.kind = 'clear way';
       return any;
     }
   }
+  withGlide(runway, GLIDES[0]);
+  withGlide(other, GLIDES[0]);
   // Nowhere near with a clear approach: take off from near the pilots
   // anyway (the runway, either end, or a strip by it with a clear climb-out)
   // and fly round, but don't come in to land over the trees.
   const takeoffOnly = (st) => placeOk(st) && stripClear(st, ground, obstacles, false);
-  const other = runwayStrip(windFromDeg, true, pilot);
   // (Within 30° of the wind unless it's light: take-off trained with no
   // more crosswind than that, and the AeroScout flipped over in more.)
   const intoWind = (st) => light || headwind(st) >= Math.cos(30 * deg);
@@ -303,14 +329,25 @@ export function chooseStrip({ windFromDeg, windSpeed, ground, obstacles, pilot }
     // Somewhere to land when the battery runs low: a strip near the pilots
     // with a clear approach, any way the wind allows (no more than 3 m/s
     // across it and 1.5 m/s behind).
-    launch.landAt = search(EVERY_WAY, (st) => {
+    const landTest = (st) => {
       const c = headwind(st);
       return windSpeed * Math.sqrt(Math.max(0, 1 - c * c)) <= 3 && -windSpeed * c <= 1.5 && ok(st);
-    });
+    };
+    for (const g of GLIDES) if (!launch.landAt) launch.landAt = search(EVERY_WAY, landTest, g);
     if (launch.landAt) launch.landAt.kind = 'landing (battery low)';
     return launch;
   }
   return null;
+}
+
+/** Approach angles tried (degrees), flattest first. */
+const GLIDES = [7, 9, 11, 13];
+
+/** Set a strip's approach angle (7°: the default, GLIDE). */
+function withGlide(strip, g) {
+  if (g === GLIDES[0]) delete strip.glide;
+  else strip.glide = g * deg;
+  return strip;
 }
 
 /** Turns from into wind, every 10° round (after the first 30° either side). */

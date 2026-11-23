@@ -74,7 +74,7 @@ EasyStar the roll stick works the rudder, as in the game.
 | `waypoints` | Fly through a chain of points 60–140 m apart at 20–70 m, turning up to ±150° between them; reached within 10 m. | Distance closed on the current waypoint (≈1 per second at cruise), +5 per waypoint. |
 | `recover` | Start upset: any bank (inverted too), ±45° pitch, 50–130% of cruise speed, spinning; then hold heading and height. | As `hold`. |
 | `takeoff` | Standing at the start of a 60–180 m strip of anything from mown runway to rough grass (hand-launched models: in the hand), up the climb-out to 35 m. 25 s. | Distance along the strip (on the ground only to its end), height gained, +20 for climbing out; off the centreline, below the climb profile, slow or scraping a wing cost. Running out of strip ends it (−8). |
-| `land` | 90–160 m out on a 7° approach, up to 12 m off the centreline and 20° off its heading; touch down near the aim point and stop. 35 s. | Progress towards the aim point (not time: staying up doesn't pay), less for being off the centreline or below the glide path (most) or above it; at touchdown up to +10 for a gentle one, +5 near the aim point on the strip, −3 crabbed; bounces −2; +5 for stopping, motor off, on the centreline. |
+| `land` | 90–160 m out on a 7° approach (`--glide 7-13`: anything from 7° to 13°), up to 12 m off the centreline and 20° off its heading; touch down near the aim point and stop. 35 s. | Progress towards the aim point (not time: staying up doesn't pay), less for being off the centreline or below the glide path (most) or above it; at touchdown up to +10 for a gentle one, +5 near the aim point on the strip, −3 crabbed; bounces −2; +5 for stopping, motor off, on the centreline. |
 | `taxi` | On the ground: to one point and on to a second 10–60 m away, at 2.5 m/s, and stop. 40 s. | Distance closed (potential, so circling doesn't pay), +3 / +5 for reaching / stopping; over 4 m/s, leaving the ground or scraping cost; over 7 m/s ends it (−5). |
 | `aero` | 150–250 m up and fast: a random string of pulls, rolls (either way), barrel rolls, pushes and holds, as fractions of what the model can do (`src/ml/rates.js`). 12 s. | 1 per second, less smoothly (tanh) for each axis's rate error relative to the model's best; stalling and below 25 m cost. **Not yet learnt well** (below). |
 
@@ -148,6 +148,7 @@ wrapped for Python over a pipe.
 | `--sigma` | 0.05 | Size of the random changes. |
 | `--lr` | 0.03 | Adam step size. |
 | `--l2` | 0.005 | Weight decay. |
+| `--glide` | `7` | Landing approach angle in degrees, or a range (`7-13`). |
 | `--wind` | task's own | Strongest mean wind (m/s): 4 for the flying tasks, 8 take-off and landing, 6 taxi and aerobatics. |
 | `--control-hz` | 50 | Stick updates per second. |
 | `--substep` | 1/600 | Physics step (the game's). Bigger is faster and less exact. |
@@ -191,7 +192,7 @@ In the game `src/ml/aiPilot.js` plans the flight and picks the skill:
   aerobatics or extra laps, in on the next circuit (where the take-off strip
   has trees on its approaches, on the landing strip found for that).
   Low passes come down the glide path to 3.5 m along the strip (belly-
-  landers 20 m) and climb away. AI flyers take off from their own lane, 12 m
+  landers 20 m) and climb away. AI flyers take off from their own lane, 5 m
   beside the runway, so your plane sitting on it doesn't hold them up.
 - **With only `hold`** (no take-off and landing): not offered as an AI
   flyer, since it couldn't land before its battery went flat (the S.E.5a
@@ -228,9 +229,12 @@ landing, with the steering costs small enough never to change that order.
 Where they take off and land is chosen by `src/ml/fieldStrip.js` for the
 wind: the runway from its upwind end in a light wind (≤ 3 m/s) or one along
 it, else a 90 m (down to 60 m at a small field) strip straight into the wind
-(or up to 30° off it) across the field. Every strip's whole flight path is
-checked clear of trees, buildings, fences and the pilots; if nowhere is
-clear, they just fly round.
+(or up to 30° off it) across the field, as near the pilots as it can be (not
+behind them). Every strip's whole flight path is checked clear of trees,
+buildings, fences and the pilots, first with a 7° approach and then steeper
+(9°, 11°, 13°) over the trees short of it: at Barrack Field an east or west
+wind takes 11°. If nowhere is clear, they take off near the pilots and land
+on the take-off strip anyway when the battery runs low.
 
 `node ml/fly-day.js --aircraft <id> --field <home|waterbeach|impington>
 --wind 6 --windDir 225 --minutes 10` flies it all in Node and logs every

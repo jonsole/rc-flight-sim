@@ -578,7 +578,10 @@ function aiStrip() {
   const [px, pz] = pilotSpot();
   return chooseStrip({ windFromDeg: settings.windDir, windSpeed: settings.windSpeed, ground, obstacles, pilot: { x: px, z: pz } });
 }
-let aiStripNow = aiStrip();
+// (Worked out only while there are AI flyers: checking every strip near you
+// for trees takes up to a second.)
+let aiStripNow = null;
+let aiStripFor = null; // the wind it was worked out for
 const ai = (() => {
   const [x, z] = clubToWorld(RUNWAY.x, RUNWAY.z);
   const [px, pz] = pilotSpot();
@@ -595,6 +598,10 @@ ai.field.blocked = () => {
 };
 /** The wind changed enough to move their strip: they start again from the pits. */
 function updateAiStrip() {
+  if (!(Number(settings.aiFlyers) > 0)) return;
+  const wind = `${settings.windDir},${settings.windSpeed}`;
+  if (wind === aiStripFor) return;
+  aiStripFor = wind;
   const s = aiStrip();
   // (Wind speed alone: only if it crosses a model's circuit limit does
   // anything change, but starting again then is simplest.)
@@ -602,7 +609,14 @@ function updateAiStrip() {
   aiStripNow = s;
   ai.setStrip(s, settings.windSpeed);
 }
+let aiStripTimer = 0;
+/** After the wind setting stops changing (dragging a slider changes it many times). */
+function updateAiStripSoon() {
+  clearTimeout(aiStripTimer);
+  aiStripTimer = setTimeout(updateAiStrip, 400);
+}
 function applyAi() {
+  updateAiStrip();
   ai.set(Number(settings.aiFlyers) || 0, settings.aiAircraft, entry.id).catch((e) => console.warn('AI flyers:', e));
 }
 const mpBadge = document.getElementById('mp-badge');
@@ -713,7 +727,7 @@ const panel = new Panel(document.getElementById('panel'), {
     if (key === 'aircraft') selectAircraft(value);
     if (key === 'aircraft' || key === 'aiFlyers' || key === 'aiAircraft') applyAi();
     if (key === 'aiFlyers') panel.render(); // shows or hides the AI aircraft choice
-    if (key === 'windDir' || key === 'windSpeed') updateAiStrip();
+    if (key === 'windDir' || key === 'windSpeed') updateAiStripSoon();
     if (key === 'location') changeField(value);
     // The scenery is built for these once, so they take effect on a reload.
     if (key === 'graphics' || key === 'viewDistance' || key === 'treeStyle') reloadKeepingRoom();

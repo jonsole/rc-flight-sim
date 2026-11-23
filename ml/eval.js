@@ -10,10 +10,11 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { FlightEnv, runEpisode } from './env.js';
 import { PHASE_TASKS, TASK_SECONDS } from './tasks.js';
 import { getEntry } from './aircraft.js';
+import { parseGlide } from './train.js';
 import { Policy, toControls } from '../src/ml/policy.js';
 import { OBS_NAMES } from '../src/ml/observe.js';
 
-const o = { policy: 'none', aircraft: '', task: '', episodes: 20, seconds: 0, wind: 4, seed: 5_000_000, trace: '' };
+const o = { policy: 'none', aircraft: '', task: '', episodes: 20, seconds: 0, wind: 4, glide: '7', seed: 5_000_000, trace: '' };
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i += 2) {
   const k = argv[i].slice(2);
@@ -41,7 +42,7 @@ const seconds = o.seconds || (PHASE_TASKS[task] ? TASK_SECONDS[task] : meta.trai
 const rows = [];
 let trace = null;
 for (const id of aircraft) {
-  const env = new FlightEnv(getEntry(id).def, { task, seconds, windMax: o.wind, inputs: meta.inputs ?? (o.policy === 'none' ? 'sim' : 'v1') });
+  const env = new FlightEnv(getEntry(id).def, { task, seconds, windMax: o.wind, glide: parseGlide(o.glide), inputs: meta.inputs ?? (o.policy === 'none' ? 'sim' : 'v1') });
   for (let i = 0; i < o.episodes; i++) {
     const seed = o.seed + i;
     let onStep;
