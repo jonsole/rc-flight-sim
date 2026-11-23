@@ -240,7 +240,10 @@ const aero = {
   reset(env, rng) {
     const ac = env.ac;
     const heading = rng() * 2 * Math.PI;
-    ac.resetInAir(new Vector3(0, 70 + rng() * 30, 0), heading, env.vCruise * (1.3 + 0.5 * rng()));
+    // High enough that 12 s of following commands can't reach the ground:
+    // from 70-100 m, height lost following them cost more than the rates
+    // paid, and the first network learnt to ignore the commands.
+    ac.resetInAir(new Vector3(0, 150 + rng() * 100, 0), heading, env.vCruise * (1.3 + 0.5 * rng()));
     ac.throttleActual = 0.6 + 0.4 * rng();
     const canRoll = env.def.surfaces.some((s) => s.controls.some((c) => c.input === 'roll') && !s.controls.some((c) => c.input === 'yaw'));
     env.st = { rng, canRoll, limits: rateLimits(env.def, env.vCruise), until: 0, rates: { roll: 0, pitch: 0, yaw: 0 }, err: 0, n: 0, minAgl: Infinity };
@@ -285,8 +288,10 @@ const aero = {
     // Smooth in the error (no cap), scaled to what the model can do, so
     // a little better always scores a little more.
     const L = st.limits;
-    let r = dtc * (1 - 0.45 * Math.tanh((2 * ep) / L.roll) - 0.45 * Math.tanh((2 * eq) / L.pitch) - 0.1 * Math.tanh(er));
-    if (ac.airspeed < 0.9 * env.vCruise) r -= dtc * 0.5;
+    let r = dtc * (1 - 0.5 * Math.tanh((4 * ep) / L.roll) - 0.5 * Math.tanh((4 * eq) / L.pitch) - 0.1 * Math.tanh(er));
+    // (Not slowness: manoeuvres bleed speed, and penalising it taught the
+    // first network to ignore the commands. Stalling still costs.)
+    r -= dtc * 0.3 * ac.wingStall;
     const agl = ac.position.y - env.groundY(ac.position.x, ac.position.z);
     st.minAgl = Math.min(st.minAgl, agl);
     if (agl < 25) r -= (dtc * (25 - agl)) / 25;

@@ -23,7 +23,7 @@ import { Vector3 } from 'three';
 import { Aircraft } from '../sim/aircraft.js';
 import { Policy, toControls } from './policy.js';
 import { observe, OBS_NAMES, OBS_SIZE, resolveInputs, selectInputs } from './observe.js';
-import { rateLimits } from './rates.js';
+import { rateLimits, RateController } from './rates.js';
 import {
   takeoffTarget, landingTarget, taxiTarget, glideHeight, ManeuverRunner, maneuversFor, MANEUVERS,
 } from './guidance.js';
@@ -87,7 +87,11 @@ export class AiPilot {
     if (!this.skills.fly) throw new Error('an AI flyer needs at least the "fly" skill');
     this.vCruise = cruiseSpeed(def);
     this.hand = !!def.handLaunch;
-    this.maneuvers = this.skills.aero ? maneuversFor(def) : [];
+    // Aerobatics: a trained "aero" skill if there is one, else the classic
+    // rate controller (src/ml/rates.js), which tracks rates far better than
+    // the networks trained so far.
+    this.maneuvers = maneuversFor(def);
+    if (!this.skills.aero) this.rateCtl = new RateController(def, rateLimits(def, this.vCruise));
     // A full day needs a strip, take-off and landing. Without taxiing (or
     // hand-launched), it's carried out to the start and back to the pits.
     this.canCircuit = !!(this.skills.takeoff && this.skills.land);
@@ -576,8 +580,12 @@ export class AiPilot {
       this.nextControl += CONTROL_DT;
       if (this.nextControl < 0) this.nextControl = 0;
       const skillName = this.circuits ? this.#plan(CONTROL_DT) : this.#wander();
-      const skill = skillName && (this.skills[skillName] ?? this.skills.fly);
-      if (skill) {
+      const skill = skillName && (this.skills[skillName] ?? (skillName === 'aero' ? null : this.skills.fly));
+      if (skillName === 'aero' && !skill) {
+        this.rateCtl.act(this.ac, this.target.rates, this.act);
+        this.prev.set(this.act);
+        toControls(this.act, this.ac.controls);
+      } else if (skill) {
         observe(this.ac, this.target, this.prev, this.groundY(this.ac.position.x, this.ac.position.z), this.full);
         skill.act(this.full, this.act);
         this.prev.set(this.act);

@@ -30,3 +30,32 @@ export function rateLimits(def, vCruise) {
   cache.set(def, r);
   return r;
 }
+
+/**
+ * A classic rate controller for aerobatics: stick = the commanded fraction
+ * of the model's full-stick rate (feed-forward), plus a correction for the
+ * rate error. On the aerobatics task it cuts the rate error by 60-70% from
+ * hands-off on most models, where the trained network managed ~3% (its
+ * reward signal was too weak to learn from: see ml/README.md). Elevon
+ * models (no rudder, e.g. the Mini F-22) saturate their mixed surfaces with
+ * the correction, so they use feed-forward alone. Full throttle.
+ */
+export class RateController {
+  constructor(def, limits) {
+    this.limits = limits;
+    const hasRudder = def.surfaces.some((s) => s.controls.some((c) => c.input === 'yaw'));
+    this.kp = hasRudder ? 1 : 0;
+  }
+
+  /** Stick outputs (-1..1 each; throttle as the network's -1..1) for `rates` { roll, pitch, yaw }. */
+  act(ac, rates, out) {
+    const L = this.limits;
+    const w = ac.omega;
+    const clip = (x) => Math.max(-1, Math.min(1, x));
+    out[0] = clip((rates.roll + this.kp * (rates.roll - w.x)) / L.roll);
+    out[1] = clip((rates.pitch + this.kp * (rates.pitch - w.z)) / L.pitch);
+    out[2] = 0;
+    out[3] = 0.8; // (throttle 0.9)
+    return out;
+  }
+}

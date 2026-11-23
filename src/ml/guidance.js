@@ -133,7 +133,10 @@ export function taxiTarget(ac, point, groundY, stop, line, out) {
 // for a time. Rates are fractions of what the model can do at full stick
 // (src/ml/rates.js): roll right, pitch up, yaw left positive, as
 // Aircraft.omega. `pitch: 'loop'` means the pitch rate for a loop of
-// `radius` at the speed flown (no more than 3/4 of the model's best).
+// `radius` at the speed flown (no more than 3/4 of the model's best). A step
+// with no pitch command holds the flight path level, as a pilot feeds in
+// elevator through a roll (pushing when inverted), so rolls and inverted
+// flight don't lose much height.
 // needsRoll: only for models that can roll on ailerons or elevons.
 
 const T = 2 * Math.PI;
@@ -159,7 +162,7 @@ export const MANEUVERS = {
   invertedPass: {
     name: 'Inverted pass',
     needsRoll: true,
-    steps: [{ roll: 0.6, until: { roll: T / 2 } }, { pitch: -0.05, until: { time: 2.5 } }, { roll: 0.6, until: { roll: T / 2 } }],
+    steps: [{ roll: 0.6, until: { roll: T / 2 } }, { until: { time: 2.5 } }, { roll: 0.6, until: { roll: T / 2 } }],
   },
 };
 
@@ -208,7 +211,17 @@ export class ManeuverRunner {
     const L = this.limits;
     const loopRate = Math.min(0.75 * L.pitch, Math.max(1, ac.airspeed / this.radius));
     this.rates.roll = (step.roll ?? 0) * L.roll;
-    this.rates.pitch = step.pitch === 'loop' ? loopRate : (step.pitch ?? 0) * L.pitch;
+    if (step.pitch === 'loop') this.rates.pitch = loopRate;
+    else if (step.pitch != null) this.rates.pitch = step.pitch * L.pitch;
+    else {
+      // Hold the flight path level: pitch towards it by how far it's off,
+      // the right way up or upside down (body "up" against world up).
+      const v = ac.velocity;
+      const gamma = Math.asin(Math.max(-1, Math.min(1, v.y / Math.max(1, v.length()))));
+      const q = ac.orientation;
+      const upY = 1 - 2 * (q.x * q.x + q.z * q.z); // world y of the body's up axis
+      this.rates.pitch = Math.max(-0.5 * L.pitch, Math.min(0.5 * L.pitch, -2 * gamma * upY));
+    }
     this.rates.yaw = (step.yaw ?? 0) * L.yaw;
     return true;
   }

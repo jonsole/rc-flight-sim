@@ -85,7 +85,7 @@ describe('aerobatic manoeuvres', () => {
 
   it('steps through a manoeuvre as the aeroplane turns', () => {
     const r = new ManeuverRunner("immelmann", { roll: 6, pitch: 3, yaw: 2.5 });
-    const ac = { airspeed: 15, omega: { x: 0, y: 0, z: 1.5 } };
+    const ac = { airspeed: 15, omega: { x: 0, y: 0, z: 1.5 }, velocity: { x: 15, y: 0, z: 0, length: () => 15 }, orientation: { x: 0, y: 0, z: 0, w: 1 } };
     let t = 0;
     while (r.update(ac, 0.02) && r.i === 0) t += 0.02;
     expect(t).toBeCloseTo(Math.PI / 1.5, 1); // half a loop at 1.5 rad/s
