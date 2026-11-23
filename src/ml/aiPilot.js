@@ -33,16 +33,22 @@ const CARROT = 150; // m: how far ahead the "fly" target point is (as in trainin
 const REACHED = 30; // m (horizontally) from a waypoint to go on to the next
 const RESPAWN = 4; // s after a crash (or a belly landing) before it's back
 const MIN_AGL = 30; // m: when wandering, below this the target is raised
-const CIRCUIT = 35; // m: circuit height
-const SIDE = 55; // m: downwind leg out from the centreline
+const CIRCUIT = 30; // m: circuit height (low and close, as you'd fly one)
+const SIDE = 40; // m: downwind leg out from the centreline
 const LOW_PASS = 3.5; // m: low passes along the strip (belly-landers: 20, see lowPass)
+// Aerobatics: started from at least AERO_MIN up (or the manoeuvre's own
+// minHeight), climbing 15 m above that for it on the crosswind leg, so it
+// starts early on the downwind leg, in front of you (from 65 m up, it
+// started late and carried on 100 m past the end of the circuit).
+const AERO_MIN = 50;
+const aeroHeight = (key) => (MANEUVERS[key]?.minHeight ?? AERO_MIN) + 15;
 const LOW_BATTERY = 0.35; // charge left at which it comes in to land
 const LOS = 180; // m from the pilots: further than this and it turns back (line of sight)
 // Circuit corners, in metres along the strip from the aim point (negative:
 // before it) and out to the circuit side: the end of the downwind leg, and
 // the base point final starts from. (Also checked clear by fieldStrip.js.)
-export const DOWNWIND_END = { s: -85, l: SIDE, h: CIRCUIT };
-export const BASE_POINT = { s: -105, l: 8, above: 5 }; // (above the glide path)
+export const DOWNWIND_END = { s: -65, l: SIDE, h: CIRCUIT };
+export const BASE_POINT = { s: -85, l: 6, above: 5 }; // (above the glide path)
 const deg = Math.PI / 180;
 
 const cruiseCache = new WeakMap();
@@ -384,6 +390,11 @@ export class AiPilot {
     if (r && r.owner === this.id) r.owner = null;
   }
 
+  /** Now and then something aerobatic on the way down the far side, higher and a little further out. */
+  #maybeAero() {
+    return this.maneuvers.length && !this.lowBattery && this.rng() < 0.6 ? this.#pickManeuver() : null;
+  }
+
   #goto(phase, extra = {}) {
     this.phase = phase;
     this.legT = 0;
@@ -533,7 +544,7 @@ export class AiPilot {
             return this.#wander();
           }
           this.laps = 1 + Math.floor(this.rng() * 3);
-          this.#goto('crosswind');
+          this.#goto('crosswind', { aeroPlanned: this.#maybeAero() });
           return this.#plan(0);
         }
         if (this.phase === 'climbOut') {
@@ -546,26 +557,26 @@ export class AiPilot {
         return 'takeoff';
       }
       case 'crosswind': {
-        const c = this.#pt(L / 2 + 40, SIDE, CIRCUIT);
+        // (Climbing for an aerobatic manoeuvre on the way, if one's planned:
+        // so it's high enough in front of you, not far off down the leg.)
+        const c = this.#pt(L / 2 + 25, SIDE, this.aeroPlanned ? aeroHeight(this.aeroPlanned) : CIRCUIT);
         this.#flyTo(c.x, c.z, c.y, speed);
         // Done once near the corner or out past it to the side (not just near
         // it: swinging round to get to a point it missed took it far away).
         if (Math.hypot(c.x - ac.position.x, c.z - ac.position.z) < REACHED || lat * this.#side > SIDE - 10 || this.legT > 40) {
-          // Now and then something aerobatic on the way down the far side,
-          // higher and further out.
-          const aero = this.maneuvers.length && !this.lowBattery && this.rng() < 0.6;
-          this.#goto('downwind', { aeroPlanned: aero ? this.#pickManeuver() : null });
+          this.#goto('downwind');
         }
         return 'fly';
       }
       case 'downwind': {
         const planned = this.aeroPlanned;
-        const end = this.#pt(strip.aimS + DOWNWIND_END.s, planned ? SIDE + 30 : SIDE, planned ? 80 : CIRCUIT);
+        const end = this.#pt(strip.aimS + DOWNWIND_END.s, planned ? SIDE + 10 : SIDE, planned ? aeroHeight(planned) : CIRCUIT);
         this.#flyTo(end.x, end.z, end.y, planned ? 1.6 * this.vCruise : speed);
-        // Halfway along, high and fast enough, heading down the leg: go.
+        // Early on the leg (so it's in front of you, not off beyond the end of
+        // the circuit), high and fast enough, heading down the leg: go.
         const along = -(ac.velocity.x * strip.dir.x + ac.velocity.z * strip.dir.z) / Math.max(1, Math.hypot(ac.velocity.x, ac.velocity.z));
-        const minH = MANEUVERS[planned]?.minHeight ?? 65;
-        if (planned && sNow < L / 2 && agl > minH && ac.airspeed > 1.25 * this.vCruise && along > 0.9) {
+        const minH = MANEUVERS[planned]?.minHeight ?? AERO_MIN;
+        if (planned && sNow < L / 2 + 40 && agl > minH && ac.airspeed > 1.25 * this.vCruise && along > 0.9) {
           this.aeroPlanned = null;
           this.runner = new ManeuverRunner(planned, rateLimits(this.def, this.vCruise));
           this.#goto('aerobatics');
@@ -581,7 +592,7 @@ export class AiPilot {
       case 'aerobatics': {
         const r = this.runner;
         // Done, or taking too long, or getting low: recover.
-        if (!r.update(ac, dt) || this.legT > 20 || agl < 45) {
+        if (!r.update(ac, dt) || this.legT > 20 || agl < AERO_MIN - 15) {
           this.done.push(r.key);
           this.runner = null;
           this.#goto('recover', { steady: 0 });
@@ -603,9 +614,9 @@ export class AiPilot {
         // back into the circuit once it's been steady for a couple of seconds.
         const v = ac.velocity;
         const h = Math.hypot(v.x, v.z) || 1;
-        this.#flyTo(ac.position.x + (v.x / h) * CARROT, ac.position.z + (v.z / h) * CARROT, this.groundY(ac.position.x, ac.position.z) + Math.max(agl + 15, 60), 1.4 * this.vCruise);
+        this.#flyTo(ac.position.x + (v.x / h) * CARROT, ac.position.z + (v.z / h) * CARROT, this.groundY(ac.position.x, ac.position.z) + Math.max(agl + 10, AERO_MIN), 1.4 * this.vCruise);
         const at = ac.attitude();
-        const steady = Math.abs(at.roll) < 0.35 && v.y > -1 && agl > 40;
+        const steady = Math.abs(at.roll) < 0.35 && v.y > -1 && agl > AERO_MIN - 15;
         this.steady = steady ? this.steady + dt : 0;
         if (this.steady > 2 || this.legT > 25) this.#goto('downwind', { aeroPlanned: null });
         return 'fly';
@@ -716,7 +727,7 @@ export class AiPilot {
         // turned back steeply into the trees).
         const ahead = this.#pt(sNow + 20, 0, CIRCUIT);
         this.#followLine(lat, ahead.y, speed);
-        if (agl > 25 && (sNow > L / 2 || this.legT > 30)) this.#goto('crosswind');
+        if (agl > 25 && (sNow > L / 2 || this.legT > 30)) this.#goto('crosswind', { aeroPlanned: this.#maybeAero() });
         return 'fly';
       }
       default:

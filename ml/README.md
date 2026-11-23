@@ -180,11 +180,12 @@ In the game `src/ml/aiPilot.js` plans the flight and picks the skill:
 - **With `takeoff` and `land`**: a day at the field. Parked in the pits on
   the far side of the strip from the pilots; taxi out (or, without `taxi`
   or hand-launched, carried out) once the runway is free; take off; a
-  circuit on the far side (crosswind, downwind, base); final, following the
-  centreline 2 m above the glide path, hands over to the landing skill about
-  110 m out; land (or a low pass and round again); taxi back to the pits (or
-  be carried back); and again. On the downwind leg, now and then, an
-  aerobatic manoeuvre (`aero`) higher and further out: loop, rolls,
+  circuit on the far side (crosswind, downwind 40 m out at 30 m, base);
+  final from about 85 m out, following the centreline 2 m above the glide
+  path until the landing skill takes over; land (or a low pass and round
+  again); taxi back to the pits (or be carried back); and again. Now and
+  then, climbing for it on the crosswind leg, an aerobatic manoeuvre
+  (`aero`) from 50-65 m up early on the downwind leg, in front of you: loop, rolls,
   Immelmann, split S, Cuban eight, barrel roll, inverted pass (no rolls for
   rudder-only models). Going around: off the centreline, low on the
   approach, long, or you on the strip. One AI on the runway at a time.

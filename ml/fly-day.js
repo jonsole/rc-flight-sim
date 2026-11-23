@@ -70,6 +70,8 @@ const dt = 1 / 60;
 const last = pilots.map(() => '');
 const crashes = pilots.map(() => 0);
 const farthest = pilots.map(() => 0); // horizontal distance from the pilots (line of sight)
+const airT = pilots.map(() => 0); // seconds in the air
+const farT = pilots.map(() => 0); // ...of them more than 150 m from the pilots
 const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 for (let t = 0; t < o.minutes * 60; t += dt) {
   wind.update(dt);
@@ -78,6 +80,10 @@ for (let t = 0; t < o.minutes * 60; t += dt) {
     const ac = p.ac;
     if (!ac.onGround) p.minCharge = Math.min(p.minCharge ?? 1, p.charge);
     const dist = Math.hypot(ac.position.x - px, ac.position.z - pz);
+    if (!ac.onGround && !ac.crashed) {
+      airT[i] += dt;
+      if (dist > 150) farT[i] += dt;
+    }
     if (dist > farthest[i]) {
       farthest[i] = dist;
       p._farPhase = p.status;
@@ -95,7 +101,7 @@ for (let t = 0; t < o.minutes * 60; t += dt) {
       const at = ac.attitude();
       const agl = ac.position.y - ground.heightAt(ac.position.x, ac.position.z);
       const d = (r) => ((r * 180) / Math.PI).toFixed(0).padStart(4);
-      console.log(`${fmt(t)}  ${p.status.padEnd(22)} agl ${agl.toFixed(1).padStart(5)}  vy ${ac.velocity.y.toFixed(1).padStart(5)}  air ${ac.airspeed.toFixed(1).padStart(4)}  pitch ${d(at.pitch)} roll ${d(at.roll)}  thr ${ac.controls.throttle.toFixed(2)}  stall ${ac.wingStall.toFixed(2)}  target dy ${(p.target.y - ac.position.y).toFixed(0)} spd ${p.target.speed.toFixed(1)}`);
+      console.log(`${fmt(t)}  ${p.status.padEnd(22)} d ${dist.toFixed(0).padStart(4)}  s ${(strip?.along(ac.position) ?? 0).toFixed(0).padStart(4)} l ${(strip?.lateral(ac.position) ?? 0).toFixed(0).padStart(4)}  agl ${agl.toFixed(1).padStart(5)}  vy ${ac.velocity.y.toFixed(1).padStart(5)}  air ${ac.airspeed.toFixed(1).padStart(4)}  pitch ${d(at.pitch)} roll ${d(at.roll)}  thr ${ac.controls.throttle.toFixed(2)}  stall ${ac.wingStall.toFixed(2)}  target dy ${(p.target.y - ac.position.y).toFixed(0)} spd ${p.target.speed.toFixed(1)}`);
     }
     if (p.status !== last[i]) {
       last[i] = p.status;
@@ -105,4 +111,4 @@ for (let t = 0; t < o.minutes * 60; t += dt) {
   });
 }
 console.log('\nai    aircraft                  flights  landings  crashes  furthest  manoeuvres');
-pilots.forEach((p, i) => console.log(`ai${i + 1}   ${ids[i].padEnd(24)}  ${String(p.flights).padStart(7)}  ${String(p.landings).padStart(8)}  ${String(p.crashes + (p.ac.crashed ? 1 : 0)).padStart(7)}  ${String(Math.round(farthest[i])).padStart(6)} m (${p._farPhase})  charge ${Math.round(p.charge * 100)}%${p.minCharge != null ? `, lowest ${Math.round(p.minCharge * 100)}%` : ''}  ${p.done.join(' ')}`));
+pilots.forEach((p, i) => console.log(`ai${i + 1}   ${ids[i].padEnd(24)}  ${String(p.flights).padStart(7)}  ${String(p.landings).padStart(8)}  ${String(p.crashes + (p.ac.crashed ? 1 : 0)).padStart(7)}  ${String(Math.round(farthest[i])).padStart(6)} m (${p._farPhase}, ${Math.round((100 * farT[i]) / Math.max(1, airT[i]))}% of the time over 150 m)  charge ${Math.round(p.charge * 100)}%${p.minCharge != null ? `, lowest ${Math.round(p.minCharge * 100)}%` : ''}  ${p.done.join(' ')}`));
