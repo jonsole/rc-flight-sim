@@ -76,7 +76,7 @@ EasyStar the roll stick works the rudder, as in the game.
 | `takeoff` | Standing at the start of a 60–180 m strip of anything from mown runway to rough grass (hand-launched models: in the hand), up the climb-out to 35 m. 25 s. | Distance along the strip (on the ground only to its end), height gained, +20 for climbing out; off the centreline, below the climb profile, slow or scraping a wing cost. Running out of strip ends it (−8). |
 | `land` | 90–160 m out on a 7° approach, up to 12 m off the centreline and 20° off its heading; touch down near the aim point and stop. 35 s. | Progress towards the aim point (not time: staying up doesn't pay), less for being off the centreline or below the glide path (most) or above it; at touchdown up to +10 for a gentle one, +5 near the aim point on the strip, −3 crabbed; bounces −2; +5 for stopping, motor off, on the centreline. |
 | `taxi` | On the ground: to one point and on to a second 10–60 m away, at 2.5 m/s, and stop. 40 s. | Distance closed (potential, so circling doesn't pay), +3 / +5 for reaching / stopping; over 4 m/s, leaving the ground or scraping cost; over 7 m/s ends it (−5). |
-| `aero` | High and fast: a random string of pulls, rolls (either way), barrel rolls, pushes and holds, as fractions of what the model can do (`src/ml/rates.js`). 12 s. | 1 per second, less smoothly (tanh) for each axis's rate error relative to the model's best; below 25 m and slow cost. |
+| `aero` | 150–250 m up and fast: a random string of pulls, rolls (either way), barrel rolls, pushes and holds, as fractions of what the model can do (`src/ml/rates.js`). 12 s. | 1 per second, less smoothly (tanh) for each axis's rate error relative to the model's best; stalling and below 25 m cost. **Not yet learnt well** (below). |
 
 The flying tasks: −(10 − height)/10 per second below 10 m, −0.5 per second
 fully stalled, a small cost for moving the sticks about (smoothness), and −10
@@ -88,6 +88,17 @@ along the grass for ever (paid per metre, nothing stopped it), and the first
 landing reward would have paid for never landing. Training logs how many
 validation flights really succeed (`valSuccessRate`) as well as the score:
 a rising score with no successes means the reward is being gamed.
+
+**Aerobatics are flown by a classic controller for now.** Trained on
+`aero`, the AeroScout's network cut the rate error only ~3% from
+hands-off. Started 70–100 m up, following the commands lost height that cost
+more than tracking paid, and a speed penalty punished the speed manoeuvres
+bleed, so it learnt to ignore the commands; fixed (150–250 m, no speed
+penalty), the tracking reward was still too weak against the smoothness
+cost for ES to find. A feed-forward + proportional rate controller
+(`RateController` in `src/ml/rates.js`) cuts the rate error 60–70% on most
+models, so the AI flyers use it unless a trained `aero` skill is exported.
+It could be the teacher for a network (behaviour cloning) next.
 
 Take-off and landing strips point into any wind over 3 m/s (within 30°) and
 any way in lighter wind, as the AI flyers' strips do in the game; take-off
