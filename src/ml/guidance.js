@@ -55,6 +55,13 @@ export class Strip {
   }
 }
 
+/**
+ * Up to this wind speed (m/s) take-offs and landings use the runway (from
+ * whichever end faces the wind most); above it they are made straight into
+ * the wind, across the field if need be.
+ */
+export const LIGHT_WIND = 3;
+
 const LIFT_AFTER = 20; // m of roll before the target point starts to rise
 const CLIMB = 0.25; // climb-out gradient of the target (1 in 4)
 const CLIMB_TO = 40; // m: where a take-off ends

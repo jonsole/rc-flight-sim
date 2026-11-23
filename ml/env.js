@@ -128,7 +128,7 @@ export class FlightEnv {
     const rng = (this.rng = makeRng(seed));
     const ac = this.ac;
     const v = this.vCruise;
-    ac.env.wind = this.windMax > 0 ? new SimpleWind(rng, { speed: rng() * this.windMax, turbulence: 0.1 + rng() * 0.4 }) : null;
+    ac.env.wind = this.windMax > 0 ? new SimpleWind(rng, { speed: rng() * this.windMax, turbulence: 0.1 + rng() * (this.impl ? 0.5 : 0.4) }) : null;
     if (this.randomizeMass) {
       const m = 0.9 + 0.2 * rng();
       ac.mass = this.def.mass * m;

@@ -6,9 +6,10 @@ import { Wind } from '../src/sim/wind.js';
 import { makeRng } from '../ml/env.js';
 import { AiPilot } from '../src/ml/aiPilot.js';
 import { AiFlyers, AI_AIRCRAFT, skillsOf } from '../src/ml/aiFlyers.js';
-import { Strip, MANEUVERS, maneuversFor, ManeuverRunner } from '../src/ml/guidance.js';
+import { MANEUVERS, maneuversFor, ManeuverRunner } from '../src/ml/guidance.js';
+import { chooseStrip, windVector } from '../src/ml/fieldStrip.js';
 import { RUNWAY } from '../src/sim/terrain.js';
-import { clubAngle, clubToWorld, pilotSpot } from '../src/sim/location.js';
+import { clubToWorld, pilotSpot } from '../src/sim/location.js';
 import { existsSync } from 'node:fs';
 import { getAircraft } from '../src/aircraft/index.js';
 
@@ -57,11 +58,9 @@ describe('AI flyers', () => {
     const def = getAircraft(id).def;
     const full = ['takeoff', 'land', ...(def.handLaunch ? [] : ['taxi'])].every((s) => skillsOf(id).includes(s));
     it.runIf(full)(`${id}: flies a day of circuits at the club field: takes off and lands without crashing`, () => {
-      const A = clubAngle();
-      const h = (Math.sin((270 * Math.PI) / 180 - A) > 0 ? 0 : Math.PI) - A;
       const [x, z] = clubToWorld(RUNWAY.x, RUNWAY.z);
       const [px, pz] = pilotSpot();
-      const strip = new Strip({ x, z, dir: { x: Math.cos(h), z: -Math.sin(h) }, length: Math.max(RUNWAY.length, 90), width: Math.max(RUNWAY.width, 14) });
+      const strip = chooseStrip({ windFromDeg: 270, windSpeed: 3, ground, obstacles, pilot: { x: px, z: pz } });
       const field = { x, z, radius: 150, strip, pilot: { x: px, z: pz }, runway: { owner: null } };
       const pilot = new AiPilot(def, skillFiles(id), { ground, wind, obstacles }, field, makeRng(11), { id: 'ai1', slot: 0 });
       expect(pilot.circuits).toBe(true);
@@ -95,4 +94,23 @@ describe('aerobatic manoeuvres', () => {
     while (r.update(ac, 0.02));
     expect(r.done).toBe(true);
   });
+});
+
+describe('where AI flyers take off and land', () => {
+  const obstacles = new Obstacles();
+  const [px, pz] = pilotSpot();
+  const pilot = { x: px, z: pz };
+  for (const from of [0, 45, 90, 135, 180, 225, 270, 315]) {
+    it(`goes into a ${from}° wind`, () => {
+      const w = windVector(from);
+      for (const speed of [2, 7]) {
+        const s = chooseStrip({ windFromDeg: from, windSpeed: speed, ground, obstacles, pilot });
+        const headwind = -(s.dir.x * w.x + s.dir.z * w.z); // cos of the angle off the wind
+        expect(headwind).toBeGreaterThanOrEqual(0); // never downwind
+        // More than a light wind: within 30° of it, unless nowhere is clear.
+        if (speed > 3 && s.kind === 'into wind') expect(headwind).toBeGreaterThan(Math.cos((31 * Math.PI) / 180));
+        if (speed <= 3) expect(s.kind).toBe('runway');
+      }
+    });
+  }
 });

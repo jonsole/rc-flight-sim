@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { ES } from './es.js';
 import { Evaluator, Pool } from './evaluate.js';
 import { makeRng, TASKS } from './env.js';
-import { TASK_SECONDS } from './tasks.js';
+import { TASK_SECONDS, TASK_WIND, TASK_THROTTLE_BIAS } from './tasks.js';
 import { aircraftIds } from './aircraft.js';
 import { Policy } from '../src/ml/policy.js';
 import { resolveInputs } from '../src/ml/observe.js';
@@ -30,7 +30,7 @@ export const DEFAULTS = {
   sigma: 0.05,
   lr: 0.03,
   l2: 0.005,
-  wind: 4,
+  wind: 0, // strongest mean wind (m/s); 0: the task's own (4 for hold, 6-8 for the others)
   controlHz: 50,
   substep: 1 / 600,
   evalEvery: 5,
@@ -95,13 +95,14 @@ export async function train(opts) {
   const hidden = String(o.hidden).split(',').map(Number);
   const inputs = resolveInputs(o.inputs);
   const seconds = o.seconds || TASK_SECONDS[o.task] || 20;
+  const windMax = o.wind || TASK_WIND[o.task] || 4;
   const name = o.name || `${o.task}-${aircraft.length > 1 ? 'multi' : aircraft[0]}${o.inputs === 'sim' ? '' : `-${o.inputs.includes(',') ? 'custom' : o.inputs}`}`;
   const dir = `${o.out.replace(/\/$/, '')}/${name}`;
   mkdirSync(dir, { recursive: true });
   const config = {
     aircraft,
     hidden,
-    env: { task: o.task, inputs, seconds, windMax: o.wind, controlHz: o.controlHz, substep: o.substep },
+    env: { task: o.task, inputs, seconds, windMax, controlHz: o.controlHz, substep: o.substep },
   };
   const log = (...a) => o.quiet || console.log(...a);
 
@@ -109,6 +110,8 @@ export async function train(opts) {
   if (o.init) {
     const j = JSON.parse(readFileSync(o.init, 'utf8'));
     warmStart(policy, inputs, Policy.fromJSON(j), resolveInputs(j.meta?.inputs ?? 'v1'));
+  } else if (TASK_THROTTLE_BIAS[o.task] != null) {
+    policy.setOutputBias(3, TASK_THROTTLE_BIAS[o.task]);
   }
   const es = new ES(policy.params, { pairs: o.pairs, sigma: o.sigma, lr: o.lr, l2: o.l2, seed: o.seed });
   let gen0 = 0;

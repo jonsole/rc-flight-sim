@@ -7,15 +7,21 @@
 // where it should) and penalties for crashing.
 import { Vector3, Quaternion } from 'three';
 import {
-  Strip, climbProfile, takeoffTarget, glideHeight, landingTarget, taxiTarget, TAXI_SPEED, GLIDE,
+  Strip, climbProfile, takeoffTarget, glideHeight, landingTarget, taxiTarget, TAXI_SPEED, GLIDE, LIGHT_WIND,
 } from '../src/ml/guidance.js';
 
 const deg = Math.PI / 180;
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
 
-/** A strip and ground surface for this episode: anything from a mown runway to rough grass. */
+/**
+ * A strip and ground surface for this episode: anything from a mown runway
+ * to rough grass. In more than a light wind it points into the wind (within
+ * 30°), as the AI flyers' strips do in the game; in a light wind, any way.
+ */
 function randomStrip(env, rng) {
-  const a = rng() * 2 * Math.PI;
+  const mean = env.ac.env.wind?.mean;
+  let a = rng() * 2 * Math.PI;
+  if (mean && Math.hypot(mean.x, mean.z) > LIGHT_WIND) a = Math.atan2(-mean.z, -mean.x) + (rng() - 0.5) * 60 * deg;
   env.surface = { roll: 0.04 + rng() * 0.14, stiction: 2, drag: 0.9 + rng() * 0.5, bump: 0.002 + rng() * 0.018 };
   return new Strip({ x: 0, z: 0, dir: { x: Math.cos(a), z: Math.sin(a) }, length: 60 + rng() * 120, width: 10 + rng() * 10 });
 }
@@ -271,4 +277,13 @@ const aero = {
 export const PHASE_TASKS = { takeoff, land, taxi, aero };
 /** Episode lengths (s) that suit each task, used unless --seconds is given. */
 export const TASK_SECONDS = { takeoff: 25, land: 35, taxi: 40, aero: 12 };
+/** Strongest mean wind (m/s) trained in, unless --wind is given (hold & co: 4). */
+export const TASK_WIND = { takeoff: 8, land: 8, taxi: 6, aero: 6 };
+/**
+ * Starting throttle of a fresh network (bias of its throttle output, before
+ * tanh). On grass a model needs well over half throttle to start rolling; a
+ * network that starts at half sits still, and every variation of it too, so
+ * training learns nothing. Take-off starts near full, taxiing a bit above half.
+ */
+export const TASK_THROTTLE_BIAS = { takeoff: 1.2, taxi: 0.5 };
 export { GLIDE };

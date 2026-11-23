@@ -81,6 +81,12 @@ export class Policy {
     return this;
   }
 
+  /** Set the bias of output `i` (0 roll, 1 pitch, 2 yaw, 3 throttle). */
+  setOutputBias(i, value) {
+    this.params[this.size - ACT_SIZE + i] = value;
+    return this;
+  }
+
   toJSON(meta = {}) {
     return { format: 'rc-flight-sim-policy', version: 1, obsSize: this.obsSize, hidden: this.hidden, actSize: ACT_SIZE, meta, params: Array.from(this.params) };
   }
