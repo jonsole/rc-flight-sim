@@ -124,7 +124,7 @@ export async function train(opts) {
     bestScore = s.meta.bestScore ?? -Infinity;
     log(`resuming ${dir} at generation ${gen0}`);
   } else {
-    writeFileSync(`${dir}/log.csv`, 'generation,seconds,popMean,popMax,valScore,valCrashRate,stepNorm\n');
+    writeFileSync(`${dir}/log.csv`, 'generation,seconds,popMean,popMax,valScore,valCrashRate,stepNorm,valSuccessRate\n');
   }
   writeFileSync(`${dir}/config.json`, JSON.stringify({ ...o, aircraft, hidden, inputs, params: policy.size, obsSize: inputs.length }, null, 2));
 
@@ -149,10 +149,14 @@ export async function train(opts) {
       const popMax = Math.max(...fit);
       let val = '';
       let crash = '';
+      let success = '';
       if (gen % o.evalEvery === 0 || gen === o.gens) {
         const r = evaluator.score(policy.params, valEpisodes, true);
         val = r.fitness;
         crash = r.infos.filter((x) => x.crashed).length / r.infos.length;
+        // Take-off, landing, taxi, aerobatics: how many really did it (a
+        // high score without it means the reward is being gamed).
+        if (r.infos.some((x) => 'success' in x)) success = r.infos.filter((x) => x.success).length / r.infos.length;
         if (val > bestScore) {
           bestScore = val;
           writeFileSync(`${dir}/best.json`, JSON.stringify(policy.toJSON(meta(gen, val))));
@@ -160,10 +164,10 @@ export async function train(opts) {
         writeFileSync(`${dir}/latest.json`, JSON.stringify({ ...policy.toJSON(meta(gen, val)), es: es.state() }));
       }
       const secs = (Date.now() - t0) / 1000;
-      appendFileSync(`${dir}/log.csv`, `${gen},${secs.toFixed(1)},${popMean.toFixed(3)},${popMax.toFixed(3)},${val === '' ? '' : val.toFixed(3)},${crash},${stepNorm.toFixed(4)}\n`);
+      appendFileSync(`${dir}/log.csv`, `${gen},${secs.toFixed(1)},${popMean.toFixed(3)},${popMax.toFixed(3)},${val === '' ? '' : val.toFixed(3)},${crash},${stepNorm.toFixed(4)},${success}\n`);
       log(
         `gen ${String(gen).padStart(4)}  pop mean ${popMean.toFixed(2).padStart(7)}  max ${popMax.toFixed(2).padStart(7)}` +
-          (val === '' ? '' : `  | validation ${val.toFixed(2).padStart(7)}  crashes ${(100 * crash).toFixed(0).padStart(3)}%`) +
+          (val === '' ? '' : `  | validation ${val.toFixed(2).padStart(7)}  crashes ${(100 * crash).toFixed(0).padStart(3)}%${success === '' ? '' : `  succeeded ${(100 * success).toFixed(0).padStart(3)}%`}`) +
           `  (${secs.toFixed(0)} s)`,
       );
     }

@@ -64,8 +64,16 @@ const takeoff = {
     const s = strip.along(ac.position);
     const lat = strip.lateral(ac.position);
     const agl = ac.position.y - env.groundY(ac.position.x, ac.position.z);
-    let r = Math.max(-0.5, (s - st.s) / env.vCruise); // ~1 per second at cruise
+    // Distance along pays ~1 per second at cruise, but on the ground only
+    // up to the end of the strip (else racing along the grass for ever
+    // pays as well as flying: the first networks learnt exactly that).
+    const onStrip = s < strip.length / 2;
+    let r = agl > 1 || onStrip ? Math.max(-0.5, (s - st.s) / env.vCruise) : 0;
     st.s = s;
+    // Height gained (to 35 m) pays 10 in all, however long it takes.
+    const h = Math.min(35, Math.max(0, agl));
+    r += ((h - (st.h ?? h)) / 35) * 10;
+    st.h = h;
     if (agl > 1) st.airborne = true;
     st.lateralSum += Math.abs(lat);
     st.n++;
@@ -77,7 +85,8 @@ const takeoff = {
     if (scraping(ac)) r -= dtc * 2;
     if (ac.crashed) return { reward: r - 10, done: true, reason: ac.crashReason };
     if (agl < 5 && Math.abs(lat) > strip.width / 2 + 5) return { reward: r - 5, done: true, reason: 'ran off the strip' };
-    if (agl > 35) return { reward: r + 5, done: true, reason: 'climbed out', success: true };
+    if (agl < 1 && s > strip.length / 2 + 10) return { reward: r - 8, done: true, reason: 'ran out of strip' };
+    if (agl > 35) return { reward: r + 20, done: true, reason: 'climbed out', success: true };
     if (env.t >= env.seconds) return { reward: r, done: true, reason: 'time' };
     return { reward: r, done: false };
   },
@@ -117,9 +126,14 @@ const land = {
     let r = 0;
     const touching = ac.onGround;
     if (!st.down) {
-      // On the approach: along the centreline and down the glide path, until
-      // the flare (the last 15 m before the aim point), then it's up to it.
-      r += dtc * (0.5 - 0.5 * clamp01(Math.abs(lat) / 15));
+      // On the approach: getting nearer the aim point pays (up to ~0.5 per
+      // second at approach speed: progress, not time, so staying up longer
+      // doesn't pay), less for being off the centreline or the glide path
+      // (until the flare, the last 15 m before the aim point: that's up to it).
+      const sc = Math.min(s, strip.aimS);
+      r += (0.5 * (sc - (st.sPrev ?? sc))) / env.vApproach;
+      st.sPrev = sc;
+      r -= dtc * 0.5 * clamp01(Math.abs(lat) / 15);
       if (s < strip.aimS - 15) r -= dtc * 0.5 * clamp01(Math.abs(agl - glideHeight(strip, s)) / 8);
       if (agl > 3) r -= dtc * 0.3 * ac.wingStall;
       if (touching) {
