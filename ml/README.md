@@ -199,12 +199,18 @@ Which models have which skills (`src/ml/policies/`):
 | Model | Fly | Take-off | Landing | Taxi | |
 | --- | --- | --- | --- | --- | --- |
 | HobbyZone AeroScout | ✓ | ✓ | ✓ | ✓ | full day |
-| Buschtrottel ShockCub | ✓ | ✓ | ✓ | (training) | circuits, carried out and back |
-| Buschtrottel Highlander | ✓ | ✓ | ✓ (from the ShockCub's) | (training) | circuits, carried |
-| Buschtrottel Agro | ✓ | ✓ | ✓ | (training) | circuits, carried |
+| Buschtrottel ShockCub | ✓ | ✓ | ✓ | (trained, not used) | circuits, carried out and back |
+| Buschtrottel Highlander | ✓ | ✓ | ✓ (from the ShockCub's) | (trained, not used) | circuits, carried |
+| Buschtrottel Agro | ✓ | ✓ | ✓ | (trained, not used) | circuits, carried |
 | Multiplex EasyStar | ✓ | ✓ hand launch | ✓ belly | n/a | circuits, picked up |
-| E-flite S.E.5a | ✓ | ✓ | ✗ | | wanders: at idle the draggy biplane bleeds to its stall in ~2 s; every landing network so far dived in or struck its prop |
-| FT Mighty Mini F-22 | ✓ | ✓ hand launch | ✗ | n/a | wanders: glides flat at 13 m/s and its landing network learnt only to overshoot |
+| E-flite S.E.5a | ✓ | ✓ | ✗ | | takes off, then flies round: at idle the draggy biplane bleeds to its stall in ~2 s; every landing network so far dived in or struck its prop |
+| FT Mighty Mini F-22 | ✓ | ✓ hand launch | ✗ | n/a | launched, then flies round: glides flat at 13 m/s and its landing network learnt only to overshoot |
+
+The Buschtrottels' taxi networks pass their own task (26-30/30), but taxiing
+out at the real fields then lining up and rolling cost prop strikes on the
+take-off roll (11 crashes in 31 flights, against 3 in 48 carried), so they
+aren't exported yet: the take-off skill trained from a standstill, not
+from a taxi.
 
 Training these taught a lot about rewards: every landing reward had a
 loophole somewhere (hover at 8 m, land gently 100 m short, crash at once
