@@ -58,6 +58,13 @@ export function runwayStrip(windFromDeg, otherEnd = false, pilot = null) {
  * up to 12 m off the centreline); the ground roll a metre up; and the ground
  * along the strip fairly level.
  */
+/** Why the last stripClear() failed: { what, s, l, y }, for debugging. */
+export let lastFail = null;
+function fail(what, s, l, y) {
+  lastFail = { what, s: Math.round(s), l, y: Math.round(y * 10) / 10 };
+  return false;
+}
+
 export function stripClear(strip, ground, obstacles, landing = true) {
   const near = [];
   const hit = (x, y, z) => {
@@ -83,16 +90,17 @@ export function stripClear(strip, ground, obstacles, landing = true) {
     for (const l of on ? [-6, -4, -3, -2, -1, 0, 1, 2, 3, 4, 6] : [-15, -10, -5, 0, 5, 10, 15]) {
       const p = strip.point(s, l);
       const gy = on ? ground.heightAt(p.x, p.z) : g0;
-      if (on && Math.abs(gy - g0) > 3) return false; // too much slope on the strip
-      if (on && Math.abs(l) <= 3 && (hit(p.x, gy + 0.3, p.z) || hit(p.x, gy + 1, p.z))) return false; // the ground roll
+      if (on && Math.abs(gy - g0) > 3) return fail('slope', s, l, gy - g0); // too much slope on the strip
+      if (on && Math.abs(l) <= 3 && (hit(p.x, gy + 0.3, p.z) || hit(p.x, gy + 1, p.z))) return fail('ground roll', s, l, 1); // the ground roll
       for (const h of bands) {
-        for (let y = Math.max(1, h - 4); y <= h + 3; y += 2) if (hit(p.x, gy + y, p.z)) return false;
+        for (let y = Math.max(1, h - 4); y <= h + 3; y += 2) if (hit(p.x, gy + y, p.z)) return fail('flight path', s, l, y);
       }
-      // An overrun: the first 40 m past the far end clear from the ground
-      // up (a late go-around or a slow climb-out passes low over it).
-      if (s > L && s < L + 40) {
+      // An overrun for landings: the first 25 m past the far end clear from
+      // the ground up (a late go-around passes low over it). (Not for
+      // take-off only: the climb-out path above covers that.)
+      if (landing && s > L && s < L + 25) {
         const top = climbProfile(strip, s) + 3;
-        for (let y = 1; y <= top; y += 2) if (hit(p.x, gy + y, p.z)) return false;
+        for (let y = 1; y <= top; y += 2) if (hit(p.x, gy + y, p.z)) return fail('overrun', s, l, y);
       }
     }
   }
@@ -136,19 +144,19 @@ function fatHit(s, x, y, z) {
  * Is the base turn clear? The aeroplane turns from the end of the downwind
  * leg down to the base point (src/ml/aiPilot.js) on the circuit side (away
  * from the pilots), cutting the corner or swinging wide, so the whole
- * region round it is checked: from 15 m before the base point to 20 m past
- * the downwind end, from the centreline to 10 m beyond the downwind leg,
+ * region round it is checked: from 25 m before the base point to 20 m past
+ * the downwind end, from the centreline to 35 m beyond the downwind leg,
  * between 4 m below the base point's height and 3 m above circuit height.
  */
 export function baseLegClear(strip, side, ground, obstacles) {
   const near = [];
   const g0 = ground.heightAt(strip.x, strip.z);
-  const s0 = strip.aimS + BASE_POINT.s - 15;
+  const s0 = strip.aimS + BASE_POINT.s - 25;
   const s1 = strip.aimS + DOWNWIND_END.s + 20;
   const lo = glideHeight(strip, strip.aimS + BASE_POINT.s) + BASE_POINT.above - 4;
   const hi = DOWNWIND_END.h + 3;
   for (let s = s0; s <= s1; s += 4) {
-    for (let l = 0; l <= DOWNWIND_END.l + 10; l += 4) {
+    for (let l = 0; l <= DOWNWIND_END.l + 35; l += 4) {
       const p = strip.point(s, side * l);
       for (let y = Math.max(1, lo); y <= hi; y += 3) {
         const py = g0 + y;
@@ -261,9 +269,25 @@ export function chooseStrip({ windFromDeg, windSpeed, ground, obstacles, pilot }
   // (Within 30° of the wind unless it's light: take-off trained with no
   // more crosswind than that, and the AeroScout flipped over in more.)
   const intoWind = (st) => light || headwind(st) >= Math.cos(30 * deg);
-  const launch = [runway, ...(light ? [other] : [])].find((st) => intoWind(st) && !beyondFence(st, pilot, obstacles) && stripClear(st, ground, obstacles, false))
-    ?? search([0, 10, -10, 20, -20, 30, -30], takeoffOnly)
-    ?? (light ? search([45, -45, 90, -90, 135, -135, 180], takeoffOnly) : null);
+  // Smooth ground first (mown grass or runway): a nose-heavy tail-dragger
+  // noses over on rough grass (the S.E.5a struck its prop every time).
+  const smooth = (st) => {
+    if (!ground.surfaceAt) return true;
+    for (let s = st.startS; s <= st.length / 2; s += 5) {
+      const p = st.point(s);
+      if (ground.surfaceAt(p.x, p.z).roll > 0.17) return false;
+    }
+    return true;
+  };
+  const runways = [runway, ...(light ? [other] : [])].filter((st) => intoWind(st) && !beyondFence(st, pilot, obstacles) && stripClear(st, ground, obstacles, false));
+  const turns = [0, 10, -10, 20, -20, 30, -30];
+  const anyTurns = [45, -45, 90, -90, 135, -135, 180];
+  const launch = runways.find(smooth)
+    ?? search(turns, (st) => takeoffOnly(st) && smooth(st))
+    ?? (light ? search(anyTurns, (st) => takeoffOnly(st) && smooth(st)) : null)
+    ?? runways[0]
+    ?? search(turns, takeoffOnly)
+    ?? (light ? search(anyTurns, takeoffOnly) : null);
   if (launch) {
     launch.kind = 'take-off only';
     launch.landing = false;

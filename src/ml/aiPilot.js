@@ -187,7 +187,9 @@ export class AiPilot {
 
   /** Can it take off (and so start every flight on the ground)? Without landing it then just flies round. */
   get canLaunch() {
-    return !!(this.skills.takeoff && this.field.strip);
+    // (Three take-off crashes running: give up and start in the air, rather
+    // than crash over and over in front of the pilots.)
+    return !!(this.skills.takeoff && this.field.strip) && (this.takeoffCrashes ?? 0) < 3;
   }
 
   /** What it's doing, for labels and debugging. */
@@ -469,12 +471,17 @@ export class AiPilot {
         taxiTarget(ac, pt, this.groundY, true, strip.dir, t);
         return 'taxi';
       }
-      case 'takeoff': {
-        takeoffTarget(ac, strip, this.groundY, this.vCruise, t);
+      case 'takeoff':
+      case 'climbOut': {
         if (agl > 10) this.#release();
-        // Up, or well past the end of the strip and clear of the trees (a slow
-        // climb-out otherwise takes it far out of sight before turning).
-        if (agl > 30 || (agl > 15 && sNow > L / 2 + 60)) {
+        // The take-off skill rolls and lifts off; once well clear of the
+        // ground the fly skill climbs out along the centreline (the take-off
+        // network let the Agro drift 30 m sideways, out over the trees).
+        if (this.phase === 'takeoff' && agl > 8 && !this.hand) this.#goto('climbOut');
+        // Up, or well past the end of the strip and 25 m up, clear of the
+        // trees (a slow climb-out otherwise takes it far out of sight before
+        // turning; turning at 15 m, the Buschtrottels met trees at Impington).
+        if (agl > 30 || (agl > 25 && sNow > L / 2 + 60)) {
           this.flights++;
           this.#release();
           if (!this.circuits) {
@@ -485,7 +492,14 @@ export class AiPilot {
           }
           this.laps = 1 + Math.floor(this.rng() * 3);
           this.#goto('crosswind');
+          return this.#plan(0);
         }
+        if (this.phase === 'climbOut') {
+          const ahead = this.#pt(sNow + 20, 0, CIRCUIT);
+          this.#followLine(lat, ahead.y, 1.3 * this.vCruise);
+          return 'fly';
+        }
+        takeoffTarget(ac, strip, this.groundY, this.vCruise, t);
         return 'takeoff';
       }
       case 'crosswind': {
@@ -557,9 +571,10 @@ export class AiPilot {
         // (5 m above the glide path there, so final starts high, not low.)
         const b = this.#pt(strip.aimS + BASE_POINT.s, BASE_POINT.l, glideHeight(strip, strip.aimS + BASE_POINT.s) + BASE_POINT.above);
         this.#flyTo(b.x, b.z, b.y, speed);
-        // Done near the base point, or once past it along the strip (rather
-        // than circling back to it from a wide turn, far away).
-        if (Math.hypot(b.x - ac.position.x, b.z - ac.position.z) < 20 || sNow < strip.aimS + BASE_POINT.s - 10 || this.legT > 40) {
+        // Done near the base point, or once past it along the strip and near
+        // the centreline (rather than circling back to it from a wide turn,
+        // far away; but not from out wide either, over unchecked trees).
+        if (Math.hypot(b.x - ac.position.x, b.z - ac.position.z) < 20 || (sNow < strip.aimS + BASE_POINT.s - 10 && Math.abs(lat) < 25) || this.legT > 40) {
           // Landing this time (if the runway's free), or round again.
           const landing = this.laps <= 0 && this.#claim();
           this.#goto(landing ? 'final' : 'lowPass');
@@ -693,6 +708,7 @@ export class AiPilot {
       this.downFor += dt;
       if (this.downFor > RESPAWN) {
         if (ac.crashed) this.crashes++;
+        this.takeoffCrashes = this.phase === 'takeoff' || this.phase === 'climbOut' ? (this.takeoffCrashes ?? 0) + 1 : 0;
         this.#release();
         this.spawn();
       }

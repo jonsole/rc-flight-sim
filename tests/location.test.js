@@ -26,12 +26,14 @@ describe('Barrack Field (Waterbeach)', () => {
 
   it('uses the cricket pitch as the runway, turned to its real heading', () => {
     const r = terrain.RUNWAY;
-    // The pitch's ends as surveyed (52.277766,0.192194 and 52.277709,0.192599).
+    // The pitch's ends as surveyed (52.277766,0.192194 and 52.277709,0.192599),
+    // moved 20 m east along its line (its west end was under the trees).
+    const MOVED = 20;
     const ends = [[-27.7 + 15.8, -77.1 + 64.5], [0.1 + 15.8, -71.6 + 64.5]];
     for (const [x, z] of ends) {
       expect(inField(x, z)).toBe(true);
       const [cx, cz] = worldToClub(x, z);
-      expect(Math.abs(Math.abs(cx - r.x) - r.length / 2)).toBeLessThan(0.5);
+      expect(Math.abs(Math.abs(cx + MOVED - r.x) - r.length / 2)).toBeLessThan(0.5);
       expect(Math.abs(cz - r.z)).toBeLessThan(0.5);
     }
     const [mx, mz] = clubToWorld(r.x, r.z);

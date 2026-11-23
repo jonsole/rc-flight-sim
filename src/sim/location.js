@@ -91,17 +91,19 @@ const WATERBEACH = {
   dataUrl: () => import('../locations/waterbeach.json?url'),
   layout: {
     // The cricket pitch in the middle of the field is the runway: 28 m,
-    // heading about 101°/281°. You stand 10 m south of its middle, facing it.
-    // No pits, tables, fence or windsock: just the field.
+    // heading about 101°/281°, moved 20 m east along its line (its west end
+    // was close under the curved row of trees). You stand where you did,
+    // 10 m south of where its middle was. No pits, tables, fence or
+    // windsock: just the field.
     angle: 11.19,
-    runway: { x: 0, z: -10, length: 28.4, width: 3.05, style: 'cricket' },
+    runway: { x: 20, z: -10, length: 28.4, width: 3.05, style: 'cricket' },
     pilotPad: null,
     // The field: about 160 m east-west by 210 m north-south, long grass
     // except about 32 m round the pitch, and a mown rectangle south of it.
     field: { x0: -64.3, x1: 93.7, z0: -117.2, z1: 92.8 },
     flat: { x0: -64.3, x1: 93.7, z0: -117.2, z1: 92.8, fade: 40 },
     mown: [
-      { oval: [0, -10], rx: 14.2 + 32, rz: 1.5 + 32, p: 1.7, club: true },
+      { oval: [20, -10], rx: 14.2 + 32, rz: 1.5 + 32, p: 1.7, club: true },
       { x0: -16.7, x1: 62.7, z0: 40.9, z1: 85.5 },
     ],
     hut: null,
