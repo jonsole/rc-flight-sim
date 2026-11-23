@@ -68,8 +68,14 @@ const takeoff = {
     // Distance along pays ~1 per second at cruise, but on the ground only
     // up to the end of the strip (else racing along the grass for ever
     // pays as well as flying: the first networks learnt exactly that).
+    // In the air, only until 60 m past the end: further on, cruising at
+    // full speed (the F-22 at 3 × its estimated cruise) paid more than
+    // climbing out did. After that it's height and the climb-out bonus,
+    // with a small cost for every second not yet there.
     const onStrip = s < strip.length / 2;
-    let r = agl > 1 || onStrip ? Math.max(-0.5, (s - st.s) / env.vCruise) : 0;
+    const paid = onStrip || (agl > 1 && s < strip.length / 2 + 60);
+    let r = paid ? Math.max(-0.5, (s - st.s) / env.vCruise) : 0;
+    if (!ac.held) r -= dtc * 0.3;
     st.s = s;
     // Height gained (to 35 m) pays 10 in all, however long it takes.
     const h = Math.min(35, Math.max(0, agl));
