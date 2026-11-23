@@ -457,6 +457,7 @@ const ai = (() => {
 ai.field.blocked = () => {
   const p = aircraft.position;
   const s = ai.field.strip;
+  if (!s) return false;
   return p.y - ground.heightAt(p.x, p.z) < 5 && Math.abs(s.lateral(p)) < s.width / 2 + 4 && Math.abs(s.along(p)) < s.length / 2 + 15;
 };
 /** The wind changed enough to move their strip: they start again from the pits. */

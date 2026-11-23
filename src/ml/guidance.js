@@ -128,36 +128,38 @@ export function taxiTarget(ac, point, groundY, stop, line, out) {
 }
 
 // --- Aerobatics ---------------------------------------------------------------
-// A manoeuvre is a list of steps, each a body-rate command (rad/s: roll right,
-// pitch up, yaw left positive, as Aircraft.omega) held until the aeroplane
-// has turned so far about that axis (measured, not commanded) or for a time.
-// `pitch: 'loop'` means the pitch rate for a loop of `radius` at the speed
-// flown. needsRoll: only for models that can roll on ailerons or elevons.
+// A manoeuvre is a list of steps, each a body-rate command held until the
+// aeroplane has turned so far about that axis (measured, not commanded) or
+// for a time. Rates are fractions of what the model can do at full stick
+// (src/ml/rates.js): roll right, pitch up, yaw left positive, as
+// Aircraft.omega. `pitch: 'loop'` means the pitch rate for a loop of
+// `radius` at the speed flown (no more than 3/4 of the model's best).
+// needsRoll: only for models that can roll on ailerons or elevons.
 
 const T = 2 * Math.PI;
 export const MANEUVERS = {
   loop: { name: 'Loop', steps: [{ pitch: 'loop', until: { pitch: T } }] },
-  roll: { name: 'Aileron roll', needsRoll: true, steps: [{ roll: 3.5, until: { roll: T } }] },
-  rollLeft: { name: 'Aileron roll (left)', needsRoll: true, steps: [{ roll: -3.5, until: { roll: T } }] },
-  twoRolls: { name: 'Two rolls', needsRoll: true, steps: [{ roll: 4, until: { roll: 2 * T } }] },
-  immelmann: { name: 'Immelmann', needsRoll: true, steps: [{ pitch: 'loop', until: { pitch: T / 2 } }, { roll: 3.5, until: { roll: T / 2 } }] },
-  splitS: { name: 'Split S', needsRoll: true, minHeight: 60, steps: [{ roll: 3.5, until: { roll: T / 2 } }, { pitch: 'loop', until: { pitch: T / 2 } }] },
+  roll: { name: 'Aileron roll', needsRoll: true, steps: [{ roll: 0.6, until: { roll: T } }] },
+  rollLeft: { name: 'Aileron roll (left)', needsRoll: true, steps: [{ roll: -0.6, until: { roll: T } }] },
+  twoRolls: { name: 'Two rolls', needsRoll: true, steps: [{ roll: 0.75, until: { roll: 2 * T } }] },
+  immelmann: { name: 'Immelmann', needsRoll: true, steps: [{ pitch: 'loop', until: { pitch: T / 2 } }, { roll: 0.6, until: { roll: T / 2 } }] },
+  splitS: { name: 'Split S', needsRoll: true, minHeight: 60, steps: [{ roll: 0.6, until: { roll: T / 2 } }, { pitch: 'loop', until: { pitch: T / 2 } }] },
   cuban8: {
     name: 'Cuban eight',
     needsRoll: true,
     steps: [
       { pitch: 'loop', until: { pitch: (5 * T) / 8 } },
-      { roll: 3.5, until: { roll: T / 2 } },
+      { roll: 0.6, until: { roll: T / 2 } },
       { pitch: 'loop', until: { pitch: (3 * T) / 4 } },
-      { roll: 3.5, until: { roll: T / 2 } },
+      { roll: 0.6, until: { roll: T / 2 } },
       { pitch: 'loop', until: { pitch: T / 8 } },
     ],
   },
-  barrelRoll: { name: 'Barrel roll', needsRoll: true, steps: [{ roll: 1.6, pitch: 0.9, until: { roll: T } }] },
+  barrelRoll: { name: 'Barrel roll', needsRoll: true, steps: [{ roll: 0.3, pitch: 0.3, until: { roll: T } }] },
   invertedPass: {
     name: 'Inverted pass',
     needsRoll: true,
-    steps: [{ roll: 3.5, until: { roll: T / 2 } }, { pitch: -0.15, until: { time: 2.5 } }, { roll: 3.5, until: { roll: T / 2 } }],
+    steps: [{ roll: 0.6, until: { roll: T / 2 } }, { pitch: -0.05, until: { time: 2.5 } }, { roll: 0.6, until: { roll: T / 2 } }],
   },
 };
 
@@ -172,9 +174,11 @@ export function maneuversFor(def) {
  * `target.rates` and returns false once the manoeuvre is finished.
  */
 export class ManeuverRunner {
-  constructor(key, { radius = 14 } = {}) {
+  /** `limits`: the model's rates at full stick (src/ml/rates.js). */
+  constructor(key, limits, { radius = 14 } = {}) {
     this.m = MANEUVERS[key];
     this.key = key;
+    this.limits = limits;
     this.radius = radius;
     this.i = 0;
     this.turned = { roll: 0, pitch: 0, yaw: 0, time: 0 };
@@ -201,10 +205,11 @@ export class ManeuverRunner {
       if (this.done) return false;
       return this.update(ac, 0);
     }
-    const loopRate = Math.min(3, Math.max(1, ac.airspeed / this.radius));
-    this.rates.roll = step.roll ?? 0;
-    this.rates.pitch = step.pitch === 'loop' ? loopRate : step.pitch ?? 0;
-    this.rates.yaw = step.yaw ?? 0;
+    const L = this.limits;
+    const loopRate = Math.min(0.75 * L.pitch, Math.max(1, ac.airspeed / this.radius));
+    this.rates.roll = (step.roll ?? 0) * L.roll;
+    this.rates.pitch = step.pitch === 'loop' ? loopRate : (step.pitch ?? 0) * L.pitch;
+    this.rates.yaw = (step.yaw ?? 0) * L.yaw;
     return true;
   }
 }

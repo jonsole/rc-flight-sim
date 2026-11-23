@@ -52,10 +52,11 @@ wind.directionDeg = o.windDir;
 const [cx, cz] = clubToWorld(RUNWAY.x, RUNWAY.z);
 const [px, pz] = pilotSpot();
 const strip = chooseStrip({ windFromDeg: o.windDir, windSpeed: o.wind, ground, obstacles, pilot: { x: px, z: pz } });
-const heading = strip.heading;
+const heading = strip?.heading ?? 0;
 if (o.stripOnly) {
-  const compass = (Math.atan2(strip.dir.x, -strip.dir.z) * 180) / Math.PI;
-  console.log(`${o.field}, wind ${o.wind} m/s from ${o.windDir}°: ${strip.kind}, ${strip.length} m, centre ${strip.x.toFixed(0)},${strip.z.toFixed(0)}, rolling toward ${Math.round((compass + 360) % 360)}°`);
+  const compass = strip ? (Math.atan2(strip.dir.x, -strip.dir.z) * 180) / Math.PI : 0;
+  if (!strip) console.log(`${o.field}, wind ${o.wind} m/s from ${o.windDir}°: nowhere clear (they fly round)`);
+  else console.log(`${o.field}, wind ${o.wind} m/s from ${o.windDir}°: ${strip.kind}, ${strip.length} m, centre ${strip.x.toFixed(0)},${strip.z.toFixed(0)}, rolling toward ${Math.round((compass + 360) % 360)}°`);
   process.exit(0);
 }
 const field = { x: cx, z: cz, radius: 150, strip, pilot: { x: px, z: pz }, runway: { owner: null } };
@@ -63,7 +64,7 @@ const rng = makeRng(o.seed);
 const pilots = ids.map((id, i) => new AiPilot(getEntry(id).def, skillsFor(id), { ground, wind, obstacles }, field, rng, { id: `ai${i + 1}`, slot: i, airborne: o.airborne }));
 
 const log = (...a) => o.quiet || console.log(...a);
-log(`${ids.join(', ')} | ${strip.kind} strip ${strip.length} m heading ${((heading * 180) / Math.PI).toFixed(0)}° | wind ${o.wind} m/s from ${o.windDir}° | circuits: ${pilots.map((p) => p.circuits).join(', ')}`);
+log(`${ids.join(', ')} | ${strip?.kind ?? 'no'} strip ${strip?.length ?? 0} m heading ${((heading * 180) / Math.PI).toFixed(0)}° | wind ${o.wind} m/s from ${o.windDir}° | circuits: ${pilots.map((p) => p.circuits).join(', ')}`);
 const dt = 1 / 60;
 const last = pilots.map(() => '');
 const crashes = pilots.map(() => 0);
@@ -79,12 +80,12 @@ for (let t = 0; t < o.minutes * 60; t += dt) {
     }
     if (ac.crashed && !p._logged) {
       p._logged = true;
-      log(`${fmt(t)}  ai${i + 1}  crash: ${ac.crashReason} in ${p.status} at ${ac.position.y.toFixed(1)} m, ${ac.airspeed.toFixed(1)} m/s`);
+      log(`${fmt(t)}  ai${i + 1}  crash: ${ac.crashReason} in ${p.status} at ${(ac.position.y - ground.heightAt(ac.position.x, ac.position.z)).toFixed(1)} m up, s ${(strip?.along(ac.position) ?? 0).toFixed(0)} side ${(strip?.lateral(ac.position) ?? 0).toFixed(0)} (aim ${(strip?.aimS ?? 0).toFixed(0)}), ${ac.airspeed.toFixed(1)} m/s`);
     } else if (!ac.crashed) p._logged = false;
     if (p.status !== last[i]) {
       last[i] = p.status;
       const agl = ac.position.y - ground.heightAt(ac.position.x, ac.position.z);
-      log(`${fmt(t)}  ai${i + 1}  ${p.status.padEnd(28)} s ${strip.along(ac.position).toFixed(0).padStart(5)}  side ${strip.lateral(ac.position).toFixed(0).padStart(5)}  agl ${agl.toFixed(1).padStart(5)}  ${ac.airspeed.toFixed(1)} m/s`);
+      log(`${fmt(t)}  ai${i + 1}  ${p.status.padEnd(28)} s ${(strip?.along(ac.position) ?? 0).toFixed(0).padStart(5)}  side ${(strip?.lateral(ac.position) ?? 0).toFixed(0).padStart(5)}  agl ${agl.toFixed(1).padStart(5)}  ${ac.airspeed.toFixed(1)} m/s`);
     }
   });
 }

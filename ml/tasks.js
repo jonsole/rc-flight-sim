@@ -6,6 +6,7 @@
 // plus bonuses for the moments that matter (a gentle touchdown, stopping
 // where it should) and penalties for crashing.
 import { Vector3, Quaternion } from 'three';
+import { rateLimits } from '../src/ml/rates.js';
 import {
   Strip, climbProfile, takeoffTarget, glideHeight, landingTarget, taxiTarget, TAXI_SPEED, GLIDE, LIGHT_WIND,
 } from '../src/ml/guidance.js';
@@ -134,7 +135,11 @@ const land = {
       r += (0.5 * (sc - (st.sPrev ?? sc))) / env.vApproach;
       st.sPrev = sc;
       r -= dtc * 0.5 * clamp01(Math.abs(lat) / 15);
-      if (s < strip.aimS - 15) r -= dtc * 0.5 * clamp01(Math.abs(agl - glideHeight(strip, s)) / 8);
+      // Below the glide path costs most: at a real field there are trees under it.
+      if (s < strip.aimS - 15) {
+        const e = agl - glideHeight(strip, s);
+        r -= dtc * (e < 0 ? 1.5 * clamp01(-e / 4) : 0.5 * clamp01(e / 8));
+      }
       if (agl > 3) r -= dtc * 0.3 * ac.wingStall;
       if (touching) {
         st.down = true;
@@ -203,11 +208,12 @@ const taxi = {
     st.maxSpeed = Math.max(st.maxSpeed, gs);
     let r = (st.d - d) / TAXI_SPEED; // ~1 per second at taxi speed
     st.d = d;
-    r -= dtc * 2 * Math.max(0, gs - 4) / 2;
+    r -= dtc * Math.max(0, gs - 4);
     if (!ac.onGround) r -= dtc * 3;
     if (scraping(ac)) r -= dtc * 3;
     const last = st.i === st.points.length - 1;
     if (ac.crashed) return { reward: r - 10, done: true, reason: ac.crashReason };
+    if (gs > 7) return { reward: r - 5, done: true, reason: 'too fast' };
     if (!last && d < 3) {
       st.i++;
       st.reached++;
@@ -237,7 +243,7 @@ const aero = {
     ac.resetInAir(new Vector3(0, 70 + rng() * 30, 0), heading, env.vCruise * (1.3 + 0.5 * rng()));
     ac.throttleActual = 0.6 + 0.4 * rng();
     const canRoll = env.def.surfaces.some((s) => s.controls.some((c) => c.input === 'roll') && !s.controls.some((c) => c.input === 'yaw'));
-    env.st = { rng, canRoll, until: 0, rates: { roll: 0, pitch: 0, yaw: 0 }, err: 0, n: 0, minAgl: Infinity };
+    env.st = { rng, canRoll, limits: rateLimits(env.def, env.vCruise), until: 0, rates: { roll: 0, pitch: 0, yaw: 0 }, err: 0, n: 0, minAgl: Infinity };
   },
   target(env) {
     const ac = env.ac;
@@ -247,9 +253,11 @@ const aero = {
       const kinds = st.canRoll ? ['loop', 'loop', 'roll', 'roll', 'barrel', 'push', 'hold'] : ['loop', 'loop', 'push', 'hold'];
       const k = kinds[Math.floor(rng() * kinds.length)];
       const sign = rng() < 0.5 ? -1 : 1;
+      // Fractions of what this model can do at full stick (src/ml/rates.js).
       const R = st.rates;
-      R.roll = k === 'roll' ? sign * (2 + 3 * rng()) : k === 'barrel' ? sign * (1 + rng()) : 0;
-      R.pitch = k === 'loop' ? 1 + 1.5 * rng() : k === 'barrel' ? 0.5 + 0.7 * rng() : k === 'push' ? -(0.3 + 0.7 * rng()) : 0;
+      const L = st.limits;
+      R.roll = (k === 'roll' ? sign * (0.35 + 0.45 * rng()) : k === 'barrel' ? sign * (0.2 + 0.2 * rng()) : 0) * L.roll;
+      R.pitch = (k === 'loop' ? 0.3 + 0.45 * rng() : k === 'barrel' ? 0.2 + 0.2 * rng() : k === 'push' ? -(0.1 + 0.2 * rng()) : 0) * L.pitch;
       R.yaw = 0;
       st.until = env.t + 0.6 + 1.9 * rng();
     }
@@ -274,7 +282,10 @@ const aero = {
     const er = Math.abs(w.y - R.yaw);
     st.err += ep + eq + er;
     st.n++;
-    let r = dtc * (1 - 0.6 * clamp01(ep / 2) - 0.6 * clamp01(eq / 1.5) - 0.3 * clamp01(er / 1));
+    // Smooth in the error (no cap), scaled to what the model can do, so
+    // a little better always scores a little more.
+    const L = st.limits;
+    let r = dtc * (1 - 0.45 * Math.tanh((2 * ep) / L.roll) - 0.45 * Math.tanh((2 * eq) / L.pitch) - 0.1 * Math.tanh(er));
     if (ac.airspeed < 0.9 * env.vCruise) r -= dtc * 0.5;
     const agl = ac.position.y - env.groundY(ac.position.x, ac.position.z);
     st.minAgl = Math.min(st.minAgl, agl);
@@ -297,7 +308,9 @@ export const TASK_WIND = { takeoff: 8, land: 8, taxi: 6, aero: 6 };
  * Starting throttle of a fresh network (bias of its throttle output, before
  * tanh). On grass a model needs well over half throttle to start rolling; a
  * network that starts at half sits still, and every variation of it too, so
- * training learns nothing. Take-off starts near full, taxiing a bit above half.
+ * training learns nothing. Take-off starts near full. (Not taxiing: open, it
+ * races off at take-off speed and noses over; at half it rolls on a runway
+ * and sits still on long grass, and that mix is enough to learn from.)
  */
-export const TASK_THROTTLE_BIAS = { takeoff: 1.2, taxi: 0.5 };
+export const TASK_THROTTLE_BIAS = { takeoff: 1.2 };
 export { GLIDE };

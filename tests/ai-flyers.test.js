@@ -56,7 +56,7 @@ describe('AI flyers', () => {
   // circuits (and aerobatics), land, taxi back, and again.
   for (const id of AI_AIRCRAFT) {
     const def = getAircraft(id).def;
-    const full = ['takeoff', 'land', ...(def.handLaunch ? [] : ['taxi'])].every((s) => skillsOf(id).includes(s));
+    const full = ['takeoff', 'land'].every((s) => skillsOf(id).includes(s));
     it.runIf(full)(`${id}: flies a day of circuits at the club field: takes off and lands without crashing`, () => {
       const [x, z] = clubToWorld(RUNWAY.x, RUNWAY.z);
       const [px, pz] = pilotSpot();
@@ -84,7 +84,7 @@ describe('aerobatic manoeuvres', () => {
   });
 
   it('steps through a manoeuvre as the aeroplane turns', () => {
-    const r = new ManeuverRunner('immelmann');
+    const r = new ManeuverRunner("immelmann", { roll: 6, pitch: 3, yaw: 2.5 });
     const ac = { airspeed: 15, omega: { x: 0, y: 0, z: 1.5 } };
     let t = 0;
     while (r.update(ac, 0.02) && r.i === 0) t += 0.02;

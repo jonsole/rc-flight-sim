@@ -23,6 +23,7 @@ import { Vector3 } from 'three';
 import { Aircraft } from '../sim/aircraft.js';
 import { Policy, toControls } from './policy.js';
 import { observe, OBS_NAMES, OBS_SIZE, resolveInputs, selectInputs } from './observe.js';
+import { rateLimits } from './rates.js';
 import {
   takeoffTarget, landingTarget, taxiTarget, glideHeight, ManeuverRunner, maneuversFor, MANEUVERS,
 } from './guidance.js';
@@ -87,8 +88,10 @@ export class AiPilot {
     this.vCruise = cruiseSpeed(def);
     this.hand = !!def.handLaunch;
     this.maneuvers = this.skills.aero ? maneuversFor(def) : [];
-    // A full day needs a strip, take-off and landing, and taxiing unless hand-launched.
-    this.circuits = !!(field.strip && this.skills.takeoff && this.skills.land && (this.hand || this.skills.taxi));
+    // A full day needs a strip, take-off and landing. Without taxiing (or
+    // hand-launched), it's carried out to the start and back to the pits.
+    this.canCircuit = !!(this.skills.takeoff && this.skills.land);
+    this.carried = this.hand || !this.skills.taxi;
     this.full = new Float64Array(OBS_SIZE);
     this.act = new Float64Array(4);
     this.prev = new Float64Array(4);
@@ -127,6 +130,11 @@ export class AiPilot {
     this.prev.fill(0);
     this.nextControl = 0;
     this.downFor = 0;
+  }
+
+  /** A full day needs a strip (none when nowhere at the field is clear for this wind). */
+  get circuits() {
+    return this.canCircuit && !!this.field.strip;
   }
 
   /** What it's doing, for labels and debugging. */
@@ -189,6 +197,29 @@ export class AiPilot {
     t.line = null;
     t.rates = null;
     return d;
+  }
+
+  /**
+   * "fly" target to follow the strip's centreline (final, low pass): head in
+   * at an angle that shrinks as it closes (2° per metre off, at most 40°),
+   * judged on where it will be in 3 s (it turns slowly) so it turns onto the
+   * line without swinging through it, plus a slowly growing correction for
+   * an offset that persists (the fly skill tends to hold a few degrees off).
+   */
+  #followLine(lat, y, speed) {
+    const strip = this.field.strip;
+    const d = strip.dir;
+    const v = this.ac.velocity;
+    const latSoon = lat + 3 * (v.x * strip.right.x + v.z * strip.right.z);
+    this.latSum = Math.max(-300, Math.min(300, (this.latSum ?? 0) + lat * CONTROL_DT));
+    const cut = Math.max(-40 * deg, Math.min(40 * deg, (-2 * latSoon - 0.05 * this.latSum) * deg));
+    const c = Math.cos(cut);
+    const s = Math.sin(cut);
+    // The strip direction turned by `cut` (towards the line).
+    const hx = d.x * c - d.z * s;
+    const hz = d.z * c + d.x * s;
+    const p = this.ac.position;
+    this.#flyTo(p.x + hx * CARROT, p.z + hz * CARROT, y, speed);
   }
 
   #wander() {
@@ -257,6 +288,7 @@ export class AiPilot {
   #goto(phase, extra = {}) {
     this.phase = phase;
     this.legT = 0;
+    this.latSum = 0;
     Object.assign(this, extra);
   }
 
@@ -287,6 +319,16 @@ export class AiPilot {
           if (!this.#claim()) return null;
           this.#goto('takeoff');
           return this.#plan(0);
+        }
+        if (this.carried) {
+          // Carried out to the start of the strip once it's free.
+          if (!this.#claim()) return null;
+          this.#fresh();
+          const p = strip.point(strip.startS, 0);
+          this.ac.resetOnGround(p.x, p.z, strip.heading);
+          this.ac.step(1e-6);
+          this.#goto('takeoff');
+          return null;
         }
         this.#goto('taxiOut', { taxiPts: [this.#pt(strip.startS - 15, 0, 0)], taxiStop: true });
         return this.#plan(0);
@@ -368,7 +410,7 @@ export class AiPilot {
         const minH = MANEUVERS[planned]?.minHeight ?? 50;
         if (planned && sNow < L / 2 && agl > minH && ac.airspeed > 1.25 * this.vCruise && along > 0.9) {
           this.aeroPlanned = null;
-          this.runner = new ManeuverRunner(planned);
+          this.runner = new ManeuverRunner(planned, rateLimits(this.def, this.vCruise));
           this.#goto('aerobatics');
           return this.#plan(0);
         }
@@ -398,9 +440,10 @@ export class AiPilot {
         return 'aero';
       }
       case 'base': {
-        const b = this.#pt(strip.aimS - 165, 30, 22);
+        // To a point nearly on the centreline well out, so final starts lined up.
+        const b = this.#pt(strip.aimS - 190, 8, 24);
         this.#flyTo(b.x, b.z, b.y, speed);
-        if (Math.hypot(b.x - ac.position.x, b.z - ac.position.z) < REACHED || this.legT > 40) {
+        if (Math.hypot(b.x - ac.position.x, b.z - ac.position.z) < 20 || this.legT > 40) {
           // Landing this time (if the runway's free), or round again.
           const landing = this.laps <= 0 && this.#claim();
           this.#goto(landing ? 'final' : 'lowPass');
@@ -410,21 +453,29 @@ export class AiPilot {
       case 'final': {
         // Turning onto the centreline (fly skill, the point 150 m ahead on
         // it), then the landing skill once lined up, as it trained.
-        const ahead = strip.point(sNow + CARROT, 0);
-        const here = strip.point(sNow + 20, 0);
-        this.#flyTo(ahead.x, ahead.z, this.groundY(here.x, here.z) + Math.max(glideHeight(strip, sNow + 20), 10), 1.15 * this.vCruise);
+        const here = strip.point(sNow, 0);
+        // A little above the glide path (the landing skill takes it from there).
+        this.#followLine(lat, this.groundY(here.x, here.z) + Math.max(glideHeight(strip, sNow) + 2, 10), 1.15 * this.vCruise);
+        // Sagging below the glide path (trees under it at a real field): go around.
+        if (agl < glideHeight(strip, sNow) - 3 && sNow < strip.aimS - 30) {
+          this.#goAround();
+          return this.#plan(0);
+        }
         const align = Math.abs(this.#alignError());
-        if (Math.abs(lat) < 12 && align < 20 * deg && sNow > strip.aimS - 160) {
+        // (The landing skill trained from 90-160 m out: it takes over at about 110.)
+        if (Math.abs(lat) < 12 && align < 20 * deg && sNow > strip.aimS - 115) {
           this.#goto('landing', { down: false });
           return this.#plan(0);
         }
-        if (sNow > strip.aimS - 80 || this.legT > 45) this.#goAround();
+        if (sNow > strip.aimS - 70 || this.legT > 45) this.#goAround();
         return 'fly';
       }
       case 'landing': {
         if (ac.onGround) this.down = true;
-        // Going wrong: off the side, or long, or still high over the far end.
-        if (!this.down && (Math.abs(lat) > strip.width / 2 + 12 || sNow > L / 2 - 10 || (agl > 4 && this.field.blocked?.()))) {
+        // Going wrong: off the side, low on the approach (trees!), long, or
+        // still up over the far end, or someone on the strip.
+        const low = sNow < strip.aimS - 30 && agl < glideHeight(strip, sNow) - 3;
+        if (!this.down && (Math.abs(lat) > strip.width / 2 + 12 || low || sNow > L / 2 - 10 || (agl > 4 && this.field.blocked?.()))) {
           this.#goAround();
           return this.#plan(0);
         }
@@ -432,7 +483,7 @@ export class AiPilot {
         const gs = Math.hypot(ac.velocity.x, ac.velocity.z);
         if (this.down && gs < 0.5) {
           this.landings++;
-          if (this.hand) {
+          if (this.carried) {
             // Walk out and pick it up.
             this.#release();
             this.#goto('pickUp', { wait: RESPAWN });
@@ -454,8 +505,14 @@ export class AiPilot {
       case 'lowPass': {
         // Along the strip at 20 m (a point 150 m ahead on the centreline,
         // so it turns onto it), then round again.
-        const goal = this.#pt(sNow + CARROT, 0, 20);
-        this.#flyTo(goal.x, goal.z, goal.y, speed);
+        // Down the glide path (the strip was checked clear under it), then 20 m along it.
+        const want = Math.max(20, glideHeight(strip, sNow));
+        const here = this.#pt(sNow, 0, want);
+        this.#followLine(lat, here.y, speed);
+        if (agl < want - 4 && sNow < strip.aimS) {
+          this.#goAround();
+          return this.#plan(0);
+        }
         if (sNow > L / 2 + 10 || this.legT > 50) this.#goto('crosswind');
         return 'fly';
       }
