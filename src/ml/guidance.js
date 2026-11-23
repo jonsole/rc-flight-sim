@@ -12,6 +12,9 @@
  * wind), a horizontal unit vector { x, z }.
  */
 export class Strip {
+  // Optional: aimAt (s of the touchdown point, default a quarter of the way
+  // along) and glide (approach angle, default GLIDE): a strip with trees
+  // short of it is landed on further along and a little more steeply.
   constructor({ x, z, dir, length, width }) {
     this.x = x;
     this.z = z;
@@ -46,7 +49,7 @@ export class Strip {
 
   /** Where landings aim to touch down (a quarter of the way along, at least 10 m in). */
   get aimS() {
-    return -this.length / 2 + Math.max(10, this.length * 0.25);
+    return this.aimAt ?? -this.length / 2 + Math.max(10, this.length * 0.25);
   }
 
   /** The aeroplane's heading (Aircraft.resetOnGround sense) to roll along it. */
@@ -89,7 +92,7 @@ export const GLIDE = (7 * Math.PI) / 180; // approach angle
 
 /** Height above the strip of the glide path at `s` along it (0 past the aim point). */
 export function glideHeight(strip, s) {
-  return Math.max(0, (strip.aimS - s) * Math.tan(GLIDE));
+  return Math.max(0, (strip.aimS - s) * Math.tan(strip.glide ?? GLIDE));
 }
 
 /**

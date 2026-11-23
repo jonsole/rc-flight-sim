@@ -19,8 +19,12 @@ const loaders = Object.fromEntries(Object.entries(POLICY_FILES).map(([path, load
 
 export const SKILLS = ['takeoff', 'land', 'taxi', 'aero'];
 
-/** Aircraft ids that have a trained policy. */
-export const AI_AIRCRAFT = Object.keys(loaders).filter((k) => !k.includes('.')).sort();
+/**
+ * Aircraft ids that can be AI flyers: a "fly" policy, and take-off and
+ * landing (every flight ends in a landing, before the battery is flat; the
+ * S.E.5a and Mini F-22 can't land yet, so they aren't offered).
+ */
+export const AI_AIRCRAFT = Object.keys(loaders).filter((k) => !k.includes('.') && loaders[`${k}.takeoff`] && loaders[`${k}.land`]).sort();
 
 /** The skills an aircraft has policies for (besides flying from point to point). */
 export function skillsOf(id) {

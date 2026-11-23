@@ -41,7 +41,7 @@ const { getEntry, aircraftIds } = await import('./aircraft.js');
 const DIR = fileURLToPath(new URL('../src/ml/policies/', import.meta.url));
 const read = (name) => (existsSync(`${DIR}${name}.json`) ? JSON.parse(readFileSync(`${DIR}${name}.json`, 'utf8')) : null);
 const skillsFor = (id) => ({ fly: read(id), takeoff: read(`${id}.takeoff`), land: read(`${id}.land`), taxi: read(`${id}.taxi`), aero: read(`${id}.aero`) });
-const withPolicies = aircraftIds().filter((id) => read(id));
+const withPolicies = aircraftIds().filter((id) => read(id) && read(`${id}.takeoff`) && read(`${id}.land`)); // (as the game's AI_AIRCRAFT)
 const ids = o.aircraft === 'mix' ? Array.from({ length: o.flyers }, (_, i) => withPolicies[i % withPolicies.length]) : Array(o.flyers).fill(o.aircraft);
 
 const obstacles = new Obstacles();
@@ -75,6 +75,7 @@ for (let t = 0; t < o.minutes * 60; t += dt) {
   pilots.forEach((p, i) => {
     p.update(dt);
     const ac = p.ac;
+    if (!ac.onGround) p.minCharge = Math.min(p.minCharge ?? 1, p.charge);
     const dist = Math.hypot(ac.position.x - px, ac.position.z - pz);
     if (dist > farthest[i]) {
       farthest[i] = dist;
@@ -103,4 +104,4 @@ for (let t = 0; t < o.minutes * 60; t += dt) {
   });
 }
 console.log('\nai    aircraft                  flights  landings  crashes  furthest  manoeuvres');
-pilots.forEach((p, i) => console.log(`ai${i + 1}   ${ids[i].padEnd(24)}  ${String(p.flights).padStart(7)}  ${String(p.landings).padStart(8)}  ${String(p.crashes + (p.ac.crashed ? 1 : 0)).padStart(7)}  ${String(Math.round(farthest[i])).padStart(6)} m (${p._farPhase})  ${p.done.join(' ')}`));
+pilots.forEach((p, i) => console.log(`ai${i + 1}   ${ids[i].padEnd(24)}  ${String(p.flights).padStart(7)}  ${String(p.landings).padStart(8)}  ${String(p.crashes + (p.ac.crashed ? 1 : 0)).padStart(7)}  ${String(Math.round(farthest[i])).padStart(6)} m (${p._farPhase})  charge ${Math.round(p.charge * 100)}%${p.minCharge != null ? `, lowest ${Math.round(p.minCharge * 100)}%` : ''}  ${p.done.join(' ')}`));

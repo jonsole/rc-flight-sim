@@ -187,8 +187,15 @@ In the game `src/ml/aiPilot.js` plans the flight and picks the skill:
   Immelmann, split S, Cuban eight, barrel roll, inverted pass (no rolls for
   rudder-only models). Going around: off the centreline, low on the
   approach, long, or you on the strip. One AI on the runway at a time.
-- **With only `hold`**: wandering between random points over the field at
-  40–70 m.
+- Every flight lands before the battery is flat: below 35% charge no more
+  aerobatics or extra laps, in on the next circuit (where the take-off strip
+  has trees on its approaches, on the landing strip found for that).
+  Low passes come down the glide path to 3.5 m along the strip (belly-
+  landers 20 m) and climb away. AI flyers take off from their own lane, 12 m
+  beside the runway, so your plane sitting on it doesn't hold them up.
+- **With only `hold`** (no take-off and landing): not offered as an AI
+  flyer, since it couldn't land before its battery went flat (the S.E.5a
+  and Mini F-22 for now).
 
 In wind over 70% of a model's cruise speed it doesn't fly circuits (a light
 model hardly moves into wind on final, sinks below the glide path and can't

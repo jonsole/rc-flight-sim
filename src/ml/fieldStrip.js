@@ -30,6 +30,7 @@ export function windVector(fromDeg) {
 }
 
 const RUNWAY_USE = 100; // m: the most of the runway they use (the part in front of the pilots)
+const LANE = 12; // m: their lane is this far beside the runway's centreline, away from the pilots
 
 /**
  * The runway as a strip, rolling from the end that faces into the wind (or
@@ -46,7 +47,13 @@ export function runwayStrip(windFromDeg, otherEnd = false, pilot = null) {
   // Centred on the point of the runway opposite the pilots (within its ends).
   const room = Math.max(0, (Math.max(RUNWAY.length, 90) - length) / 2);
   const s = pilot ? Math.max(-room, Math.min(room, (pilot.x - rx) * dir.x + (pilot.z - rz) * dir.z)) : 0;
-  return new Strip({ x: rx + dir.x * s, z: rz + dir.z * s, dir, length, width: Math.max(RUNWAY.width, 14) });
+  // Their own lane, alongside the runway and LANE further from the pilots:
+  // you start on the runway itself, and they waited for ever for you to
+  // clear it.
+  const right = { x: -dir.z, z: dir.x };
+  const pl = pilot ? (pilot.x - rx) * right.x + (pilot.z - rz) * right.z : -1;
+  const l = pl > 0 ? -LANE : LANE;
+  return new Strip({ x: rx + dir.x * s + right.x * l, z: rz + dir.z * s + right.z * l, dir, length, width: 14 });
 }
 
 /**
@@ -213,8 +220,10 @@ export function chooseStrip({ windFromDeg, windSpeed, ground, obstacles, pilot }
   const ok = (st) => placeOk(st) && stripClear(st, ground, obstacles) && baseLegClear(st, circuitSide(st, pilot), ground, obstacles);
   if ((light || headwind(runway) >= Math.cos(30 * deg)) && !beyondFence(runway, pilot, obstacles) && stripClear(runway, ground, obstacles) && baseLegClear(runway, circuitSide(runway, pilot), ground, obstacles)) return runway;
   // Strips by the runway, away from the pilots so they don't run over their heads.
-  const ax = runway.x - (pilot?.x ?? runway.x);
-  const az = runway.z - (pilot?.z ?? runway.z);
+  // (From the runway itself, not the AI lane beside it.)
+  const [cx0, cz0] = clubToWorld(RUNWAY.x, RUNWAY.z);
+  const ax = cx0 - (pilot?.x ?? cx0);
+  const az = cz0 - (pilot?.z ?? cz0);
   const an = Math.hypot(ax, az) || 1;
   const away = { x: ax / an, z: az / an };
   const into = Math.atan2(-w.z, -w.x); // the way to roll
@@ -223,8 +232,8 @@ export function chooseStrip({ windFromDeg, windSpeed, ground, obstacles, pilot }
   const places = [];
   for (const shift of [0, 20, 40, 60, 80, 100, 120]) {
     for (const slide of [0, -30, 30, -60, 60, -90, 90]) {
-      const x = runway.x + away.x * shift + runway.dir.x * slide;
-      const z = runway.z + away.z * shift + runway.dir.z * slide;
+      const x = cx0 + away.x * shift + runway.dir.x * slide;
+      const z = cz0 + away.z * shift + runway.dir.z * slide;
       places.push({ x, z, d: pilot ? Math.hypot(x - pilot.x, z - pilot.z) : Math.hypot(shift, slide) });
     }
   }
@@ -255,7 +264,7 @@ export function chooseStrip({ windFromDeg, windSpeed, ground, obstacles, pilot }
     const other = runwayStrip(windFromDeg, true, pilot);
     other.kind = 'runway';
     if (!beyondFence(other, pilot, obstacles) && stripClear(other, ground, obstacles) && baseLegClear(other, circuitSide(other, pilot), ground, obstacles)) return other;
-    const any = search([45, -45, 60, -60, 75, -75, 90, -90, 120, -120, 150, -150, 180]);
+    const any = search(EVERY_WAY);
     if (any) {
       any.kind = 'clear way';
       return any;
@@ -291,10 +300,21 @@ export function chooseStrip({ windFromDeg, windSpeed, ground, obstacles, pilot }
   if (launch) {
     launch.kind = 'take-off only';
     launch.landing = false;
+    // Somewhere to land when the battery runs low: a strip near the pilots
+    // with a clear approach, any way the wind allows (no more than 3 m/s
+    // across it and 1.5 m/s behind).
+    launch.landAt = search(EVERY_WAY, (st) => {
+      const c = headwind(st);
+      return windSpeed * Math.sqrt(Math.max(0, 1 - c * c)) <= 3 && -windSpeed * c <= 1.5 && ok(st);
+    });
+    if (launch.landAt) launch.landAt.kind = 'landing (battery low)';
     return launch;
   }
   return null;
 }
+
+/** Turns from into wind, every 10° round (after the first 30° either side). */
+const EVERY_WAY = [40, -40, 50, -50, 60, -60, 70, -70, 80, -80, 90, -90, 100, -100, 110, -110, 120, -120, 130, -130, 140, -140, 150, -150, 160, -160, 170, -170, 180];
 
 /** Same strip? (Close enough that the AI flyers needn't start over.) */
 export function sameStrip(a, b) {
