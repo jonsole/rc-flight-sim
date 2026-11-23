@@ -21,7 +21,7 @@ const STRIP_LENGTH = 90;
 const STRIP_WIDTH = 14;
 const BEYOND = 150; // m checked beyond each end
 const PILOT_CLEAR = 25; // m: the strip's line must pass at least this far from the pilots
-const NEAR = 110; // m: strips centred further than this from the pilots only if nothing nearer is clear
+const NEAR = 90; // m: no strip centred further than this from the pilots (they take off near you)
 
 /** Wind (compass degrees it blows FROM, as settings and Wind) to the way the air moves { x, z }. */
 export function windVector(fromDeg) {
@@ -58,7 +58,7 @@ export function runwayStrip(windFromDeg, otherEnd = false, pilot = null) {
  * up to 12 m off the centreline); the ground roll a metre up; and the ground
  * along the strip fairly level.
  */
-export function stripClear(strip, ground, obstacles) {
+export function stripClear(strip, ground, obstacles, landing = true) {
   const near = [];
   const hit = (x, y, z) => {
     for (const s of obstacles.near(x, z, 2, near)) if (fatHit(s, x, y, z) || Obstacles.test(s, x, y, z)) return true;
@@ -69,10 +69,16 @@ export function stripClear(strip, ground, obstacles) {
   // From where final starts (the base turn, 115 m before the aim point) to
   // the end of the climb-out; every metre on the strip (fences and trunks
   // are thin), every 3 beyond.
-  for (let s = Math.min(-L - BEYOND, strip.aimS - 125); s <= L + BEYOND; s += Math.abs(s) <= L + 3 ? 1 : 3) {
+  // (Take-off only: from the start of the roll.)
+  const from = landing ? Math.min(-L - BEYOND, strip.aimS - 125) : strip.startS - 3;
+  for (let s = from; s <= L + BEYOND; s += Math.abs(s) <= L + 3 ? 1 : 3) {
     const on = Math.abs(s) <= L;
     const bands = [];
-    if (s <= strip.aimS) bands.push(glideHeight(strip, s)); // landing
+    if (landing && s <= strip.aimS) bands.push(glideHeight(strip, s)); // landing
+    // Going around: from 3 m up with 25 m of strip left, climbing 1 in 4
+    // (as steeply as a take-off, but from lower and further along: the
+    // AeroScout hit trees past the end at Impington going around).
+    if (landing && s >= L - 25) bands.push(3 + (s - L + 25) / 4);
     if (s >= strip.startS) bands.push(climbProfile(strip, s)); // taking off
     for (const l of on ? [-6, -4, -3, -2, -1, 0, 1, 2, 3, 4, 6] : [-15, -10, -5, 0, 5, 10, 15]) {
       const p = strip.point(s, l);
@@ -81,6 +87,12 @@ export function stripClear(strip, ground, obstacles) {
       if (on && Math.abs(l) <= 3 && (hit(p.x, gy + 0.3, p.z) || hit(p.x, gy + 1, p.z))) return false; // the ground roll
       for (const h of bands) {
         for (let y = Math.max(1, h - 4); y <= h + 3; y += 2) if (hit(p.x, gy + y, p.z)) return false;
+      }
+      // An overrun: the first 40 m past the far end clear from the ground
+      // up (a late go-around or a slow climb-out passes low over it).
+      if (s > L && s < L + 40) {
+        const top = climbProfile(strip, s) + 3;
+        for (let y = 1; y <= top; y += 2) if (hit(p.x, gy + y, p.z)) return false;
       }
     }
   }
@@ -148,6 +160,29 @@ export function baseLegClear(strip, side, ground, obstacles) {
   return true;
 }
 
+/** Do segments a-b and c-d (each [x, z]) cross? */
+function crosses(a, b, c, d) {
+  const o = (p, q, r) => Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+  return o(a, b, c) !== o(a, b, d) && o(c, d, a) !== o(c, d, b);
+}
+
+/**
+ * Is any part of the strip across a site fence from the pilots (the far side
+ * of the field)? (Not the club field's safety fence, which is meant to be
+ * between the pilots and the runway.)
+ */
+function beyondFence(strip, pilot, obstacles) {
+  if (!pilot || !obstacles.fences?.length) return false;
+  const P = [pilot.x, pilot.z];
+  const ends = [strip.point(-strip.length / 2), strip.point(0), strip.point(strip.length / 2)].map((p) => [p.x, p.z]);
+  for (const f of obstacles.fences) {
+    for (let i = 1; i < f.path.length; i++) {
+      for (const e of ends) if (crosses(P, e, f.path[i - 1], f.path[i])) return true;
+    }
+  }
+  return false;
+}
+
 /** Which side the circuit is flown on: away from the pilots (as src/ml/aiPilot.js). */
 function circuitSide(strip, pilot) {
   return pilot && strip.lateral(pilot) > 0 ? -1 : 1;
@@ -165,8 +200,10 @@ export function chooseStrip({ windFromDeg, windSpeed, ground, obstacles, pilot }
   const runway = runwayStrip(windFromDeg, false, pilot);
   runway.kind = 'runway';
   if (!obstacles) return runway; // (no scenery to hit)
-  const ok = (st) => !(pilot && Math.abs(st.lateral(pilot)) < PILOT_CLEAR && Math.abs(st.along(pilot)) < st.length / 2 + BEYOND) && stripClear(st, ground, obstacles) && baseLegClear(st, circuitSide(st, pilot), ground, obstacles);
-  if ((light || headwind(runway) >= Math.cos(30 * deg)) && stripClear(runway, ground, obstacles) && baseLegClear(runway, circuitSide(runway, pilot), ground, obstacles)) return runway;
+  const near = (st) => !pilot || Math.hypot(st.x - pilot.x, st.z - pilot.z) <= NEAR;
+  const placeOk = (st) => near(st) && !beyondFence(st, pilot, obstacles) && !(pilot && Math.abs(st.lateral(pilot)) < PILOT_CLEAR && Math.abs(st.along(pilot)) < st.length / 2 + BEYOND);
+  const ok = (st) => placeOk(st) && stripClear(st, ground, obstacles) && baseLegClear(st, circuitSide(st, pilot), ground, obstacles);
+  if ((light || headwind(runway) >= Math.cos(30 * deg)) && !beyondFence(runway, pilot, obstacles) && stripClear(runway, ground, obstacles) && baseLegClear(runway, circuitSide(runway, pilot), ground, obstacles)) return runway;
   // Strips by the runway, away from the pilots so they don't run over their heads.
   const ax = runway.x - (pilot?.x ?? runway.x);
   const az = runway.z - (pilot?.z ?? runway.z);
@@ -187,14 +224,14 @@ export function chooseStrip({ windFromDeg, windSpeed, ground, obstacles, pilot }
   // Longest first: down to 60 m (the shortest the skills trained on) at a
   // small field. Near the pilots matters more than exactly into wind
   // (within 30° of it anyway).
-  const search = (turns, maxD = NEAR) => {
+  const search = (turns, test = ok) => {
     for (const length of [STRIP_LENGTH, 70, 60]) {
       for (const p of places) {
-        if (p.d > maxD) break;
+        if (p.d > NEAR) break;
         for (const turn of turns) {
           const a = into + turn * deg;
           const strip = new Strip({ x: p.x, z: p.z, dir: { x: Math.cos(a), z: Math.sin(a) }, length, width: STRIP_WIDTH });
-          if (ok(strip)) {
+          if (test(strip)) {
             strip.kind = 'into wind';
             return strip;
           }
@@ -203,18 +240,34 @@ export function chooseStrip({ windFromDeg, windSpeed, ground, obstacles, pilot }
     }
     return null;
   };
-  const found = search([0, 10, -10, 20, -20, 30, -30]) ?? search([0, 10, -10, 20, -20, 30, -30], Infinity);
+  const found = search([0, 10, -10, 20, -20, 30, -30]);
   if (found) return found;
   if (light) {
     // Hardly any wind: whichever way is clear.
     const other = runwayStrip(windFromDeg, true, pilot);
     other.kind = 'runway';
-    if (stripClear(other, ground, obstacles) && baseLegClear(other, circuitSide(other, pilot), ground, obstacles)) return other;
+    if (!beyondFence(other, pilot, obstacles) && stripClear(other, ground, obstacles) && baseLegClear(other, circuitSide(other, pilot), ground, obstacles)) return other;
     const any = search([45, -45, 60, -60, 75, -75, 90, -90, 120, -120, 150, -150, 180]);
     if (any) {
       any.kind = 'clear way';
       return any;
     }
+  }
+  // Nowhere near with a clear approach: take off from near the pilots
+  // anyway (the runway, either end, or a strip by it with a clear climb-out)
+  // and fly round, but don't come in to land over the trees.
+  const takeoffOnly = (st) => placeOk(st) && stripClear(st, ground, obstacles, false);
+  const other = runwayStrip(windFromDeg, true, pilot);
+  // (Within 30° of the wind unless it's light: take-off trained with no
+  // more crosswind than that, and the AeroScout flipped over in more.)
+  const intoWind = (st) => light || headwind(st) >= Math.cos(30 * deg);
+  const launch = [runway, ...(light ? [other] : [])].find((st) => intoWind(st) && !beyondFence(st, pilot, obstacles) && stripClear(st, ground, obstacles, false))
+    ?? search([0, 10, -10, 20, -20, 30, -30], takeoffOnly)
+    ?? (light ? search([45, -45, 90, -90, 135, -135, 180], takeoffOnly) : null);
+  if (launch) {
+    launch.kind = 'take-off only';
+    launch.landing = false;
+    return launch;
   }
   return null;
 }

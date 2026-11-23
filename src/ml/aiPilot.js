@@ -182,7 +182,7 @@ export class AiPilot {
    * flies round, as a pilot would leave it in the car.
    */
   get circuits() {
-    return this.canCircuit && !!this.field.strip && (this.field.windSpeed ?? 0) <= 0.7 * this.vCruise;
+    return this.canCircuit && !!this.field.strip && this.field.strip.landing !== false && (this.field.windSpeed ?? 0) <= 0.7 * this.vCruise;
   }
 
   /** Can it take off (and so start every flight on the ground)? Without landing it then just flies round. */
@@ -348,6 +348,10 @@ export class AiPilot {
     this.phase = phase;
     this.legT = 0;
     this.latSum = 0;
+    // Each take-off trained from rest, with no earlier stick movements: the
+    // networks see their own last outputs, and the taxi network's ones made
+    // the take-off network shove the nose down and flip over.
+    if (phase === 'takeoff') this.prev.fill(0);
     Object.assign(this, extra);
   }
 
@@ -416,9 +420,17 @@ export class AiPilot {
           }
           return this.#plan(0);
         }
-        // Stuck (in a hedge, or turned round in circles): give up and start over.
+        // Stuck (rough grass, a hedge, turning in circles): taxiing out, it's
+        // carried out to the start instead (parking again, it tried the
+        // same taxi for ever); taxiing in, back to the pits.
         if (this.legT > 60) {
-          this.#park();
+          if (this.phase === 'taxiOut') {
+            this.#fresh();
+            const p = strip.point(strip.startS, 0);
+            this.ac.resetOnGround(p.x, p.z, strip.heading);
+            this.ac.step(1e-6);
+            this.#goto('holding');
+          } else this.#park();
           return null;
         }
         taxiTarget(ac, pt, this.groundY, last && this.taxiStop, this.taxiLine ?? null, t);
@@ -437,8 +449,18 @@ export class AiPilot {
         const gs = Math.hypot(ac.velocity.x, ac.velocity.z);
         if ((d < 3 && gs < 0.5) || sNow > strip.startS + 2) {
           this.taxiLine = null;
+          // A fresh aircraft standing just here, as each take-off trained
+          // from: after a taxi the flight model still holds the wing's stall
+          // state, the spinning-down motor and so on, and the take-off
+          // network sat at idle.
+          // Facing along the strip (the taxi network can get to the spot
+          // turned round, and then took off backwards: idle, it sat there).
+          const p = ac.position;
+          this.#fresh();
+          this.ac.resetOnGround(p.x, p.z, strip.heading);
+          this.ac.step(1e-6);
           this.#goto('takeoff');
-          return this.#plan(0);
+          return null;
         }
         if (this.legT > 40) {
           this.#park();
@@ -557,7 +579,7 @@ export class AiPilot {
         }
         const align = Math.abs(this.#alignError());
         // (The landing skill trained from 40-160 m out: it takes over from 100.)
-        if (Math.abs(lat) < 12 && align < 20 * deg && sNow > strip.aimS - 100) {
+        if (Math.abs(lat) < 12 && align < 20 * deg && Math.abs(ac.attitude().roll) < 30 * deg && sNow > strip.aimS - 100) {
           this.#goto('landing', { down: false });
           return this.#plan(0);
         }
@@ -566,11 +588,14 @@ export class AiPilot {
       }
       case 'landing': {
         if (ac.onGround) this.down = true;
-        // Going wrong: off the side, low on the approach (trees!), long, or
-        // still up over the far end, or someone on the strip.
+        // Going wrong: off the side, low on the approach (trees!), long (not
+        // down with 25 m of strip left: landing long is fine while there's
+        // room, and going around from a float is slow to climb away), or
+        // someone on the strip. A belly-lander just lands long: it stops in a
+        // few metres, and the EasyStar climbs too slowly to go around that late.
         // (The strip is checked clear to 4 m below the glide path.)
         const low = sNow < strip.aimS - 50 && agl < glideHeight(strip, sNow) - 4;
-        if (!this.down && (Math.abs(lat) > strip.width / 2 + 12 || low || sNow > L / 2 - 10 || (agl > 4 && this.field.blocked?.()))) {
+        if (!this.down && (Math.abs(lat) > strip.width / 2 + 12 || low || (sNow > L / 2 - 25 && !this.hand) || (agl > 4 && this.field.blocked?.()))) {
           this.#goAround();
           return this.#plan(0);
         }
@@ -613,8 +638,11 @@ export class AiPilot {
       }
       case 'goAround': {
         this.#release();
-        const b = this.#pt(L / 2 + 40, 0, CIRCUIT);
-        this.#flyTo(b.x, b.z, b.y, speed);
+        // Straight ahead along the centreline, climbing (a point to reach
+        // past the end swung round behind it if it got there low, and it
+        // turned back steeply into the trees).
+        const ahead = this.#pt(sNow + 20, 0, CIRCUIT);
+        this.#followLine(lat, ahead.y, speed);
         if (agl > 25 && (sNow > L / 2 || this.legT > 30)) this.#goto('crosswind');
         return 'fly';
       }
@@ -655,6 +683,10 @@ export class AiPilot {
     const ac = this.ac;
     // Crashed (or, wandering, landed somewhere): back a few seconds later.
     const stopped = ac.onGround && ac.airspeed < 2 && !ac.held;
+    // Upside down on the ground, or still not off it long after starting
+    // the take-off: as good as crashed (it would otherwise sit there).
+    const upside = ac.onGround && 1 - 2 * (ac.orientation.x ** 2 + ac.orientation.z ** 2) < 0;
+    if (!ac.crashed && (upside || (this.phase === 'takeoff' && this.legT > 30 && ac.onGround))) ac.crash(upside ? 'Turned over' : 'Never got off the ground');
     if (ac.crashed || (this.phase === 'wander' && stopped)) {
       ac.controls.throttle = 0;
       ac.update(dt);
