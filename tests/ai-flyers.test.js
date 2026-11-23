@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { physicsGround as ground } from '../src/sim/terrain.js';
 import { Obstacles } from '../src/sim/obstacles.js';
@@ -62,6 +62,11 @@ describe('AI flyers', () => {
       const [px, pz] = pilotSpot();
       const strip = chooseStrip({ windFromDeg: 270, windSpeed: 3, ground, obstacles, pilot: { x: px, z: pz } });
       const field = { x, z, radius: 150, strip, pilot: { x: px, z: pz }, runway: { owner: null } };
+      // The wind's gusts use Math.random: seeded, and a fresh wind, so the
+      // day is the same however and with whatever else the tests run.
+      const random = vi.spyOn(Math, 'random').mockImplementation(makeRng(21));
+      const wind = new Wind();
+      wind.setTrees(obstacles.trees);
       const pilot = new AiPilot(def, skillFiles(id), { ground, wind, obstacles }, field, makeRng(11), { id: 'ai1', slot: 0 });
       expect(pilot.circuits).toBe(true);
       const dt = 1 / 60;
@@ -69,6 +74,7 @@ describe('AI flyers', () => {
         wind.update(dt);
         pilot.update(dt);
       }
+      random.mockRestore();
       expect(pilot.crashes + (pilot.ac.crashed ? 1 : 0)).toBe(0);
       expect(pilot.flights).toBeGreaterThan(0);
       expect(pilot.landings).toBeGreaterThan(0);

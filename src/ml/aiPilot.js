@@ -491,7 +491,8 @@ export class AiPilot {
       }
       case 'base': {
         // To a point nearly on the centreline well out, so final starts lined up.
-        const b = this.#pt(strip.aimS - 190, 8, 24);
+        // (5 m above the glide path there, so final starts high, not low.)
+        const b = this.#pt(strip.aimS - 190, 8, glideHeight(strip, strip.aimS - 190) + 5);
         this.#flyTo(b.x, b.z, b.y, speed);
         if (Math.hypot(b.x - ac.position.x, b.z - ac.position.z) < 20 || this.legT > 40) {
           // Landing this time (if the runway's free), or round again.
@@ -507,7 +508,7 @@ export class AiPilot {
         // A little above the glide path (the landing skill takes it from there).
         this.#followLine(lat, this.groundY(here.x, here.z) + Math.max(glideHeight(strip, sNow) + 2, 10), 1.15 * this.vCruise);
         // Sagging below the glide path (trees under it at a real field): go around.
-        if (agl < glideHeight(strip, sNow) - 3 && sNow < strip.aimS - 30) {
+        if (agl < glideHeight(strip, sNow) - 4 && sNow < strip.aimS - 30) {
           this.#goAround();
           return this.#plan(0);
         }
