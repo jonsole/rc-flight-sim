@@ -229,8 +229,8 @@ landing, with the steering costs small enough never to change that order.
 Where they take off and land is chosen by `src/ml/fieldStrip.js` for the
 wind: the runway from its upwind end in a light wind (≤ 3 m/s) or one along
 it, else a 90 m (down to 60 m at a small field) strip straight into the wind
-(or up to 30° off it) across the field, as near the pilots as it can be (not
-behind them). Every strip's whole flight path is checked clear of trees,
+(or up to 30° off it) across the field, centred within 50 m of the pilots (not
+behind them; 90 m for a battery landing if nothing nearer is clear). Every strip's whole flight path is checked clear of trees,
 buildings, fences and the pilots, first with a 7° approach and then steeper
 (9°, 11°, 13°) over the trees short of it: at Barrack Field an east or west
 wind takes 11°. If nowhere is clear, they take off near the pilots and land

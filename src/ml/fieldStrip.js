@@ -23,7 +23,8 @@ const STRIP_LENGTH = 90;
 const STRIP_WIDTH = 14;
 const BEYOND = 150; // m checked beyond each end
 const PILOT_CLEAR = 25; // m: the strip's line must pass at least this far from the pilots
-const NEAR = 90; // m: no strip centred further than this from the pilots (they take off near you)
+const NEAR = 50; // m: no strip centred further than this from the pilots (they take off and land near you)
+const FAR = 90; // m: except to land when the battery runs low, if nowhere nearer is clear
 
 /** Wind (compass degrees it blows FROM, as settings and Wind) to the way the air moves { x, z }. */
 export function windVector(fromDeg) {
@@ -222,7 +223,7 @@ export function chooseStrip({ windFromDeg, windSpeed, ground, obstacles, pilot }
   const runway = runwayStrip(windFromDeg, false, pilot);
   runway.kind = 'runway';
   if (!obstacles) return runway; // (no scenery to hit)
-  const near = (st) => !pilot || Math.hypot(st.x - pilot.x, st.z - pilot.z) <= NEAR;
+  const near = (st) => !pilot || Math.hypot(st.x - pilot.x, st.z - pilot.z) <= FAR;
   const placeOk = (st) => near(st) && !beyondFence(st, pilot, obstacles) && !(pilot && Math.abs(st.lateral(pilot)) < PILOT_CLEAR && Math.abs(st.along(pilot)) < st.length / 2 + BEYOND);
   const ok = (st) => placeOk(st) && stripClear(st, ground, obstacles) && baseLegClear(st, circuitSide(st, pilot), ground, obstacles);
   const runwayOk = (light || headwind(runway) >= Math.cos(30 * deg)) && !beyondFence(runway, pilot, obstacles);
@@ -235,7 +236,7 @@ export function chooseStrip({ windFromDeg, windSpeed, ground, obstacles, pilot }
   const away = { x: ax / an, z: az / an };
   const into = Math.atan2(-w.z, -w.x); // the way to roll
   // Places by the runway, nearest the pilots first (the circuit has to stay
-  // in sight), none further than NEAR; then the next furthest.
+  // in sight), none further than NEAR (FAR for a battery landing).
   const places = [];
   for (const shift of [0, 20, 40, 60, 80, 100, 120]) {
     for (const slide of [0, -30, 30, -60, 60, -90, 90]) {
@@ -248,10 +249,10 @@ export function chooseStrip({ windFromDeg, windSpeed, ground, obstacles, pilot }
   // Field the only strips with clear approaches in an east or west wind are
   // off to one side, not along the runway).
   if (pilot) {
-    for (let dx = -NEAR; dx <= NEAR; dx += 15) {
-      for (let dz = -NEAR; dz <= NEAR; dz += 15) {
+    for (let dx = -FAR; dx <= FAR; dx += 15) {
+      for (let dz = -FAR; dz <= FAR; dz += 15) {
         const d = Math.hypot(dx, dz);
-        if (d <= NEAR && dx * away.x + dz * away.z > 0) places.push({ x: pilot.x + dx, z: pilot.z + dz, d });
+        if (d <= FAR && dx * away.x + dz * away.z > 0) places.push({ x: pilot.x + dx, z: pilot.z + dz, d });
       }
     }
     places.sort((a, b) => a.d - b.d);
@@ -261,10 +262,10 @@ export function chooseStrip({ windFromDeg, windSpeed, ground, obstacles, pilot }
   // small field. Near the pilots matters more than exactly into wind
   // (within 30° of it anyway).
   // (`glide`: the approach angle, degrees, for landing strips.)
-  const search = (turns, test = ok, glide = GLIDES[0]) => {
+  const search = (turns, test = ok, glide = GLIDES[0], within = NEAR) => {
     for (const length of [STRIP_LENGTH, 70, 60]) {
       for (const p of places) {
-        if (p.d > NEAR) break;
+        if (p.d > within) break;
         for (const turn of turns) {
           const a = into + turn * deg;
           const strip = withGlide(new Strip({ x: p.x, z: p.z, dir: { x: Math.cos(a), z: Math.sin(a) }, length, width: STRIP_WIDTH }), glide);
@@ -333,7 +334,7 @@ export function chooseStrip({ windFromDeg, windSpeed, ground, obstacles, pilot }
       const c = headwind(st);
       return windSpeed * Math.sqrt(Math.max(0, 1 - c * c)) <= 3 && -windSpeed * c <= 1.5 && ok(st);
     };
-    for (const g of GLIDES) if (!launch.landAt) launch.landAt = search(EVERY_WAY, landTest, g);
+    for (const g of GLIDES) if (!launch.landAt) launch.landAt = search([0, 10, -10, 20, -20, 30, -30, ...EVERY_WAY], landTest, g, FAR);
     if (launch.landAt) launch.landAt.kind = 'landing (battery low)';
     return launch;
   }

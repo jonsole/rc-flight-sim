@@ -28,7 +28,7 @@ describe('Barrack Field strips', () => {
       expect(s.landing).not.toBe(false);
       const w = windVector(from);
       expect(-(s.dir.x * w.x + s.dir.z * w.z)).toBeGreaterThan(Math.cos(31 * deg));
-      expect(Math.hypot(s.x - px, s.z - pz)).toBeLessThanOrEqual(90);
+      expect(Math.hypot(s.x - px, s.z - pz)).toBeLessThanOrEqual(50);
       const glide = s.glide ?? 7 * deg;
       expect(glide).toBeLessThanOrEqual(13.01 * deg);
       // Clear at its own angle; if steeper than 7°, because 7° isn't.
